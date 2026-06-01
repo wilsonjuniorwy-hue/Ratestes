@@ -158,7 +158,7 @@ export function TotemView({
     const activeQty = cautelaItens
       .filter(ci => {
         const c = cautelas.find(caut => caut.id_cautela === ci.id_cautela);
-        return ci.id_material === mat.id_material && c && (c.status_cautela === 'ativa' || c.status_cautela === 'atrasada' || c.status_cautela === 'prorrogada') && ci.estado_devolucao === undefined;
+        return ci.id_material === mat.id_material && c && (c.status_cautela === 'ativa' || c.status_cautela === 'atrasada' || c.status_cautela === 'prorrogada') && !ci.estado_devolucao;
       })
       .reduce((sum, ci) => sum + ci.quantidade, 0);
     return Math.max(0, total - activeQty);

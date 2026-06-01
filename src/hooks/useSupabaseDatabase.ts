@@ -720,7 +720,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
 
     idsMateriaisDevolvidos.forEach(idMat => {
       const ci = Array.from(activeItemsMap.values()).find(
-        item => item.id_cautela === cautId && item.id_material === idMat && item.estado_devolucao === undefined
+        item => item.id_cautela === cautId && item.id_material === idMat && !item.estado_devolucao
       );
       if (!ci) return;
 
@@ -801,7 +801,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
 
     // 3. Verificar se todos os itens foram devolvidos
     const todosItensDaCautela = novosCautelaItens.filter(ci => ci.id_cautela === cautId);
-    const todosDevolvidos = todosItensDaCautela.every(ci => ci.estado_devolucao !== undefined);
+    const todosDevolvidos = todosItensDaCautela.every(ci => !!ci.estado_devolucao);
 
     // 4. Nova previsão (+48h)
     const novaPrevisao = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();

@@ -86,7 +86,7 @@ export function ArmeiroView({
     const activeQty = cautelaItens
       .filter(ci => {
         const c = cautelas.find(caut => caut.id_cautela === ci.id_cautela);
-        return ci.id_material === mat.id_material && c && (c.status_cautela === 'ativa' || c.status_cautela === 'atrasada' || c.status_cautela === 'prorrogada') && ci.estado_devolucao === undefined;
+        return ci.id_material === mat.id_material && c && (c.status_cautela === 'ativa' || c.status_cautela === 'atrasada' || c.status_cautela === 'prorrogada') && !ci.estado_devolucao;
       })
       .reduce((sum, ci) => sum + ci.quantidade, 0);
     return Math.max(0, total - activeQty);
@@ -1011,7 +1011,7 @@ export function ArmeiroView({
 
                       return cautelasVisiveis.map(c => {
                         const pm = usuarios.find(u => u.matricula === c.matricula_policial);
-                        const cItens = cautelaItens.filter(ci => ci.id_cautela === c.id_cautela && ci.estado_devolucao === undefined);
+                        const cItens = cautelaItens.filter(ci => ci.id_cautela === c.id_cautela && !ci.estado_devolucao);
                         const isSelected = returnCautelaId === c.id_cautela;
 
                         return (
@@ -1020,7 +1020,7 @@ export function ArmeiroView({
                             type="button"
                             onClick={() => {
                               setReturnCautelaId(c.id_cautela);
-                              const matches = cautelaItens.filter(ci => ci.id_cautela === c.id_cautela && ci.estado_devolucao === undefined);
+                              const matches = cautelaItens.filter(ci => ci.id_cautela === c.id_cautela && !ci.estado_devolucao);
                               setItemsToReturn(matches.map(m => m.id_material));
                               const initial: Record<string, CondicaoUso> = {};
                               matches.forEach(m => { initial[m.id_material] = 'bom'; });
@@ -1093,7 +1093,7 @@ export function ArmeiroView({
                     (() => {
                       const selectedCaut = cautelas.find(c => c.id_cautela === returnCautelaId);
                       const pm = usuarios.find(u => u.matricula === selectedCaut?.matricula_policial);
-                      const cItens = cautelaItens.filter(ci => ci.id_cautela === returnCautelaId && ci.estado_devolucao === undefined);
+                      const cItens = cautelaItens.filter(ci => ci.id_cautela === returnCautelaId && !ci.estado_devolucao);
 
                       return (
                         <div className="flex-1 flex flex-col justify-between h-full overflow-hidden">
