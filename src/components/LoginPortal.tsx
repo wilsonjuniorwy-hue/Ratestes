@@ -7,6 +7,8 @@ import React, { useState } from 'react';
 import { Shield, KeyRound, ShieldAlert, CheckCircle, RefreshCw, Eye, EyeOff } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Usuario } from '../types';
+import { supabase } from '../supabaseClient';
+import { comparePassword } from '../utils/crypto';
 
 interface LoginPortalProps {
   usuarios: Usuario[];
@@ -45,44 +47,58 @@ export default function LoginPortal({
     const matriculaNorm = matricula.trim().toUpperCase();
     const senhaNorm = senha.trim();
 
-    setTimeout(() => {
-      // Procurar usuário
-      const user = usuarios.find(u => u.matricula.trim().toUpperCase() === matriculaNorm);
+    supabase
+      .from('usuarios')
+      .select('*')
+      .eq('matricula', matriculaNorm)
+      .single()
+      .then(async ({ data: user, error }) => {
+        if (error || !user) {
+          setAuthError('Matrícula funcional não encontrada no SGBD.');
+          setIsAuthenticating(false);
+          return;
+        }
 
-      if (!user) {
-        setAuthError('Matrícula funcional não encontrada no SGBD.');
+        // Validar se é armeiro
+        if (user.perfil !== 'armeiro_gestor') {
+          setAuthError('Acesso restrito. Este terminal é exclusivo para Armeiros Gestores.');
+          setIsAuthenticating(false);
+          return;
+        }
+
+        // Validar se é primeiro acesso (senha em branco)
+        if (user.senha_hash === '' || !user.senha_hash) {
+          setPrimeiroAcessoUser(user);
+          setStep('primeiro_acesso');
+          setIsAuthenticating(false);
+          return;
+        }
+
+        // Validar senha de forma segura com hash
+        const { matches, needsMigration } = await comparePassword(senhaNorm, user.senha_hash);
+
+        if (!matches) {
+          setAuthError('Senha de acesso incorreta. Verifique suas credenciais.');
+          setIsAuthenticating(false);
+          return;
+        }
+
+        // Migrar senha legada se necessário
+        if (needsMigration) {
+          cadastrarSenha(user.matricula, senhaNorm);
+        }
+
+        // Sucesso no login
+        setStep('sucesso');
+        setTimeout(() => {
+          onLoginSuccess(user);
+        }, 1000);
+      })
+      .catch((err) => {
+        console.error('Erro de autenticação:', err);
+        setAuthError('Falha de conexão com o SGBD.');
         setIsAuthenticating(false);
-        return;
-      }
-
-      // Validar se é armeiro
-      if (user.perfil !== 'armeiro_gestor') {
-        setAuthError('Acesso restrito. Este terminal é exclusivo para Armeiros Gestores.');
-        setIsAuthenticating(false);
-        return;
-      }
-
-      // Validar se é primeiro acesso (senha em branco)
-      if (user.senha_hash === '') {
-        setPrimeiroAcessoUser(user);
-        setStep('primeiro_acesso');
-        setIsAuthenticating(false);
-        return;
-      }
-
-      // Validar senha
-      if (user.senha_hash !== senhaNorm) {
-        setAuthError('Senha de acesso incorreta. Verifique suas credenciais.');
-        setIsAuthenticating(false);
-        return;
-      }
-
-      // Sucesso no login
-      setStep('sucesso');
-      setTimeout(() => {
-        onLoginSuccess(user);
-      }, 1000);
-    }, 600);
+      });
   };
 
   // ---- SUBMIT DO PRIMEIRO ACESSO ----

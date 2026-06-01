@@ -6,6 +6,8 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Usuario, Material, Cautela, CautelaItem, AuditoriaLog } from '../types';
+import { supabase } from '../supabaseClient';
+import { comparePassword } from '../utils/crypto';
 
 interface TotemViewProps {
   usuarios: Usuario[];
@@ -188,30 +190,51 @@ export function TotemView({
     e.preventDefault();
     setAuthError('');
 
-    const user = usuarios.find(u => u.matricula.trim().toUpperCase() === matriculaInput.trim().toUpperCase());
-    
-    if (!user) {
-      setAuthError('Matrícula não cadastrada no SGBD militar.');
-      return;
-    }
+    const matriculaNorm = matriculaInput.trim().toUpperCase();
 
-    if (user.senha_hash === '') {
-      setLoggedUser(user);
-      setPolicialStep('cadastro_senha');
-      setNovaSenhaInput('');
-      setConfirmarSenhaInput('');
-      setCadastroSenhaError('');
-      return;
-    }
+    supabase
+      .from('usuarios')
+      .select('*')
+      .eq('matricula', matriculaNorm)
+      .single()
+      .then(async ({ data: user, error }) => {
+        if (error || !user) {
+          setAuthError('Matrícula não cadastrada no SGBD militar.');
+          return;
+        }
 
-    if (senhaInput !== user.senha_hash) {
-      setAuthError(`Inconsistência cadastral. Senha digitada incorreta (Use a senha cadastrada para o militar).`);
-      return;
-    }
+        // Primeiro acesso (senha vazia)
+        if (user.senha_hash === '' || !user.senha_hash) {
+          setLoggedUser(user);
+          setPolicialStep('cadastro_senha');
+          setNovaSenhaInput('');
+          setConfirmarSenhaInput('');
+          setCadastroSenhaError('');
+          return;
+        }
 
-    setLoggedUser(user);
-    setPolicialStep('aptidao');
-    registrarLogAuditoria(user.matricula, 'login', `Militar logged in via autoatendimento no portal. Status atual: ${user.situacao_cautela.toUpperCase()}.`);
+        // Validar senha de forma segura com hash
+        const { matches, needsMigration } = await comparePassword(senhaInput, user.senha_hash);
+
+        if (!matches) {
+          setAuthError(`Inconsistência cadastral. Senha digitada incorreta (Use a senha cadastrada para o militar).`);
+          return;
+        }
+
+        // Migrar senha legada se necessário
+        if (needsMigration) {
+          cadastrarSenha(user.matricula, senhaInput);
+        }
+
+        // Sucesso no login
+        setLoggedUser(user);
+        setPolicialStep('aptidao');
+        registrarLogAuditoria(user.matricula, 'login', `Militar logged in via autoatendimento no portal. Status atual: ${user.situacao_cautela.toUpperCase()}.`);
+      })
+      .catch((err) => {
+        console.error('Erro de login no Totem:', err);
+        setAuthError('Falha de conexão com o SGBD militar.');
+      });
   };
 
   // ---- CADASTRO DE SENHA DO PRIMEIRO ACESSO ----
@@ -305,20 +328,22 @@ export function TotemView({
       return;
     }
 
-    if (confirmarCautelaPin !== loggedUser.senha_hash) {
-      setPinError('Inconsistência cadastral. Senha de assinatura digital incorreta.');
-      return;
-    }
+    comparePassword(confirmarCautelaPin, loggedUser.senha_hash).then(({ matches }) => {
+      if (!matches) {
+        setPinError('Inconsistência cadastral. Senha de assinatura digital incorreta.');
+        return;
+      }
 
-    setPinError('');
-    const newCautela = processEfetivarCautela(loggedUser.matricula, cartItens, observacoesRetirada, cartWeaponMagazines);
-    if (newCautela) {
-      setGeneratedCautela(newCautela);
-      setConfirmarCautelaPin('');
-      setIsSearchModalOpen(false);
-      setSearchQuery('');
-      setPolicialStep('sucesso');
-    }
+      setPinError('');
+      const newCautela = processEfetivarCautela(loggedUser.matricula, cartItens, observacoesRetirada, cartWeaponMagazines);
+      if (newCautela) {
+        setGeneratedCautela(newCautela);
+        setConfirmarCautelaPin('');
+        setIsSearchModalOpen(false);
+        setSearchQuery('');
+        setPolicialStep('sucesso');
+      }
+    });
   };
 
   // ---- LOGOUT POLICIAL ----

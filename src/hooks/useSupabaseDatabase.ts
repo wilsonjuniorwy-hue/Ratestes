@@ -10,6 +10,7 @@ import {
   AuditoriaLog, OcorrenciaRelatorio, SituacaoMilitar, 
   StatusMaterial, CondicaoUso 
 } from '../types';
+import { hashSHA256 } from '../utils/crypto';
 import { 
   mockUsuarios, mockCategorias, mockMateriais, 
   mockCautelas, mockCautelaItens, mockAuditoriaLogs, 
@@ -51,7 +52,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
         { data: ocos, error: errOcos },
         { data: models, error: errModels }
       ] = await Promise.all([
-        supabase.from('usuarios').select('*'),
+        supabase.from('usuarios').select('matricula, nome, nome_de_guerra, perfil, posto_graduacao, situacao_cautela, data_ultimo_teste_psicologico, motivo_suspensao'),
         supabase.from('materiais').select('*'),
         supabase.from('categorias').select('*'),
         supabase.from('cautelas').select('*'),
@@ -70,7 +71,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
       if (errOcos) throw errOcos;
       if (errModels) throw errModels;
 
-      setUsuarios(users || []);
+      setUsuarios((users || []).map(u => ({ ...u, senha_hash: '' } as Usuario)));
       setMateriais(materials || []);
       setCategorias(categories || []);
       setCautelas(cautelasData || []);
@@ -295,17 +296,17 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
 
   // ---- CADASTRO DE SENHA DO PRIMEIRO ACESSO ----
   const cadastrarSenha = (matricula: string, novaSenhaInput: string) => {
-    const usuariosAtualizados = usuarios.map(u => {
-      if (u.matricula === matricula) {
-        return { ...u, senha_hash: novaSenhaInput };
-      }
-      return u;
-    });
+    hashSHA256(novaSenhaInput).then(hashed => {
+      setUsuarios(prev => prev.map(u => {
+        if (u.matricula === matricula) {
+          return { ...u, senha_hash: hashed };
+        }
+        return u;
+      }));
 
-    setUsuarios(usuariosAtualizados);
-
-    supabase.from('usuarios').update({ senha_hash: novaSenhaInput }).eq('matricula', matricula).then(({ error }) => {
-      if (error) console.error('Erro ao salvar nova senha:', error);
+      supabase.from('usuarios').update({ senha_hash: hashed }).eq('matricula', matricula).then(({ error }) => {
+        if (error) console.error('Erro ao salvar nova senha:', error);
+      });
     });
 
     registrarLogAuditoria(
@@ -317,10 +318,17 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
 
   // ---- CADASTRO DE NOVO POLICIAL MILITAR ----
   const cadastrarPolicial = (novoPolicial: Usuario) => {
-    setUsuarios(prev => [...prev, novoPolicial]);
+    const rawSenha = novoPolicial.senha_hash;
+    
+    hashSHA256(rawSenha).then(hashed => {
+      const userToInsert = { ...novoPolicial, senha_hash: hashed };
+      
+      // Store empty password hash locally so it is not visible in memory listings
+      setUsuarios(prev => [...prev, { ...novoPolicial, senha_hash: '' }]);
 
-    supabase.from('usuarios').insert(novoPolicial).then(({ error }) => {
-      if (error) console.error('Erro ao cadastrar policial:', error);
+      supabase.from('usuarios').insert(userToInsert).then(({ error }) => {
+        if (error) console.error('Erro ao cadastrar policial:', error);
+      });
     });
 
     registrarLogAuditoria(
@@ -919,16 +927,17 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
   };
 
   const alterarSenhaArmeiro = (matricula: string, novaSenha: string) => {
-    const usuariosAtualizados = usuarios.map(u => {
-      if (u.matricula === matricula) {
-        return { ...u, senha_hash: novaSenha };
-      }
-      return u;
-    });
-    setUsuarios(usuariosAtualizados);
+    hashSHA256(novaSenha).then(hashed => {
+      setUsuarios(prev => prev.map(u => {
+        if (u.matricula === matricula) {
+          return { ...u, senha_hash: hashed };
+        }
+        return u;
+      }));
 
-    supabase.from('usuarios').update({ senha_hash: novaSenha }).eq('matricula', matricula).then(({ error }) => {
-      if (error) console.error('Erro ao alterar senha do armeiro no Supabase:', error);
+      supabase.from('usuarios').update({ senha_hash: hashed }).eq('matricula', matricula).then(({ error }) => {
+        if (error) console.error('Erro ao alterar senha do armeiro no Supabase:', error);
+      });
     });
 
     registrarLogAuditoria(
