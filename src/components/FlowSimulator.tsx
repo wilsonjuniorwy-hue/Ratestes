@@ -34,6 +34,13 @@ export default function FlowSimulator({
   // ---- CONTROLE DE FLUXO/VISÃO ----
   const [roleMode, setRoleMode] = useState<'policial' | 'armeiro' | 'banco_dados' | 'livro_ocorrencias' | 'config_armeiro'>('policial');
 
+  // Forçar o modo Totem de autoatendimento se o armeiro logado for o usuário 'ARMEIRO'
+  React.useEffect(() => {
+    if (activeArmeiroMatricula?.toUpperCase() === 'ARMEIRO') {
+      setRoleMode('policial');
+    }
+  }, [activeArmeiroMatricula]);
+
   // ---- FLUXO POLICIAL: ESTADOS LOCAIS ----
   const [policialStep, setPolicialStep] = useState<'login' | 'cadastro_senha' | 'aptidao' | 'carrinho' | 'assinatura' | 'sucesso'>('login');
   const [matriculaInput, setMatriculaInput] = useState('');
@@ -146,109 +153,111 @@ export default function FlowSimulator({
     <div className="space-y-6" id="flow-simulator-root">
       
       {/* Barra de Seleção de Papel do Fluxo */}
-      <div className="bg-slate-900/60 backdrop-blur-md border border-slate-800/80 rounded-xl p-4 flex flex-wrap items-center justify-between gap-4 shadow-lg" id="role-selector-bar">
-        <div className="flex items-center gap-3.5">
-          <span className="text-[10px] font-bold text-slate-450 font-mono uppercase tracking-wider">MODO DO SIMULADOR:</span>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 bg-slate-950/80 p-1 border border-slate-855 rounded-lg" id="role-buttons-wrapper">
-            <button
-              id="btn-mode-policial"
-              onClick={() => setRoleMode('policial')}
-              className={`px-4 py-2.5 rounded border text-xs font-bold font-mono flex items-center gap-2 transition-all duration-200 cursor-pointer ${
-                roleMode === 'policial'
-                  ? 'bg-blue-600/10 text-white border-blue-500/30 shadow-[0_0_10px_rgba(59,130,246,0.1)]'
-                  : 'border-transparent text-slate-400 hover:text-slate-205 hover:bg-slate-900/50'
-              }`}
-            >
-              <div className={`w-1.5 h-1.5 rounded-full ${roleMode === 'policial' ? 'bg-blue-400 shadow-[0_0_6px_rgba(59,130,246,0.8)]' : 'bg-slate-600'}`}></div>
-              <span>Totem Autoatendimento (Policial)</span>
-            </button>
-            
-            <button
-              id="btn-mode-armeiro"
-              onClick={() => setRoleMode('armeiro')}
-              className={`px-4 py-2.5 rounded border text-xs font-bold font-mono flex items-center gap-2 transition-all duration-200 cursor-pointer ${
-                roleMode === 'armeiro'
-                  ? 'bg-blue-600/10 text-white border-blue-500/30 shadow-[0_0_10px_rgba(59,130,246,0.1)]'
-                  : 'border-transparent text-slate-400 hover:text-slate-205 hover:bg-slate-900/50'
-              }`}
-            >
-              <div className={`w-1.5 h-1.5 rounded-full ${roleMode === 'armeiro' ? 'bg-blue-400 shadow-[0_0_6px_rgba(59,130,246,0.8)]' : 'bg-slate-600'}`}></div>
-              <span>Console da Armaria (Armeiro)</span>
-            </button>
+      {activeArmeiroMatricula?.toUpperCase() !== 'ARMEIRO' && (
+        <div className="bg-slate-900/60 backdrop-blur-md border border-slate-800/80 rounded-xl p-4 flex flex-wrap items-center justify-between gap-4 shadow-lg" id="role-selector-bar">
+          <div className="flex items-center gap-3.5">
+            <span className="text-[10px] font-bold text-slate-450 font-mono uppercase tracking-wider">MODO DO SIMULADOR:</span>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 bg-slate-950/80 p-1 border border-slate-855 rounded-lg" id="role-buttons-wrapper">
+              <button
+                id="btn-mode-policial"
+                onClick={() => setRoleMode('policial')}
+                className={`px-4 py-2.5 rounded border text-xs font-bold font-mono flex items-center gap-2 transition-all duration-200 cursor-pointer ${
+                  roleMode === 'policial'
+                    ? 'bg-blue-600/10 text-white border-blue-500/30 shadow-[0_0_10px_rgba(59,130,246,0.1)]'
+                    : 'border-transparent text-slate-400 hover:text-slate-205 hover:bg-slate-900/50'
+                }`}
+              >
+                <div className={`w-1.5 h-1.5 rounded-full ${roleMode === 'policial' ? 'bg-blue-400 shadow-[0_0_6px_rgba(59,130,246,0.8)]' : 'bg-slate-600'}`}></div>
+                <span>Totem Autoatendimento (Policial)</span>
+              </button>
+              
+              <button
+                id="btn-mode-armeiro"
+                onClick={() => setRoleMode('armeiro')}
+                className={`px-4 py-2.5 rounded border text-xs font-bold font-mono flex items-center gap-2 transition-all duration-200 cursor-pointer ${
+                  roleMode === 'armeiro'
+                    ? 'bg-blue-600/10 text-white border-blue-500/30 shadow-[0_0_10px_rgba(59,130,246,0.1)]'
+                    : 'border-transparent text-slate-400 hover:text-slate-205 hover:bg-slate-900/50'
+                }`}
+              >
+                <div className={`w-1.5 h-1.5 rounded-full ${roleMode === 'armeiro' ? 'bg-blue-400 shadow-[0_0_6px_rgba(59,130,246,0.8)]' : 'bg-slate-600'}`}></div>
+                <span>Console da Armaria (Armeiro)</span>
+              </button>
 
-            <button
-              id="btn-mode-banco-dados"
-              onClick={() => setRoleMode('banco_dados')}
-              className={`px-4 py-2.5 rounded border text-xs font-bold font-mono flex items-center gap-2 transition-all duration-200 cursor-pointer ${
-                roleMode === 'banco_dados'
-                  ? 'bg-blue-600/10 text-white border-blue-500/30 shadow-[0_0_10px_rgba(59,130,246,0.1)]'
-                  : 'border-transparent text-slate-400 hover:text-slate-205 hover:bg-slate-900/50'
-              }`}
-            >
-              <div className={`w-1.5 h-1.5 rounded-full ${roleMode === 'banco_dados' ? 'bg-blue-400 shadow-[0_0_6px_rgba(59,130,246,0.8)]' : 'bg-slate-600'}`}></div>
-              <span>Banco de Dados</span>
-            </button>
+              <button
+                id="btn-mode-banco-dados"
+                onClick={() => setRoleMode('banco_dados')}
+                className={`px-4 py-2.5 rounded border text-xs font-bold font-mono flex items-center gap-2 transition-all duration-200 cursor-pointer ${
+                  roleMode === 'banco_dados'
+                    ? 'bg-blue-600/10 text-white border-blue-500/30 shadow-[0_0_10px_rgba(59,130,246,0.1)]'
+                    : 'border-transparent text-slate-400 hover:text-slate-205 hover:bg-slate-900/50'
+                }`}
+              >
+                <div className={`w-1.5 h-1.5 rounded-full ${roleMode === 'banco_dados' ? 'bg-blue-400 shadow-[0_0_6px_rgba(59,130,246,0.8)]' : 'bg-slate-600'}`}></div>
+                <span>Banco de Dados</span>
+              </button>
 
-            <button
-              id="btn-mode-ocorrencias"
-              onClick={() => setRoleMode('livro_ocorrencias')}
-              className={`px-4 py-2.5 rounded border text-xs font-bold font-mono flex items-center gap-2 transition-all duration-200 cursor-pointer ${
-                roleMode === 'livro_ocorrencias'
-                  ? 'bg-blue-600/10 text-white border-blue-500/30 shadow-[0_0_10px_rgba(59,130,246,0.1)]'
-                  : 'border-transparent text-slate-400 hover:text-slate-205 hover:bg-slate-900/50'
-              }`}
-            >
-              <div className={`w-1.5 h-1.5 rounded-full ${roleMode === 'livro_ocorrencias' ? 'bg-blue-400 shadow-[0_0_6px_rgba(59,130,246,0.8)]' : 'bg-slate-600'}`}></div>
-              <span>Livro de Ocorrências</span>
-            </button>
+              <button
+                id="btn-mode-ocorrencias"
+                onClick={() => setRoleMode('livro_ocorrencias')}
+                className={`px-4 py-2.5 rounded border text-xs font-bold font-mono flex items-center gap-2 transition-all duration-200 cursor-pointer ${
+                  roleMode === 'livro_ocorrencias'
+                    ? 'bg-blue-600/10 text-white border-blue-500/30 shadow-[0_0_10px_rgba(59,130,246,0.1)]'
+                    : 'border-transparent text-slate-400 hover:text-slate-205 hover:bg-slate-900/50'
+                }`}
+              >
+                <div className={`w-1.5 h-1.5 rounded-full ${roleMode === 'livro_ocorrencias' ? 'bg-blue-400 shadow-[0_0_6px_rgba(59,130,246,0.8)]' : 'bg-slate-600'}`}></div>
+                <span>Livro de Ocorrências</span>
+              </button>
 
-            <button
-              id="btn-mode-config-armeiro"
-              onClick={() => setRoleMode('config_armeiro')}
-              className={`px-4 py-2.5 rounded border text-xs font-bold font-mono flex items-center gap-2 transition-all duration-200 cursor-pointer ${
-                roleMode === 'config_armeiro'
-                  ? 'bg-blue-600/10 text-white border-blue-500/30 shadow-[0_0_10px_rgba(59,130,246,0.1)]'
-                  : 'border-transparent text-slate-400 hover:text-slate-205 hover:bg-slate-900/50'
-              }`}
-            >
-              <div className={`w-1.5 h-1.5 rounded-full ${roleMode === 'config_armeiro' ? 'bg-blue-400 shadow-[0_0_6px_rgba(59,130,246,0.8)]' : 'bg-slate-600'}`}></div>
-              <span>Armeiro</span>
-            </button>
+              <button
+                id="btn-mode-config-armeiro"
+                onClick={() => setRoleMode('config_armeiro')}
+                className={`px-4 py-2.5 rounded border text-xs font-bold font-mono flex items-center gap-2 transition-all duration-200 cursor-pointer ${
+                  roleMode === 'config_armeiro'
+                    ? 'bg-blue-600/10 text-white border-blue-500/30 shadow-[0_0_10px_rgba(59,130,246,0.1)]'
+                    : 'border-transparent text-slate-400 hover:text-slate-205 hover:bg-slate-900/50'
+                }`}
+              >
+                <div className={`w-1.5 h-1.5 rounded-full ${roleMode === 'config_armeiro' ? 'bg-blue-400 shadow-[0_0_6px_rgba(59,130,246,0.8)]' : 'bg-slate-600'}`}></div>
+                <span>Armeiro</span>
+              </button>
+            </div>
           </div>
+
+          {activeArmeiroMatricula === '7317573' && (
+            <div className="flex items-center gap-2.5" id="admin-backup-controls">
+              <button
+                id="btn-export-backup"
+                onClick={handleExportBackup}
+                className="text-xs font-mono text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/20 px-4 py-2.5 rounded-lg border border-emerald-900/40 font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer flex items-center gap-2"
+                title="Fazer backup completo das tabelas em arquivo JSON"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Backup do Sistema</span>
+              </button>
+              
+              <button
+                id="btn-import-backup-trigger"
+                onClick={() => document.getElementById('import-backup-file')?.click()}
+                className="text-xs font-mono text-blue-405 hover:text-blue-350 hover:bg-blue-955/40 px-4 py-2.5 rounded-lg border border-blue-800/50 font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer flex items-center gap-2"
+                title="Restaurar banco de dados a partir de arquivo de backup JSON"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>Restaurar Backup</span>
+              </button>
+              
+              <input
+                type="file"
+                id="import-backup-file"
+                className="hidden"
+                accept=".json"
+                onChange={handleImportBackup}
+              />
+            </div>
+          )}
         </div>
-
-        {activeArmeiroMatricula === '7317573' && (
-          <div className="flex items-center gap-2.5" id="admin-backup-controls">
-            <button
-              id="btn-export-backup"
-              onClick={handleExportBackup}
-              className="text-xs font-mono text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/20 px-4 py-2.5 rounded-lg border border-emerald-900/40 font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer flex items-center gap-2"
-              title="Fazer backup completo das tabelas em arquivo JSON"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Backup do Sistema</span>
-            </button>
-            
-            <button
-              id="btn-import-backup-trigger"
-              onClick={() => document.getElementById('import-backup-file')?.click()}
-              className="text-xs font-mono text-blue-405 hover:text-blue-350 hover:bg-blue-955/40 px-4 py-2.5 rounded-lg border border-blue-800/50 font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer flex items-center gap-2"
-              title="Restaurar banco de dados a partir de arquivo de backup JSON"
-            >
-              <Upload className="w-3.5 h-3.5" />
-              <span>Restaurar Backup</span>
-            </button>
-            
-            <input
-              type="file"
-              id="import-backup-file"
-              className="hidden"
-              accept=".json"
-              onChange={handleImportBackup}
-            />
-          </div>
-        )}
-      </div>
+      )}
 
       {/* RENDERIZAÇÃO DOS DIFERENTES PAINÉIS COM PROTEÇÃO DE ERRO LOCAL */}
       

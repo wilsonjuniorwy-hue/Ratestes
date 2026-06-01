@@ -127,6 +127,16 @@ export const mockUsuarios: Usuario[] = [
     posto_graduacao: '2º Sargento',
     situacao_cautela: 'apto',
     data_ultimo_teste_psicologico: '2026-05-31',
+  },
+  {
+    matricula: 'ARMEIRO',
+    nome: 'Totem de Atendimento',
+    nome_de_guerra: 'Totem',
+    senha_hash: '5fac61b0fd803321c5831cd12a21649522595554c8a508bd42d4a1b4f09eab36',
+    perfil: 'armeiro_gestor',
+    posto_graduacao: 'Totem',
+    situacao_cautela: 'apto',
+    data_ultimo_teste_psicologico: '2026-05-31',
   }
 ];
 

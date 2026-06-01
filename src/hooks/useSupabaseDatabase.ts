@@ -79,6 +79,51 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
       setAuditoriaLogs(logs || []);
       setOcorrencias(ocos || []);
       setModelosArmas(models || []);
+
+      // Auto-seeding do usuário armeiro se não existir na base de dados (com migração de caixa)
+      const userList = users || [];
+      const exactArmeiro = userList.find(u => u.matricula === 'ARMEIRO');
+      const lowerArmeiro = userList.find(u => u.matricula === 'armeiro');
+
+      if (lowerArmeiro) {
+        console.log('SGBD: Corrigindo matrícula do armeiro para maiúsculas (ARMEIRO)...');
+        supabase.from('usuarios').delete().eq('matricula', 'armeiro').then(() => {
+          const armeiroData = {
+            matricula: 'ARMEIRO',
+            nome: 'Totem de Atendimento',
+            nome_de_guerra: 'Totem',
+            senha_hash: '5fac61b0fd803321c5831cd12a21649522595554c8a508bd42d4a1b4f09eab36', // hash de 101187
+            perfil: 'armeiro_gestor',
+            posto_graduacao: 'Totem',
+            situacao_cautela: 'apto',
+            data_ultimo_teste_psicologico: '2026-05-31'
+          };
+          supabase.from('usuarios').insert(armeiroData).then(({ error }) => {
+            if (error) console.error('SGBD Erro ao migrar armeiro:', error);
+            fetchData();
+          });
+        });
+      } else if (!exactArmeiro) {
+        console.log('SGBD: Usuário "ARMEIRO" não encontrado. Criando em segundo plano...');
+        const armeiroData = {
+          matricula: 'ARMEIRO',
+          nome: 'Totem de Atendimento',
+          nome_de_guerra: 'Totem',
+          senha_hash: '5fac61b0fd803321c5831cd12a21649522595554c8a508bd42d4a1b4f09eab36', // hash de 101187
+          perfil: 'armeiro_gestor',
+          posto_graduacao: 'Totem',
+          situacao_cautela: 'apto',
+          data_ultimo_teste_psicologico: '2026-05-31'
+        };
+        supabase.from('usuarios').insert(armeiroData).then(({ error }) => {
+          if (error) {
+            console.error('SGBD Erro: Falha ao inserir armeiro automático:', error);
+          } else {
+            console.log('SGBD: Usuário "ARMEIRO" criado com sucesso!');
+            fetchData();
+          }
+        });
+      }
     } catch (error: any) {
       console.error('Erro ao buscar dados do Supabase:', error);
       setDbError(error.message || 'Erro de conexão com o Supabase.');

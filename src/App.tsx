@@ -84,7 +84,9 @@ export default function App() {
               <h1 className="text-base font-extrabold tracking-tight uppercase text-white font-sans">CAVALARIA - RESERVA DE ARMAMENTO</h1>
               <span className="text-[9px] bg-blue-955 text-blue-405 border border-blue-800/60 px-1.5 py-0.5 rounded font-black font-mono">PMDF</span>
             </div>
-            <p className="text-[9px] text-slate-500 font-mono tracking-widest uppercase mt-0.5">SISTEMA TÁTICO DE CONTROLE BÉLICO</p>
+            <p className="text-[9px] text-slate-500 font-mono tracking-widest uppercase mt-0.5">
+              {activeArmeiroMatricula?.toUpperCase() === 'ARMEIRO' ? 'TOTEM DE AUTOATENDIMENTO (ATIVO)' : 'SISTEMA TÁTICO DE CONTROLE BÉLICO'}
+            </p>
           </div>
         </div>
 
@@ -114,15 +116,19 @@ export default function App() {
             </button>
           )}
           
-          <div className="h-10 w-[1px] bg-slate-800 hidden sm:block"></div>
-          
-          <div className="flex gap-2.5 items-center bg-slate-900/40 border border-slate-800/80 px-3.5 py-2 rounded-lg hidden sm:flex">
-            <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.6)] animate-pulse"></div>
-            <div className="flex flex-col">
-              <span className="text-[8px] uppercase font-bold tracking-wider text-slate-400">Paiol Principal</span>
-              <span className="text-[9px] font-mono text-emerald-400 font-bold uppercase">Online & Seguro</span>
-            </div>
-          </div>
+          {activeArmeiroMatricula?.toUpperCase() !== 'ARMEIRO' && (
+            <>
+              <div className="h-10 w-[1px] bg-slate-800 hidden sm:block"></div>
+              
+              <div className="flex gap-2.5 items-center bg-slate-900/40 border border-slate-800/80 px-3.5 py-2 rounded-lg hidden sm:flex">
+                <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.6)] animate-pulse"></div>
+                <div className="flex flex-col">
+                  <span className="text-[8px] uppercase font-bold tracking-wider text-slate-400">Paiol Principal</span>
+                  <span className="text-[9px] font-mono text-emerald-400 font-bold uppercase">Online & Seguro</span>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </header>
 
@@ -136,20 +142,29 @@ export default function App() {
       </main>
 
       {/* Footer Status Bar - Technical System Telemetry */}
-      <footer className="h-auto md:h-14 bg-slate-955 border-t border-slate-900 px-6 py-4 md:py-0 flex flex-col md:flex-row items-center justify-between shrink-0 gap-4 mt-auto">
-        <div className="flex flex-wrap gap-4 text-[9px] font-mono text-slate-505 uppercase tracking-widest">
-          <span>Session: <strong className="text-slate-400">PMDF-CO-827A</strong></span>
-          <span>SGBD: <strong className="text-slate-400">SQL Server 2026 Enterprise</strong></span>
-          <span>Cluster: <strong className="text-slate-400">PRD-HUD-01</strong></span>
-          <span className="flex items-center gap-1.5">
-            Latency: <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping" />
-            <strong className="text-emerald-400">9ms</strong>
-          </span>
-        </div>
-        <div className="text-[9px] text-slate-505 font-mono uppercase tracking-wider text-center md:text-right flex flex-col items-end gap-0.5">
-          <span>© 2026 DEPARTAMENTO DE LOGÍSTICA E SUPRIMENTOS (DLS) - POLÍCIA MILITAR DO DISTRITO FEDERAL</span>
-          <span className="text-[8px] text-slate-500 font-black tracking-wider">Desenvolvido por Wagner Torres</span>
-        </div>
+      <footer className="h-auto bg-slate-955 border-t border-slate-900 px-6 py-4 md:py-4 flex flex-col md:flex-row items-center justify-between shrink-0 gap-4 mt-auto">
+        {activeArmeiroMatricula?.toUpperCase() !== 'ARMEIRO' ? (
+          <>
+            <div className="flex flex-wrap gap-4 text-[9px] font-mono text-slate-505 uppercase tracking-widest">
+              <span>Session: <strong className="text-slate-400">PMDF-CO-827A</strong></span>
+              <span>SGBD: <strong className="text-slate-400">SQL Server 2026 Enterprise</strong></span>
+              <span>Cluster: <strong className="text-slate-400">PRD-HUD-01</strong></span>
+              <span className="flex items-center gap-1.5">
+                Latency: <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping" />
+                <strong className="text-emerald-400">9ms</strong>
+              </span>
+            </div>
+            <div className="text-[9px] text-slate-505 font-mono uppercase tracking-wider text-center md:text-right flex flex-col items-end gap-0.5">
+              <span>© 2026 DEPARTAMENTO DE LOGÍSTICA E SUPRIMENTOS (DLS) - POLÍCIA MILITAR DO DISTRITO FEDERAL</span>
+              <span className="text-[8px] text-slate-500 font-black tracking-wider">Desenvolvido por Wagner Torres</span>
+            </div>
+          </>
+        ) : (
+          <div className="text-[9px] text-slate-505 font-mono uppercase tracking-wider text-center w-full flex flex-col items-center gap-0.5">
+            <span>© 2026 DEPARTAMENTO DE LOGÍSTICA E SUPRIMENTOS (DLS) - POLÍCIA MILITAR DO DISTRITO FEDERAL</span>
+            <span className="text-[8px] text-slate-500 font-black tracking-wider">MODO TOTEM DE AUTOATENDIMENTO BÉLICO ATIVO</span>
+          </div>
+        )}
       </footer>
 
     </div>

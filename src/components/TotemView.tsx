@@ -186,55 +186,55 @@ export function TotemView({
   }, [policialStep]);
 
   // ---- PROCESSAMENTO DE LOGIN POLICIAL ----
-  const handlePolicialLogin = (e: React.FormEvent) => {
+  const handlePolicialLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
 
     const matriculaNorm = matriculaInput.trim().toUpperCase();
 
-    supabase
-      .from('usuarios')
-      .select('*')
-      .eq('matricula', matriculaNorm)
-      .single()
-      .then(async ({ data: user, error }) => {
-        if (error || !user) {
-          setAuthError('Matrícula não cadastrada no SGBD militar.');
-          return;
-        }
+    try {
+      const { data: user, error } = await supabase
+        .from('usuarios')
+        .select('*')
+        .eq('matricula', matriculaNorm)
+        .single();
 
-        // Primeiro acesso (senha vazia)
-        if (user.senha_hash === '' || !user.senha_hash) {
-          setLoggedUser(user);
-          setPolicialStep('cadastro_senha');
-          setNovaSenhaInput('');
-          setConfirmarSenhaInput('');
-          setCadastroSenhaError('');
-          return;
-        }
+      if (error || !user) {
+        setAuthError('Matrícula não cadastrada no SGBD militar.');
+        return;
+      }
 
-        // Validar senha de forma segura com hash
-        const { matches, needsMigration } = await comparePassword(senhaInput, user.senha_hash);
-
-        if (!matches) {
-          setAuthError(`Inconsistência cadastral. Senha digitada incorreta (Use a senha cadastrada para o militar).`);
-          return;
-        }
-
-        // Migrar senha legada se necessário
-        if (needsMigration) {
-          cadastrarSenha(user.matricula, senhaInput);
-        }
-
-        // Sucesso no login
+      // Primeiro acesso (senha vazia)
+      if (user.senha_hash === '' || !user.senha_hash) {
         setLoggedUser(user);
-        setPolicialStep('aptidao');
-        registrarLogAuditoria(user.matricula, 'login', `Militar logged in via autoatendimento no portal. Status atual: ${user.situacao_cautela.toUpperCase()}.`);
-      })
-      .catch((err) => {
-        console.error('Erro de login no Totem:', err);
-        setAuthError('Falha de conexão com o SGBD militar.');
-      });
+        setPolicialStep('cadastro_senha');
+        setNovaSenhaInput('');
+        setConfirmarSenhaInput('');
+        setCadastroSenhaError('');
+        return;
+      }
+
+      // Validar senha de forma segura com hash
+      const { matches, needsMigration } = await comparePassword(senhaInput, user.senha_hash);
+
+      if (!matches) {
+        setAuthError(`Inconsistência cadastral. Senha digitada incorreta (Use a senha cadastrada para o militar).`);
+        return;
+      }
+
+      // Migrar senha legada se necessário
+      if (needsMigration) {
+        cadastrarSenha(user.matricula, senhaInput);
+      }
+
+      // Sucesso no login
+      setLoggedUser(user);
+      setPolicialStep('aptidao');
+      registrarLogAuditoria(user.matricula, 'login', `Militar logged in via autoatendimento no portal. Status atual: ${user.situacao_cautela.toUpperCase()}.`);
+    } catch (err) {
+      console.error('Erro de login no Totem:', err);
+      setAuthError('Falha de conexão com o SGBD militar.');
+    }
   };
 
   // ---- CADASTRO DE SENHA DO PRIMEIRO ACESSO ----
