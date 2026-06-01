@@ -1,0 +1,6 @@
+{
+  "name": "Gestão de Reserva de Armamento PM",
+  "description": "Especificação, modelagem lógica e simulador interativo de regras de negócio e fluxos para controle de armaria da Polícia Militar.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

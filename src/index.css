@@ -1,0 +1,67 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Outfit', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  
+  --color-slate-905: #090e1a;
+  --color-slate-925: #050a18;
+  --color-slate-955: #02040a;
+}
+
+@layer utilities {
+  .glow-blue {
+    box-shadow: 0 0 15px rgba(37, 99, 235, 0.2);
+  }
+  .glow-cyan {
+    box-shadow: 0 0 15px rgba(6, 182, 212, 0.2);
+  }
+  .glow-emerald {
+    box-shadow: 0 0 15px rgba(16, 185, 129, 0.2);
+  }
+  .glow-red {
+    box-shadow: 0 0 15px rgba(239, 68, 68, 0.2);
+  }
+  
+  /* Glassmorphism utility */
+  .glass-card {
+    background: rgba(15, 23, 42, 0.6);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(59, 130, 246, 0.15);
+  }
+  
+  .glass-card-hover {
+    transition: all 0.3s ease;
+  }
+  .glass-card-hover:hover {
+    border-color: rgba(59, 130, 246, 0.3);
+    background: rgba(15, 23, 42, 0.75);
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.1);
+  }
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: #030712;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3b82f6;
+}
+
+/* Custom styling for inputs and select lists */
+select, input, textarea {
+  color-scheme: dark;
+}
+
