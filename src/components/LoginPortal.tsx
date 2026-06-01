@@ -116,10 +116,14 @@ export default function LoginPortal({
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-955 flex items-center justify-center p-4 z-[999] overflow-y-auto selection:bg-blue-600 selection:text-white" id="login-portal-root">
+    <div 
+      className="fixed inset-0 bg-slate-955 flex items-center justify-center p-4 z-[999] overflow-y-auto selection:bg-blue-600 selection:text-white bg-cover bg-center bg-no-repeat" 
+      style={{ backgroundImage: 'linear-gradient(to bottom, rgba(15, 23, 42, 0.8), rgba(9, 15, 30, 0.95)), url("/cavalry_bg.png")' }}
+      id="login-portal-root"
+    >
       
       {/* Background Matrix/Grid Overlay */}
-      <div className="absolute inset-0 bg-[linear-gradient(to_right,#0f172a_1px,transparent_1px),linear-gradient(to_bottom,#0f172a_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_50%,#000_70%,transparent_100%)] opacity-30 pointer-events-none"></div>
+      <div className="absolute inset-0 bg-[linear-gradient(to_right,#0f172a_1px,transparent_1px),linear-gradient(to_bottom,#0f172a_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_50%,#000_70%,transparent_100%)] opacity-20 pointer-events-none"></div>
 
       <motion.div 
         initial={{ opacity: 0, scale: 0.95, y: 15 }}
