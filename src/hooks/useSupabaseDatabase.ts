@@ -187,6 +187,97 @@ export function useSupabaseDatabase() {
     }
   };
 
+  // ---- RESTAURAR BANCO DE DADOS A PARTIR DE BACKUP JSON ----
+  const importarBackupDatabase = async (backupData: any) => {
+    try {
+      setIsLoading(true);
+
+      if (!backupData || typeof backupData !== 'object') {
+        throw new Error('Formato de backup inválido.');
+      }
+
+      // Validar chaves essenciais para evitar corromper o banco
+      const chavesObrigatorias = ['usuarios', 'categorias', 'materiais', 'cautelas', 'cautela_itens'];
+      for (const chave of chavesObrigatorias) {
+        if (!Array.isArray(backupData[chave])) {
+          throw new Error(`O backup está incompleto ou inválido: chave "${chave}" não encontrada.`);
+        }
+      }
+
+      // 1. Limpar todas as tabelas em ordem reversa de chaves estrangeiras
+      await supabase.from('cautela_itens').delete().neq('id_cautela_item', '');
+      await supabase.from('cautelas').delete().neq('id_cautela', '');
+      await supabase.from('materiais').delete().neq('id_material', '');
+      await supabase.from('categorias').delete().neq('id_categoria', '');
+      await supabase.from('ocorrencias').delete().neq('id_ocorrencia', '');
+      await supabase.from('auditoria_logs').delete().neq('id_log', '');
+      await supabase.from('usuarios').delete().neq('matricula', '');
+      await supabase.from('modelos_armas').delete().neq('modelo', '');
+
+      // 2. Inserir sequencialmente respeitando as chaves estrangeiras
+
+      // Estágio 1: Tabelas Base / Independentes
+      if (backupData.usuarios && backupData.usuarios.length > 0) {
+        const { error: errU } = await supabase.from('usuarios').insert(backupData.usuarios);
+        if (errU) throw new Error(`Erro ao importar usuarios: ${errU.message}`);
+      }
+
+      if (backupData.categorias && backupData.categorias.length > 0) {
+        const { error: errC } = await supabase.from('categorias').insert(backupData.categorias);
+        if (errC) throw new Error(`Erro ao importar categorias: ${errC.message}`);
+      }
+
+      if (backupData.modelos_armas && backupData.modelos_armas.length > 0) {
+        const { error: errModels } = await supabase.from('modelos_armas').insert(backupData.modelos_armas);
+        if (errModels) throw new Error(`Erro ao importar modelos_armas: ${errModels.message}`);
+      }
+
+      // Estágio 2: Materiais (Depende de Categorias)
+      if (backupData.materiais && backupData.materiais.length > 0) {
+        const { error: errM } = await supabase.from('materiais').insert(backupData.materiais);
+        if (errM) throw new Error(`Erro ao importar materiais: ${errM.message}`);
+      }
+
+      // Estágio 3: Cautelas, Logs, Ocorrências (Dependem de Usuários e/ou Materiais)
+      if (backupData.cautelas && backupData.cautelas.length > 0) {
+        const { error: errCaut } = await supabase.from('cautelas').insert(backupData.cautelas);
+        if (errCaut) throw new Error(`Erro ao importar cautelas: ${errCaut.message}`);
+      }
+
+      if (backupData.auditoria_logs && backupData.auditoria_logs.length > 0) {
+        const { error: errLogs } = await supabase.from('auditoria_logs').insert(backupData.auditoria_logs);
+        if (errLogs) throw new Error(`Erro ao importar auditoria_logs: ${errLogs.message}`);
+      }
+
+      if (backupData.ocorrencias && backupData.ocorrencias.length > 0) {
+        const { error: errOcos } = await supabase.from('ocorrencias').insert(backupData.ocorrencias);
+        if (errOcos) throw new Error(`Erro ao importar ocorrencias: ${errOcos.message}`);
+      }
+
+      // Estágio 4: Cautela Itens (Depende de Cautelas e Materiais)
+      if (backupData.cautela_itens && backupData.cautela_itens.length > 0) {
+        const { error: errItems } = await supabase.from('cautela_itens').insert(backupData.cautela_itens);
+        if (errItems) throw new Error(`Erro ao importar cautela_itens: ${errItems.message}`);
+      }
+
+      // Re-fetch clean data to synchronize local state
+      await fetchData();
+
+      registrarLogAuditoria(
+        '7317573',
+        'cadastro_militar',
+        `Restauração completa do banco de dados realizada com sucesso a partir de arquivo de backup JSON.`
+      );
+
+      return { success: true };
+    } catch (error: any) {
+      console.error('Erro ao importar backup no Supabase:', error);
+      alert('Erro ao restaurar backup remoto:\n' + error.message);
+      setIsLoading(false);
+      throw error;
+    }
+  };
+
   const adicionarCategoria = (novaCategoria: Categoria) => {
     setCategorias(prev => [...prev, novaCategoria]);
 
@@ -819,6 +910,7 @@ export function useSupabaseDatabase() {
     modelosArmas,
     adicionarModeloArma,
     resetDatabase,
+    importarBackupDatabase,
     registrarLogAuditoria,
     cadastrarSenha,
     cadastrarPolicial,

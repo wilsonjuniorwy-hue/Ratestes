@@ -8,16 +8,31 @@ import { Shield } from 'lucide-react';
 import { motion } from 'motion/react';
 import FlowSimulator from './components/FlowSimulator';
 import { useSupabaseDatabase } from './hooks/useSupabaseDatabase';
+import LoginPortal from './components/LoginPortal';
+import { Usuario } from './types';
 
 export default function App() {
   const db = useSupabaseDatabase();
-  const [activeArmeiroMatricula, setActiveArmeiroMatricula] = useState('128.450-2');
+  const [authenticatedArmeiro, setAuthenticatedArmeiro] = useState<Usuario | null>(null);
+  const [activeArmeiroMatricula, setActiveArmeiroMatricula] = useState('');
   
   // Encontrar o armeiro ativo atual no banco de dados
   const activeArmeiro = db.usuarios.find(u => u.matricula === activeArmeiroMatricula);
 
   return (
     <div className="min-h-screen bg-slate-955 text-slate-100 font-sans flex flex-col overflow-x-hidden selection:bg-blue-600 selection:text-white" id="app-root">
+      
+      {/* Tela de Login Tático Bloqueante */}
+      {!authenticatedArmeiro && !db.isLoading && (
+        <LoginPortal 
+          usuarios={db.usuarios}
+          onLoginSuccess={(user) => {
+            setAuthenticatedArmeiro(user);
+            setActiveArmeiroMatricula(user.matricula);
+          }}
+          cadastrarSenha={db.cadastrarSenha}
+        />
+      )}
       
       {/* Indicador de Conexão com Banco de Dados Cloud (Supabase) */}
       {db.isLoading && (
@@ -80,6 +95,19 @@ export default function App() {
             </div>
             <div className="w-2.5 h-2.5 rounded-full bg-cyan-500 shadow-[0_0_8px_rgba(6,182,212,0.6)] animate-pulse"></div>
           </div>
+          
+          {authenticatedArmeiro && (
+            <button
+              onClick={() => {
+                setAuthenticatedArmeiro(null);
+                setActiveArmeiroMatricula('');
+              }}
+              className="text-[10px] font-mono font-bold text-red-400 hover:text-red-300 hover:bg-red-950/20 px-3.5 py-2 border border-red-900/40 rounded-lg transition-all duration-200 cursor-pointer uppercase tracking-wider"
+              id="btn-logout-armeiro"
+            >
+              Bloquear / Sair
+            </button>
+          )}
           
           <div className="h-10 w-[1px] bg-slate-800 hidden sm:block"></div>
           

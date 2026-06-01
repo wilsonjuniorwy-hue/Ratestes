@@ -117,6 +117,16 @@ export const mockUsuarios: Usuario[] = [
     posto_graduacao: 'Sargento',
     situacao_cautela: 'apto',
     data_ultimo_teste_psicologico: '2026-05-31',
+  },
+  {
+    matricula: '7317573',
+    nome: 'Wagner Torres',
+    nome_de_guerra: 'Wagner Torres',
+    senha_hash: '123456',
+    perfil: 'armeiro_gestor',
+    posto_graduacao: '2º Sargento',
+    situacao_cautela: 'apto',
+    data_ultimo_teste_psicologico: '2026-05-31',
   }
 ];
 
