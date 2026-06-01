@@ -154,7 +154,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
           fetchTimeout = setTimeout(() => {
             console.log('SGBD Realtime: sincronizando dados em segundo plano...');
             fetchData();
-          }, 350); // Debounce de 350ms garante que todas as querys da transação terminaram
+          }, 800); // Debounce de 800ms garante que toda a sequência de inserts encadeados (cautelas → cautela_itens) terminou antes de re-buscar
         }
       )
       .subscribe();
@@ -722,6 +722,12 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
         supabase.from('cautela_itens').insert(novosItensCautela).then(({ error: errItens }) => {
           if (errItens) {
             console.error('Erro ao salvar itens da cautela no Supabase:', errItens);
+          } else {
+            // Safety re-fetch 2s after all writes complete to guarantee all clients are in sync
+            setTimeout(() => {
+              console.log('SGBD: Re-sincronização de segurança pós-cautela...');
+              fetchData();
+            }, 2000);
           }
         });
       }
