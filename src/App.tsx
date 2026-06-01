@@ -12,9 +12,14 @@ import LoginPortal from './components/LoginPortal';
 import { Usuario } from './types';
 
 export default function App() {
-  const [activeArmeiroMatricula, setActiveArmeiroMatricula] = useState('');
+  const [activeArmeiroMatricula, setActiveArmeiroMatricula] = useState<string>(() => {
+    return sessionStorage.getItem('activeArmeiroMatricula') || '';
+  });
   const db = useSupabaseDatabase(activeArmeiroMatricula);
-  const [authenticatedArmeiro, setAuthenticatedArmeiro] = useState<Usuario | null>(null);
+  const [authenticatedArmeiro, setAuthenticatedArmeiro] = useState<Usuario | null>(() => {
+    const saved = sessionStorage.getItem('authenticatedArmeiro');
+    return saved ? JSON.parse(saved) : null;
+  });
   
   // Encontrar o armeiro ativo atual no banco de dados
   const activeArmeiro = db.usuarios.find(u => u.matricula === activeArmeiroMatricula);
@@ -29,6 +34,8 @@ export default function App() {
           onLoginSuccess={(user) => {
             setAuthenticatedArmeiro(user);
             setActiveArmeiroMatricula(user.matricula);
+            sessionStorage.setItem('activeArmeiroMatricula', user.matricula);
+            sessionStorage.setItem('authenticatedArmeiro', JSON.stringify(user));
             db.registrarLogAuditoria(
               user.matricula,
               'login',
@@ -108,6 +115,8 @@ export default function App() {
               onClick={() => {
                 setAuthenticatedArmeiro(null);
                 setActiveArmeiroMatricula('');
+                sessionStorage.removeItem('activeArmeiroMatricula');
+                sessionStorage.removeItem('authenticatedArmeiro');
               }}
               className="text-[10px] font-mono font-bold text-red-400 hover:text-red-300 hover:bg-red-950/20 px-3.5 py-2 border border-red-900/40 rounded-lg transition-all duration-200 cursor-pointer uppercase tracking-wider"
               id="btn-logout-armeiro"

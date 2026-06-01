@@ -26,6 +26,8 @@ interface ArmeiroViewProps {
   handlePrintLogs: () => void;
   printLogDate: string;
   setPrintLogDate: (date: string) => void;
+  activeArmeiroMatricula?: string;
+  excluirCautelaTotal?: (idCautela: string) => Promise<{ success: boolean }>;
 }
 
 export function ArmeiroView({
@@ -39,7 +41,9 @@ export function ArmeiroView({
   handlePrintCautelas,
   handlePrintLogs,
   printLogDate,
-  setPrintLogDate
+  setPrintLogDate,
+  activeArmeiroMatricula,
+  excluirCautelaTotal
 }: ArmeiroViewProps) {
   // ---- FLUXO ARMEIRO: ESTADOS LOCAIS ----
   const [armeiroSubTab, setArmeiroSubTab] = useState<'dashboard' | 'cadastro_usuarios' | 'consulta_historico' | 'auditoria' | 'logs'>('dashboard');
@@ -128,6 +132,20 @@ export function ArmeiroView({
     setNewPosto('Soldado');
     setNewSituacao('apto');
     setCadastroUsuarioSuccess('Policial cadastrado com sucesso! Matrícula liberada para primeiro acesso no Totem.');
+  };
+
+  // ---- EXCLUIR CAUTELA CLIQUE (ADMIN) ----
+  const handleExcluirCautelaClick = async (idCautela: string) => {
+    if (!excluirCautelaTotal) return;
+    const userConfirm = window.confirm(`Deseja realmente excluir permanentemente a cautela ${idCautela}? As armas/HT vinculadas voltarão ao status 'disponível' e a quantidade de munição será reintegrada ao estoque.`);
+    if (userConfirm) {
+      try {
+        await excluirCautelaTotal(idCautela);
+        alert(`Guia de Cautela ${idCautela} foi completamente excluída do sistema.`);
+      } catch (err: any) {
+        alert('Erro ao excluir cautela: ' + err.message);
+      }
+    }
   };
 
   // ---- EFETIVAR DEVOLUÇÃO ----
@@ -283,6 +301,7 @@ export function ArmeiroView({
                       <th className="p-4">Itens Retirados</th>
                       <th className="p-4">Retirada / Limite</th>
                       <th className="p-4">Estado</th>
+                      {activeArmeiroMatricula === '7317573' && <th className="p-4">Ação</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-850/50 font-sans text-xs">
@@ -332,12 +351,22 @@ export function ArmeiroView({
                               )}
                             </div>
                           </td>
+                          {activeArmeiroMatricula === '7317573' && (
+                            <td className="p-4">
+                              <button
+                                onClick={() => handleExcluirCautelaClick(caut.id_cautela)}
+                                className="px-2.5 py-1.5 bg-slate-955 hover:bg-red-955/20 border border-slate-800 hover:border-red-900/50 text-[10px] font-mono text-slate-400 hover:text-red-450 rounded-lg transition-colors font-bold uppercase cursor-pointer"
+                              >
+                                Excluir
+                              </button>
+                            </td>
+                          )}
                         </tr>
                       );
                     })}
                     {cautelas.filter(c => c.status_cautela === 'ativa' || c.status_cautela === 'atrasada' || c.status_cautela === 'prorrogada').length === 0 && (
                       <tr>
-                        <td colSpan={5} className="p-8 text-center text-slate-505 font-mono text-xs leading-loose">
+                        <td colSpan={activeArmeiroMatricula === '7317573' ? 6 : 5} className="p-8 text-center text-slate-505 font-mono text-xs leading-loose">
                           Nenhuma cautela tática ativa no momento. Toda a carga bélica encontra-se resguardada no paiol físico.
                         </td>
                       </tr>
@@ -539,6 +568,7 @@ export function ArmeiroView({
                     <th className="p-4">Retirada / Armeiro</th>
                     <th className="p-4">Devolução / Armeiro</th>
                     <th className="p-4">Status</th>
+                    {activeArmeiroMatricula === '7317573' && <th className="p-4 no-print">Ação</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-850/50 font-sans text-xs">
@@ -625,6 +655,16 @@ export function ArmeiroView({
                               {c.status_cautela === 'devolvida' ? '● DEVOLVIDA' : c.status_cautela === 'atrasada' ? '⚠️ ATRASADA' : '● ATIVA'}
                             </span>
                           </td>
+                          {activeArmeiroMatricula === '7317573' && (
+                            <td className="p-4 align-top no-print">
+                              <button
+                                onClick={() => handleExcluirCautelaClick(c.id_cautela)}
+                                className="px-2.5 py-1.5 bg-slate-955 hover:bg-red-955/20 border border-slate-800 hover:border-red-900/50 text-[10px] font-mono text-slate-400 hover:text-red-450 rounded-lg transition-colors font-bold uppercase cursor-pointer"
+                              >
+                                Excluir
+                              </button>
+                            </td>
+                          )}
                         </tr>
                       );
                     })}
@@ -653,7 +693,7 @@ export function ArmeiroView({
                     return true;
                   }).length === 0 && (
                     <tr>
-                      <td colSpan={6} className="p-8 text-center text-slate-505 font-mono">
+                      <td colSpan={activeArmeiroMatricula === '7317573' ? 7 : 6} className="p-8 text-center text-slate-505 font-mono">
                         Nenhum registro de cautela encontrado para os filtros selecionados.
                       </td>
                     </tr>

@@ -311,6 +311,8 @@ export default function FlowSimulator({
             handlePrintLogs={handlePrintLogs}
             printLogDate={printLogDate}
             setPrintLogDate={setPrintLogDate}
+            activeArmeiroMatricula={activeArmeiroMatricula}
+            excluirCautelaTotal={db.excluirCautelaTotal}
           />
         </ErrorBoundary>
       )}
@@ -331,6 +333,9 @@ export default function FlowSimulator({
             confirmarRetirada={db.confirmarRetirada}
             modelosArmas={db.modelosArmas}
             adicionarModeloArma={db.adicionarModeloArma}
+            activeArmeiroMatricula={activeArmeiroMatricula}
+            excluirPolicialTotal={db.excluirPolicialTotal}
+            excluirMaterialTotal={db.excluirMaterialTotal}
           />
         </ErrorBoundary>
       )}

@@ -19,6 +19,9 @@ interface BancoDadosViewProps {
   confirmarRetirada: (id: string, destino: string, quantidade_retirada?: number) => void;
   modelosArmas: Array<{ modelo: string; calibre: string }>;
   adicionarModeloArma: (modelo: string, calibre: string) => void;
+  activeArmeiroMatricula?: string;
+  excluirPolicialTotal?: (matricula: string) => Promise<{ success: boolean }>;
+  excluirMaterialTotal?: (idMaterial: string) => Promise<{ success: boolean }>;
 }
 
 export function BancoDadosView({
@@ -34,7 +37,10 @@ export function BancoDadosView({
   updateMaterialStatus,
   confirmarRetirada,
   modelosArmas,
-  adicionarModeloArma
+  adicionarModeloArma,
+  activeArmeiroMatricula,
+  excluirPolicialTotal,
+  excluirMaterialTotal
 }: BancoDadosViewProps) {
   // --- ESTADOS DA ABA BANCO DE DADOS ---
   const [bancoDadosSubSection, setBancoDadosSubSection] = useState<'policiais' | 'estoque'>('policiais');
@@ -153,6 +159,54 @@ export function BancoDadosView({
     if (window.confirm(`Deseja realmente zerar a senha do militar ${user.posto_graduacao} ${user.nome}? Ele deverá cadastrar uma nova senha de 4 dígitos no próximo acesso ao Totem.`)) {
       zerarSenha(matricula);
       alert(`Senha do militar ${user.nome} redefinida com sucesso!`);
+    }
+  };
+
+  // ---- EXCLUIR POLICIAL CLIQUE (ADMIN) ----
+  const handleExcluirPolicialClick = async (matricula: string) => {
+    if (!excluirPolicialTotal) return;
+    const user = usuarios.find(u => u.matricula === matricula);
+    if (!user) return;
+
+    const hasActiveCautelas = cautelas.some(c => c.matricula_policial === matricula && c.status_cautela !== 'devolvida');
+
+    let confirmMsg = `Deseja realmente excluir permanentemente o militar ${user.posto_graduacao} ${user.nome} (${user.matricula}) e todo o seu histórico do banco de dados? Esta ação é irreversível.`;
+    if (hasActiveCautelas) {
+      confirmMsg = `⚠️ ALERTA CRÍTICO: O militar ${user.posto_graduacao} ${user.nome} possui cautelas ATIVAS com armamento/equipamento em campo! A exclusão irá forçar a devolução simbólica no estoque e remover os históricos. DESEJA REALMENTE CONTINUAR E APAGAR O MILITAR?`;
+    }
+
+    if (window.confirm(confirmMsg)) {
+      try {
+        await excluirPolicialTotal(matricula);
+        alert(`Militar ${user.nome} foi completamente excluído do sistema.`);
+      } catch (err: any) {
+        alert('Erro ao excluir policial: ' + err.message);
+      }
+    }
+  };
+
+  // ---- EXCLUIR MATERIAL CLIQUE (ADMIN) ----
+  const handleExcluirMaterialClick = async (idMaterial: string) => {
+    if (!excluirMaterialTotal) return;
+    const mat = materiais.find(m => m.id_material === idMaterial);
+    if (!mat) return;
+
+    const hasActiveCautelas = cautelas.some(c => c.status_cautela !== 'devolvida' && 
+      cautelaItens.some(ci => ci.id_cautela === c.id_cautela && ci.id_material === idMaterial && ci.estado_devolucao === undefined)
+    );
+
+    let confirmMsg = `Deseja realmente excluir permanentemente o material ${mat.modelo} (S/N: ${mat.id_material}) do estoque do paiol?`;
+    if (hasActiveCautelas) {
+      confirmMsg = `⚠️ ALERTA CRÍTICO: Este material está em uso (cautelado em campo)! A exclusão apagará o material e os vínculos nas cautelas ativas. DESEJA REALMENTE APAGAR O MATERIAL?`;
+    }
+
+    if (window.confirm(confirmMsg)) {
+      try {
+        await excluirMaterialTotal(idMaterial);
+        alert(`Material S/N: ${idMaterial} foi excluído do sistema.`);
+      } catch (err: any) {
+        alert('Erro ao excluir material: ' + err.message);
+      }
     }
   };
 
@@ -415,13 +469,24 @@ export function BancoDadosView({
                         </select>
                       </td>
                       <td className="p-4">
-                        <button
-                          onClick={() => handleZerarSenhaClick(user.matricula)}
-                          className="px-3 py-1.5 bg-slate-955 hover:bg-amber-955/20 border border-slate-800 hover:border-amber-900/50 text-[10px] font-mono text-slate-400 hover:text-amber-400 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer uppercase font-bold"
-                        >
-                          <KeyRound className="h-3.5 w-3.5" />
-                          <span>Zerar Senha</span>
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleZerarSenhaClick(user.matricula)}
+                            className="px-3 py-1.5 bg-slate-955 hover:bg-amber-955/20 border border-slate-800 hover:border-amber-900/50 text-[10px] font-mono text-slate-400 hover:text-amber-400 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer uppercase font-bold"
+                          >
+                            <KeyRound className="h-3.5 w-3.5" />
+                            <span>Zerar Senha</span>
+                          </button>
+                          
+                          {activeArmeiroMatricula === '7317573' && (
+                            <button
+                              onClick={() => handleExcluirPolicialClick(user.matricula)}
+                              className="px-3 py-1.5 bg-slate-955 hover:bg-red-955/20 border border-slate-800 hover:border-red-900/50 text-[10px] font-mono text-slate-400 hover:text-red-400 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer uppercase font-bold"
+                            >
+                              <span>Excluir</span>
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -871,33 +936,44 @@ export function BancoDadosView({
                               )}
                             </td>
                             <td className="p-4">
-                              {isQtyControlled ? (
-                                <button
-                                  onClick={() => handleIniciarRetirada(mat.id_material)}
-                                  disabled={qtyDisp === 0}
-                                  className={`px-3 py-1.5 rounded-lg text-[10px] font-mono transition-all duration-150 flex items-center justify-center font-bold uppercase cursor-pointer ${
-                                    qtyDisp === 0
-                                      ? 'bg-slate-955 border border-slate-850 text-slate-655 cursor-not-allowed opacity-40'
-                                      : 'bg-red-955/30 border border-red-900/30 hover:border-red-800/80 text-red-400 hover:text-red-300'
-                                  }`}
-                                >
-                                  Retirar
-                                </button>
-                              ) : !isRetirado ? (
-                                <button
-                                  onClick={() => handleIniciarRetirada(mat.id_material)}
-                                  disabled={isCautelado}
-                                  className={`px-3 py-1.5 rounded-lg text-[10px] font-mono transition-all duration-150 flex items-center justify-center font-bold uppercase cursor-pointer ${
-                                    isCautelado
-                                      ? 'bg-slate-950 border border-slate-850 text-slate-650 cursor-not-allowed opacity-40'
-                                      : 'bg-red-955/30 border border-red-900/30 hover:border-red-800/80 text-red-400 hover:text-red-300'
-                                  }`}
-                                >
-                                  Retirar
-                                </button>
-                              ) : (
-                                <span className="text-[9px] font-mono text-slate-500 italic font-bold">Item Fora</span>
-                              )}
+                               <div className="flex items-center gap-2">
+                                 {isQtyControlled ? (
+                                   <button
+                                     onClick={() => handleIniciarRetirada(mat.id_material)}
+                                     disabled={qtyDisp === 0}
+                                     className={`px-3 py-1.5 rounded-lg text-[10px] font-mono transition-all duration-150 flex items-center justify-center font-bold uppercase cursor-pointer ${
+                                       qtyDisp === 0
+                                         ? 'bg-slate-955 border border-slate-850 text-slate-655 cursor-not-allowed opacity-40'
+                                         : 'bg-red-955/30 border border-red-900/30 hover:border-red-800/80 text-red-400 hover:text-red-300'
+                                     }`}
+                                   >
+                                     Retirar
+                                   </button>
+                                 ) : !isRetirado ? (
+                                   <button
+                                     onClick={() => handleIniciarRetirada(mat.id_material)}
+                                     disabled={isCautelado}
+                                     className={`px-3 py-1.5 rounded-lg text-[10px] font-mono transition-all duration-150 flex items-center justify-center font-bold uppercase cursor-pointer ${
+                                       isCautelado
+                                         ? 'bg-slate-950 border border-slate-850 text-slate-650 cursor-not-allowed opacity-40'
+                                         : 'bg-red-955/30 border border-red-900/30 hover:border-red-800/80 text-red-400 hover:text-red-300'
+                                     }`}
+                                   >
+                                     Retirar
+                                   </button>
+                                 ) : (
+                                   <span className="text-[9px] font-mono text-slate-500 italic font-bold">Item Fora</span>
+                                 )}
+
+                                 {activeArmeiroMatricula === '7317573' && (
+                                   <button
+                                     onClick={() => handleExcluirMaterialClick(mat.id_material)}
+                                     className="px-3 py-1.5 bg-slate-955 hover:bg-red-955/20 border border-slate-800 hover:border-red-900/50 text-[10px] font-mono text-slate-400 hover:text-red-400 rounded-lg transition-colors flex items-center justify-center font-bold uppercase cursor-pointer"
+                                   >
+                                     Excluir
+                                   </button>
+                                 )}
+                               </div>
                             </td>
                           </tr>
                         );

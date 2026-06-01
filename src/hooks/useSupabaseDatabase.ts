@@ -1045,6 +1045,253 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
     }
   };
 
+
+  // ---- EXCLUIR POLICIAL TOTAL EM CASCATA (ADMIN) ----
+  const excluirPolicialTotal = async (matricula: string) => {
+    try {
+      const armeiroSvc = activeArmeiroMatricula || usuarios.find(u => u.perfil === 'armeiro_gestor')?.matricula || 'SYS-AM';
+
+      // 1. Obter todas as cautelas deste policial
+      const cautelasPolicial = cautelas.filter(c => c.matricula_policial === matricula);
+      const idsCautelas = cautelasPolicial.map(c => c.id_cautela);
+
+      // Se houver cautelas, deletar itens e depois as cautelas
+      if (idsCautelas.length > 0) {
+        // Deletar cautela_itens
+        const { error: errItens } = await supabase
+          .from('cautela_itens')
+          .delete()
+          .in('id_cautela', idsCautelas);
+        if (errItens) throw errItens;
+
+        // Deletar as cautelas
+        const { error: errCautelas } = await supabase
+          .from('cautelas')
+          .delete()
+          .in('id_cautela', idsCautelas);
+        if (errCautelas) throw errCautelas;
+      }
+
+      // 2. Deletar logs de auditoria executados por ele (se houver)
+      const { error: errLogs } = await supabase
+        .from('auditoria_logs')
+        .delete()
+        .eq('matricula_executor', matricula);
+      if (errLogs) {
+        console.warn('Aviso ao remover logs de auditoria:', errLogs);
+      }
+
+      // 3. Deletar o usuário de usuários
+      const { error: errUser } = await supabase
+        .from('usuarios')
+        .delete()
+        .eq('matricula', matricula);
+      if (errUser) throw errUser;
+
+      // 4. Se havia materiais que estavam com status 'cautelado' em cautelas ativas que foram deletadas,
+      // devemos marcá-los como 'disponivel'.
+      const activeCautelasIds = cautelasPolicial
+        .filter(c => c.status_cautela !== 'devolvida')
+        .map(c => c.id_cautela);
+      
+      const itemsInActiveCautelas = cautelaItens.filter(ci => activeCautelasIds.includes(ci.id_cautela));
+      const materialIdsToRelease = itemsInActiveCautelas.map(ci => ci.id_material);
+
+      if (materialIdsToRelease.length > 0) {
+        const individualMats = materiais.filter(m => materialIdsToRelease.includes(m.id_material) && !m.controle_quantidade);
+        const qtyMats = materiais.filter(m => materialIdsToRelease.includes(m.id_material) && m.controle_quantidade);
+
+        if (individualMats.length > 0) {
+          const { error: errMats } = await supabase
+            .from('materiais')
+            .update({ status_atual: 'disponivel' })
+            .in('id_material', individualMats.map(m => m.id_material));
+          if (errMats) console.error('Erro ao retornar materiais individuais ao estoque:', errMats);
+        }
+
+        for (const mat of qtyMats) {
+          const qtyToReturn = itemsInActiveCautelas
+            .filter(ci => ci.id_material === mat.id_material)
+            .reduce((sum, ci) => sum + ci.quantidade, 0);
+          
+          const newQty = (mat.quantidade || 0) + qtyToReturn;
+          const { error: errQty } = await supabase
+            .from('materiais')
+            .update({ quantidade: newQty })
+            .eq('id_material', mat.id_material);
+          if (errQty) console.error(`Erro ao retornar quantidade de ${mat.id_material}:`, errQty);
+        }
+      }
+
+      // 5. Atualizar os estados locais
+      setUsuarios(prev => prev.filter(u => u.matricula !== matricula));
+      setCautelas(prev => prev.filter(c => c.matricula_policial !== matricula));
+      setCautelaItens(prev => prev.filter(ci => !idsCautelas.includes(ci.id_cautela)));
+      if (materialIdsToRelease.length > 0) {
+        setMateriais(prev => prev.map(m => {
+          if (materialIdsToRelease.includes(m.id_material)) {
+            if (!m.controle_quantidade) {
+              return { ...m, status_atual: 'disponivel' };
+            } else {
+              const qtyToReturn = itemsInActiveCautelas
+                .filter(ci => ci.id_material === m.id_material)
+                .reduce((sum, ci) => sum + ci.quantidade, 0);
+              return { ...m, quantidade: (m.quantidade || 0) + qtyToReturn };
+            }
+          }
+          return m;
+        }));
+      }
+
+      registrarLogAuditoria(
+        armeiroSvc,
+        'cadastro_militar',
+        `EXCLUSÃO TOTAL (ADMIN): Policial matrícula ${matricula} e todos os seus históricos/cautelas foram removidos permanentemente por intervenção do administrador.`
+      );
+
+      return { success: true };
+    } catch (error: any) {
+      console.error('Erro na exclusão total do policial:', error);
+      throw error;
+    }
+  };
+
+  // ---- EXCLUIR MATERIAL TOTAL EM CASCATA (ADMIN) ----
+  const excluirMaterialTotal = async (idMaterial: string) => {
+    try {
+      const armeiroSvc = activeArmeiroMatricula || usuarios.find(u => u.perfil === 'armeiro_gestor')?.matricula || 'SYS-AM';
+
+      // 1. Deletar do Supabase: cautela_itens
+      const { error: errItens } = await supabase
+        .from('cautela_itens')
+        .delete()
+        .eq('id_material', idMaterial);
+      if (errItens) throw errItens;
+
+      // 2. Deletar do Supabase: materiais
+      const { error: errMaterial } = await supabase
+        .from('materiais')
+        .delete()
+        .eq('id_material', idMaterial);
+      if (errMaterial) throw errMaterial;
+
+      // 3. Atualizar estados locais
+      setMateriais(prev => prev.filter(m => m.id_material !== idMaterial));
+      setCautelaItens(prev => prev.filter(ci => ci.id_material !== idMaterial));
+
+      registrarLogAuditoria(
+        armeiroSvc,
+        'envio_manutencao',
+        `EXCLUSÃO TOTAL (ADMIN): Material S/N: ${idMaterial} foi removido permanentemente da carga e estoque do paiol pelo administrador.`
+      );
+
+      return { success: true };
+    } catch (error: any) {
+      console.error('Erro ao excluir material do estoque:', error);
+      throw error;
+    }
+  };
+
+  // ---- EXCLUIR CAUTELA TOTAL EM CASCATA (ADMIN) ----
+  const excluirCautelaTotal = async (idCautela: string) => {
+    try {
+      const armeiroSvc = activeArmeiroMatricula || usuarios.find(u => u.perfil === 'armeiro_gestor')?.matricula || 'SYS-AM';
+      
+      const cautelaObj = cautelas.find(c => c.id_cautela === idCautela);
+      if (!cautelaObj) throw new Error('Cautela não encontrada localmente.');
+
+      const itensDaCautela = cautelaItens.filter(ci => ci.id_cautela === idCautela);
+      const isAtiva = cautelaObj.status_cautela !== 'devolvida';
+
+      // 1. Restaurar o inventário dos materiais associados se a cautela ainda estava ativa
+      if (isAtiva && itensDaCautela.length > 0) {
+        for (const item of itensDaCautela) {
+          const mat = materiais.find(m => m.id_material === item.id_material);
+          if (mat) {
+            if (!mat.controle_quantidade) {
+              const { error: errMat } = await supabase
+                .from('materiais')
+                .update({ status_atual: 'disponivel' })
+                .eq('id_material', item.id_material);
+              if (errMat) console.error(`Erro ao restaurar status do material ${item.id_material}:`, errMat);
+            } else {
+              const newQty = (mat.quantidade || 0) + item.quantidade;
+              const { error: errQty } = await supabase
+                .from('materiais')
+                .update({ quantidade: newQty })
+                .eq('id_material', item.id_material);
+              if (errQty) console.error(`Erro ao reintegrar quantidade de munição ${item.id_material}:`, errQty);
+            }
+          }
+        }
+      }
+
+      // 2. Deletar do Supabase: cautela_itens
+      const { error: errItens } = await supabase
+        .from('cautela_itens')
+        .delete()
+        .eq('id_cautela', idCautela);
+      if (errItens) throw errItens;
+
+      // 3. Deletar do Supabase: cautelas
+      const { error: errCautela } = await supabase
+        .from('cautelas')
+        .delete()
+        .eq('id_cautela', idCautela);
+      if (errCautela) throw errCautela;
+
+      // 4. Se o militar ficar sem nenhuma outra cautela ativa, garantir que sua situação não seja 'pendente_devolucao'
+      const matriculaPolicial = cautelaObj.matricula_policial;
+      const outrasCautelasAtivas = cautelas.filter(c => c.matricula_policial === matriculaPolicial && c.id_cautela !== idCautela && c.status_cautela !== 'devolvida');
+      if (outrasCautelasAtivas.length === 0) {
+        const polObj = usuarios.find(u => u.matricula === matriculaPolicial);
+        if (polObj && polObj.situacao_cautela === 'pendente_devolucao') {
+          const { error: errUser } = await supabase
+            .from('usuarios')
+            .update({ situacao_cautela: 'apto' })
+            .eq('matricula', matriculaPolicial);
+          if (errUser) console.error(`Erro ao reabilitar policial ${matriculaPolicial}:`, errUser);
+        }
+      }
+
+      // 5. Atualizar estados locais
+      setCautelas(prev => prev.filter(c => c.id_cautela !== idCautela));
+      setCautelaItens(prev => prev.filter(ci => ci.id_cautela !== idCautela));
+      if (isAtiva && itensDaCautela.length > 0) {
+        setMateriais(prev => prev.map(m => {
+          const item = itensDaCautela.find(ci => ci.id_material === m.id_material);
+          if (item) {
+            if (!m.controle_quantidade) {
+              return { ...m, status_atual: 'disponivel' };
+            } else {
+              return { ...m, quantidade: (m.quantidade || 0) + item.quantidade };
+            }
+          }
+          return m;
+        }));
+      }
+      if (outrasCautelasAtivas.length === 0) {
+        setUsuarios(prev => prev.map(u => {
+          if (u.matricula === matriculaPolicial && u.situacao_cautela === 'pendente_devolucao') {
+            return { ...u, situacao_cautela: 'apto' };
+          }
+          return u;
+        }));
+      }
+
+      registrarLogAuditoria(
+        armeiroSvc,
+        'registro_devolucao',
+        `EXCLUSÃO TOTAL (ADMIN): Registro da guia de cautela ${idCautela} foi apagado do banco de dados pelo administrador. Estoque revertido.`
+      );
+
+      return { success: true };
+    } catch (error: any) {
+      console.error('Erro ao excluir cautela:', error);
+      throw error;
+    }
+  };
+
   return {
     usuarios,
     setUsuarios,
@@ -1069,6 +1316,9 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
     cadastrarPolicial,
     editarPolicial,
     excluirUsuario,
+    excluirPolicialTotal,
+    excluirMaterialTotal,
+    excluirCautelaTotal,
     salvarOcorrencia,
     zerarSenha,
     updatePorte,
