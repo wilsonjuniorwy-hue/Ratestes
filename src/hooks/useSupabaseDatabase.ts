@@ -713,20 +713,27 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
     setCautelaItens(prev => [...prev, ...novosItensCautela]);
     setMateriais(materiaisAtualizados);
 
-    // Sync to Supabase
-    supabase.from('cautelas').insert(novaCautela).then(({ error }) => {
-      if (error) console.error('Erro ao salvar nova cautela:', error);
-    });
-
-    supabase.from('cautela_itens').insert(novosItensCautela).then(({ error }) => {
-      if (error) console.error('Erro ao salvar itens da cautela:', error);
+    // Sync to Supabase - SEQUENTIALLY to avoid Foreign Key Violations!
+    supabase.from('cautelas').insert(novaCautela).then(({ error: errCautela }) => {
+      if (errCautela) {
+        console.error('Erro ao salvar nova cautela no Supabase:', errCautela);
+      } else {
+        // Insert items only after the parent caution record is successfully saved
+        supabase.from('cautela_itens').insert(novosItensCautela).then(({ error: errItens }) => {
+          if (errItens) {
+            console.error('Erro ao salvar itens da cautela no Supabase:', errItens);
+          }
+        });
+      }
     });
 
     // Update material statuses
     const individualMats = cartItens.filter(id => !materiais.find(m => m.id_material === id)?.controle_quantidade);
     if (individualMats.length > 0) {
-      supabase.from('materiais').update({ status_atual: 'cautelado' }).in('id_material', individualMats).then(({ error }) => {
-        if (error) console.error('Erro ao atualizar status dos materiais da cautela:', error);
+      supabase.from('materiais').update({ status_atual: 'cautelado' }).in('id_material', individualMats).then(({ error: errMats }) => {
+        if (errMats) {
+          console.error('Erro ao atualizar status dos materiais da cautela no Supabase:', errMats);
+        }
       });
     }
 
