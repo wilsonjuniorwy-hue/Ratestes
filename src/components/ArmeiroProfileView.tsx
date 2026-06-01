@@ -9,7 +9,9 @@ interface ArmeiroProfileViewProps {
   activeArmeiroMatricula: string;
   setActiveArmeiroMatricula: (matricula: string) => void;
   alterarSenhaArmeiro: (matricula: string, novaSenha: string) => void;
-  cadastrarPolicial: (novoPolicial: Usuario) => void; // Reuses cadastrarPolicial since it adds to db.usuarios
+  cadastrarPolicial: (novoPolicial: Usuario) => void;
+  editarPolicial: (matricula: string, dadosAtualizados: Partial<Usuario>) => Promise<{ success: boolean }>;
+  excluirUsuario: (matricula: string) => Promise<{ success: boolean }>;
 }
 
 export function ArmeiroProfileView({
@@ -17,7 +19,9 @@ export function ArmeiroProfileView({
   activeArmeiroMatricula,
   setActiveArmeiroMatricula,
   alterarSenhaArmeiro,
-  cadastrarPolicial
+  cadastrarPolicial,
+  editarPolicial,
+  excluirUsuario
 }: ArmeiroProfileViewProps) {
   // Filtrar todos os usuários com perfil de armeiro
   const armorersList = usuarios.filter(u => u.perfil === 'armeiro_gestor');
@@ -39,6 +43,75 @@ export function ArmeiroProfileView({
   const [newSenha, setNewSenha] = useState('');
   const [regError, setRegError] = useState('');
   const [regSuccess, setRegSuccess] = useState('');
+
+  // Estados locais para gerenciamento de armeiros (Admin)
+  const [editingMatricula, setEditingMatricula] = useState<string | null>(null);
+  const [editNome, setEditNome] = useState('');
+  const [editNomeDeGuerra, setEditNomeDeGuerra] = useState('');
+  const [editPosto, setEditPosto] = useState('Sargento');
+  
+  const [actionError, setActionError] = useState('');
+  const [actionSuccess, setActionSuccess] = useState('');
+
+  const startEditing = (u: Usuario) => {
+    setEditingMatricula(u.matricula);
+    setEditNome(u.nome);
+    setEditNomeDeGuerra(u.nome_de_guerra || '');
+    setEditPosto(u.posto_graduacao);
+    setActionError('');
+    setActionSuccess('');
+  };
+
+  const cancelEditing = () => {
+    setEditingMatricula(null);
+    setActionError('');
+  };
+
+  const handleSaveEdit = async (matricula: string) => {
+    setActionError('');
+    setActionSuccess('');
+    
+    const nomeNorm = editNome.trim();
+    const guerraNorm = editNomeDeGuerra.trim();
+    
+    if (!nomeNorm || !guerraNorm) {
+      setActionError('Nome e Nome de Guerra são obrigatórios.');
+      return;
+    }
+
+    try {
+      await editarPolicial(matricula, {
+        nome: nomeNorm,
+        nome_de_guerra: guerraNorm,
+        posto_graduacao: editPosto
+      });
+      setEditingMatricula(null);
+      setActionSuccess(`Perfil do armeiro (Matrícula: ${matricula}) atualizado com sucesso!`);
+    } catch (err: any) {
+      setActionError(err.message || 'Erro ao atualizar dados do armeiro.');
+    }
+  };
+
+  const handleDeleteUser = async (matricula: string, nomeGuerra: string) => {
+    setActionError('');
+    setActionSuccess('');
+
+    if (matricula === '7317573') {
+      setActionError('Erro de segurança: O administrador principal não pode excluir a própria conta.');
+      return;
+    }
+
+    if (!window.confirm(`Tem certeza de que deseja apagar permanentemente o perfil do armeiro ${nomeGuerra} (Matrícula: ${matricula})? Esta ação é irreversível.`)) {
+      return;
+    }
+
+    try {
+      await excluirUsuario(matricula);
+      setActionSuccess(`Perfil do armeiro ${nomeGuerra} foi excluído do sistema.`);
+    } catch (err: any) {
+      setActionError(err.message || 'Erro ao excluir perfil do armeiro.');
+    }
+  };
 
   // Trocar senha submit
   const handleAlterarSenha = (e: React.FormEvent) => {
@@ -340,6 +413,146 @@ export function ArmeiroProfileView({
         </div>
 
       </div>
+
+      {/* Seção de Gestão de Armeiros - Apenas para o Admin SGT Wagner Torres */}
+      {activeArmeiroMatricula === '7317573' && (
+        <div className="bg-slate-900/60 backdrop-blur-md border border-slate-800/80 rounded-xl p-5 shadow-lg space-y-4">
+          <div className="border-b border-slate-850 pb-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Shield className="h-4.5 w-4.5 text-cyan-400" />
+              <h3 className="text-xs font-bold font-mono text-slate-200 uppercase tracking-widest">Painel Administrativo: Operadores do Paiol (Armeiros)</h3>
+            </div>
+            <span className="text-[9px] font-mono text-slate-500">Total: {armorersList.length} cadastrados</span>
+          </div>
+
+          {actionError && (
+            <div className="bg-red-955/30 border border-red-900/40 p-3 rounded-lg text-xs font-mono text-red-400 flex items-start gap-2 animate-pulse">
+              <ShieldAlert className="h-4 w-4 shrink-0 text-red-500 mt-0.5" />
+              <span>{actionError}</span>
+            </div>
+          )}
+
+          {actionSuccess && (
+            <div className="bg-emerald-950/30 border border-emerald-900/40 p-3 rounded-lg text-xs font-mono text-emerald-450 flex items-start gap-2">
+              <CheckCircle className="h-4 w-4 shrink-0 text-emerald-500 mt-0.5" />
+              <span>{actionSuccess}</span>
+            </div>
+          )}
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-xs font-sans">
+              <thead>
+                <tr className="border-b border-slate-850 text-slate-400 font-mono uppercase tracking-wider text-[10px]">
+                  <th className="py-3 px-4">Posto / Graduação</th>
+                  <th className="py-3 px-4">Nome Completo</th>
+                  <th className="py-3 px-4">Nome de Guerra</th>
+                  <th className="py-3 px-4">Matrícula (RG)</th>
+                  <th className="py-3 px-4 text-right">Ações</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-850/50">
+                {armorersList.map(u => {
+                  const isEditing = editingMatricula === u.matricula;
+                  return (
+                    <tr key={u.matricula} className="hover:bg-slate-900/30 transition-colors">
+                      {/* Posto / Graduação */}
+                      <td className="py-3 px-4">
+                        {isEditing ? (
+                          <select
+                            value={editPosto}
+                            onChange={(e) => setEditPosto(e.target.value)}
+                            className="bg-slate-950 border border-slate-800 p-1.5 rounded text-xs text-slate-205 focus:outline-none cursor-pointer"
+                          >
+                            {['Soldado', 'Cabo', 'Sargento', 'Subtenente', 'Tenente', 'Capitão', 'Major', 'Tenente-Coronel', 'Coronel'].map(p => (
+                              <option key={p} value={p}>{p}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span className="font-bold text-slate-350">{u.posto_graduacao}</span>
+                        )}
+                      </td>
+
+                      {/* Nome Completo */}
+                      <td className="py-3 px-4">
+                        {isEditing ? (
+                          <input
+                            type="text"
+                            value={editNome}
+                            onChange={(e) => setEditNome(e.target.value)}
+                            className="bg-slate-950 border border-slate-800 p-1.5 rounded text-xs text-slate-205 focus:outline-none w-full"
+                          />
+                        ) : (
+                          <span className="text-slate-300 uppercase">{u.nome}</span>
+                        )}
+                      </td>
+
+                      {/* Nome de Guerra */}
+                      <td className="py-3 px-4">
+                        {isEditing ? (
+                          <input
+                            type="text"
+                            value={editNomeDeGuerra}
+                            onChange={(e) => setEditNomeDeGuerra(e.target.value)}
+                            className="bg-slate-950 border border-slate-800 p-1.5 rounded text-xs text-slate-205 focus:outline-none w-full"
+                          />
+                        ) : (
+                          <span className="font-mono text-cyan-400 font-bold uppercase">{u.nome_de_guerra || 'N/A'}</span>
+                        )}
+                      </td>
+
+                      {/* Matrícula (RG) */}
+                      <td className="py-3 px-4 font-mono text-slate-400 uppercase text-[11px]">
+                        {u.matricula}
+                      </td>
+
+                      {/* Ações */}
+                      <td className="py-3 px-4 text-right">
+                        {isEditing ? (
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => handleSaveEdit(u.matricula)}
+                              className="bg-emerald-600 hover:bg-emerald-500 text-white font-mono font-bold px-2.5 py-1 rounded text-[10px] uppercase tracking-wider cursor-pointer transition-colors"
+                            >
+                              Salvar
+                            </button>
+                            <button
+                              onClick={cancelEditing}
+                              className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-mono font-bold px-2.5 py-1 rounded text-[10px] uppercase tracking-wider cursor-pointer transition-colors"
+                            >
+                              Cancelar
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-end gap-3.5">
+                            <button
+                              onClick={() => startEditing(u)}
+                              className="text-cyan-400 hover:text-cyan-300 font-mono font-bold text-[10px] uppercase tracking-wider cursor-pointer"
+                            >
+                              Editar
+                            </button>
+                            {u.matricula !== '7317573' ? (
+                              <button
+                                onClick={() => handleDeleteUser(u.matricula, u.nome_de_guerra || u.nome)}
+                                className="text-red-400 hover:text-red-300 font-mono font-bold text-[10px] uppercase tracking-wider cursor-pointer"
+                              >
+                                Apagar
+                              </button>
+                            ) : (
+                              <span className="text-slate-600 font-mono text-[10px] uppercase cursor-not-allowed select-none" title="Administrador principal">
+                                Bloqueado
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
     </div>
   );

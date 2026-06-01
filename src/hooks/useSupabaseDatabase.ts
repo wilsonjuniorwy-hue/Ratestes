@@ -330,6 +330,63 @@ export function useSupabaseDatabase() {
     );
   };
 
+  // ---- EDITAR PERFIL DE USUÁRIO (POLICIAL OU ARMEIRO) ----
+  const editarPolicial = async (matricula: string, dadosAtualizados: Partial<Usuario>) => {
+    try {
+      const { error } = await supabase
+        .from('usuarios')
+        .update(dadosAtualizados)
+        .eq('matricula', matricula);
+
+      if (error) throw error;
+
+      setUsuarios(prev => prev.map(u => u.matricula === matricula ? { ...u, ...dadosAtualizados } : u));
+
+      const armeiroSvc = usuarios.find(u => u.perfil === 'armeiro_gestor')?.matricula || 'SYS-AM';
+      registrarLogAuditoria(
+        armeiroSvc,
+        'cadastro_militar',
+        `Perfil do usuário matricula ${matricula} atualizado: ${Object.keys(dadosAtualizados).join(', ')}`
+      );
+
+      return { success: true };
+    } catch (error: any) {
+      console.error('Erro ao editar policial no Supabase:', error);
+      throw error;
+    }
+  };
+
+  // ---- EXCLUIR PERFIL DE USUÁRIO ----
+  const excluirUsuario = async (matricula: string) => {
+    try {
+      const { error } = await supabase
+        .from('usuarios')
+        .delete()
+        .eq('matricula', matricula);
+
+      if (error) {
+        if (error.code === '23503') {
+          throw new Error('Este usuário possui históricos de cautelas, ocorrências ou auditorias registradas e não pode ser excluído fisicamente para manter a integridade dos dados bélicos.');
+        }
+        throw error;
+      }
+
+      setUsuarios(prev => prev.filter(u => u.matricula !== matricula));
+
+      const armeiroSvc = usuarios.find(u => u.perfil === 'armeiro_gestor')?.matricula || 'SYS-AM';
+      registrarLogAuditoria(
+        armeiroSvc,
+        'cadastro_militar',
+        `Usuário com matrícula ${matricula} foi excluído permanentemente do sistema.`
+      );
+
+      return { success: true };
+    } catch (error: any) {
+      console.error('Erro ao excluir usuário no Supabase:', error);
+      throw error;
+    }
+  };
+
   // ---- SALVAR REGISTRO NO LIVRO DE OCORRÊNCIAS ----
   const salvarOcorrencia = (
     titulo: string, 
@@ -914,6 +971,8 @@ export function useSupabaseDatabase() {
     registrarLogAuditoria,
     cadastrarSenha,
     cadastrarPolicial,
+    editarPolicial,
+    excluirUsuario,
     salvarOcorrencia,
     zerarSenha,
     updatePorte,

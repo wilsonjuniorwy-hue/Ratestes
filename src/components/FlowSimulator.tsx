@@ -345,6 +345,8 @@ export default function FlowSimulator({
             setActiveArmeiroMatricula={setActiveArmeiroMatricula}
             alterarSenhaArmeiro={db.alterarSenhaArmeiro}
             cadastrarPolicial={db.cadastrarPolicial}
+            editarPolicial={db.editarPolicial}
+            excluirUsuario={db.excluirUsuario}
           />
         </ErrorBoundary>
       )}
