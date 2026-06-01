@@ -899,7 +899,14 @@ export function ArmeiroView({
                   </div>
                   <div className="flex-1 space-y-1 text-[11px]">
                     <p className="text-slate-350">{log.detalhes}</p>
-                    <p className="text-[9px] text-slate-505">Executor: <span className="text-blue-400 font-bold">{log.matricula_executor}</span> | ID Transação: {log.id_log}</p>
+                    <p className="text-[9px] text-slate-505">
+                      Executor: <span className="text-blue-400 font-bold">
+                        {(() => {
+                          const exec = usuarios.find(u => u.matricula === log.matricula_executor);
+                          return exec ? `${exec.posto_graduacao} ${exec.nome_de_guerra || exec.nome} (${log.matricula_executor})` : log.matricula_executor;
+                        })()}
+                      </span> | ID Transação: {log.id_log}
+                    </p>
                   </div>
                 </div>
               ))}

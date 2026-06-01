@@ -22,7 +22,7 @@ const defaultModelosArmas = [
   { modelo: 'Espingarda Calibre 12', calibre: '12' }
 ];
 
-export function useSupabaseDatabase() {
+export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [materiais, setMateriais] = useState<Material[]>([]);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
@@ -285,7 +285,7 @@ export function useSupabaseDatabase() {
       if (error) console.error('Erro ao sincronizar categorias:', error);
     });
 
-    const armeiroSvc = usuarios.find(u => u.perfil === 'armeiro_gestor')?.matricula || 'SYS-AM';
+    const armeiroSvc = activeArmeiroMatricula || usuarios.find(u => u.perfil === 'armeiro_gestor')?.matricula || 'SYS-AM';
     registrarLogAuditoria(
       armeiroSvc,
       'cadastro_militar',
@@ -324,7 +324,7 @@ export function useSupabaseDatabase() {
     });
 
     registrarLogAuditoria(
-      'SYS-AM',
+      activeArmeiroMatricula || 'SYS-AM',
       'cadastro_militar',
       `Novo policial militar cadastrado: ${novoPolicial.posto_graduacao} ${novoPolicial.nome} (Guerra: ${novoPolicial.nome_de_guerra || 'N/A'}, Matrícula: ${novoPolicial.matricula}, Porte: ${novoPolicial.situacao_cautela.toUpperCase()}).`
     );
@@ -342,7 +342,7 @@ export function useSupabaseDatabase() {
 
       setUsuarios(prev => prev.map(u => u.matricula === matricula ? { ...u, ...dadosAtualizados } : u));
 
-      const armeiroSvc = usuarios.find(u => u.perfil === 'armeiro_gestor')?.matricula || 'SYS-AM';
+      const armeiroSvc = activeArmeiroMatricula || usuarios.find(u => u.perfil === 'armeiro_gestor')?.matricula || 'SYS-AM';
       registrarLogAuditoria(
         armeiroSvc,
         'cadastro_militar',
@@ -373,7 +373,7 @@ export function useSupabaseDatabase() {
 
       setUsuarios(prev => prev.filter(u => u.matricula !== matricula));
 
-      const armeiroSvc = usuarios.find(u => u.perfil === 'armeiro_gestor')?.matricula || 'SYS-AM';
+      const armeiroSvc = activeArmeiroMatricula || usuarios.find(u => u.perfil === 'armeiro_gestor')?.matricula || 'SYS-AM';
       registrarLogAuditoria(
         armeiroSvc,
         'cadastro_militar',
@@ -393,7 +393,7 @@ export function useSupabaseDatabase() {
     tipo: 'troca_turno' | 'avaria_material' | 'fiscalizacao' | 'outros' | 'conferencia_estoque', 
     descricao: string
   ) => {
-    const armeiroSvc = usuarios.find(u => u.perfil === 'armeiro_gestor')?.matricula || 'SYS-AM';
+    const armeiroSvc = activeArmeiroMatricula || usuarios.find(u => u.perfil === 'armeiro_gestor')?.matricula || 'SYS-AM';
 
     const novaOco: OcorrenciaRelatorio = {
       id_ocorrencia: `OCO-${Math.floor(100000 + Math.random() * 900000)}`,
@@ -435,7 +435,7 @@ export function useSupabaseDatabase() {
       if (error) console.error('Erro ao zerar senha:', error);
     });
 
-    const armeiroSvc = usuarios.find(u => u.perfil === 'armeiro_gestor')?.matricula || 'SYS-AM';
+    const armeiroSvc = activeArmeiroMatricula || usuarios.find(u => u.perfil === 'armeiro_gestor')?.matricula || 'SYS-AM';
     registrarLogAuditoria(
       armeiroSvc,
       'bloqueio_militar',
@@ -461,7 +461,7 @@ export function useSupabaseDatabase() {
       if (error) console.error('Erro ao atualizar situação do porte:', error);
     });
 
-    const armeiroSvc = usuarios.find(u => u.perfil === 'armeiro_gestor')?.matricula || 'SYS-AM';
+    const armeiroSvc = activeArmeiroMatricula || usuarios.find(u => u.perfil === 'armeiro_gestor')?.matricula || 'SYS-AM';
     registrarLogAuditoria(
       armeiroSvc,
       'bloqueio_militar',
@@ -472,7 +472,7 @@ export function useSupabaseDatabase() {
   // ---- ADICIONAR NOVO MATERIAL AO ESTOQUE ----
   const adicionarMaterial = (novoMaterial: Material) => {
     const existsIndex = materiais.findIndex(m => m.id_material === novoMaterial.id_material);
-    const armeiroSvc = usuarios.find(u => u.perfil === 'armeiro_gestor')?.matricula || 'SYS-AM';
+    const armeiroSvc = activeArmeiroMatricula || usuarios.find(u => u.perfil === 'armeiro_gestor')?.matricula || 'SYS-AM';
 
     if (existsIndex > -1) {
       const newQty = (materiais[existsIndex].quantidade || 0) + (novoMaterial.quantidade || 0);
@@ -526,7 +526,7 @@ export function useSupabaseDatabase() {
       if (error) console.error('Erro ao atualizar status do material:', error);
     });
 
-    const armeiroSvc = usuarios.find(u => u.perfil === 'armeiro_gestor')?.matricula || 'SYS-AM';
+    const armeiroSvc = activeArmeiroMatricula || usuarios.find(u => u.perfil === 'armeiro_gestor')?.matricula || 'SYS-AM';
     
     let ev: AuditoriaLog['tipo_evento'] = 'envio_manutencao';
     if (novoStatus === 'disponivel') ev = 'retorno_manutencao';
@@ -563,7 +563,7 @@ export function useSupabaseDatabase() {
       if (error) console.error('Erro ao registrar retirada de material:', error);
     });
 
-    const armeiroSvc = usuarios.find(u => u.perfil === 'armeiro_gestor')?.matricula || 'SYS-AM';
+    const armeiroSvc = activeArmeiroMatricula || usuarios.find(u => u.perfil === 'armeiro_gestor')?.matricula || 'SYS-AM';
     const desc = mat.controle_quantidade 
       ? `Material ${mat.modelo} (Lote: ${id}) - Qtd: ${quantidade_retirada} RETIRADAS do estoque. Destino/Justificativa: "${destino}".`
       : `Material ${mat.modelo} (S/N: ${id}) RETIRADO do estoque. Destino/Justificativa: "${destino}".`;
@@ -586,12 +586,12 @@ export function useSupabaseDatabase() {
     if (!user) return null;
 
     const idNewCautela = `CAUT-${Math.floor(1000 + Math.random() * 9000)}-2026`;
-    const armeiroSvc = usuarios.find(u => u.perfil === 'armeiro_gestor') || user;
+    const armeiroSvcMatricula = activeArmeiroMatricula || usuarios.find(u => u.perfil === 'armeiro_gestor')?.matricula || user.matricula;
 
     const novaCautela: Cautela = {
       id_cautela: idNewCautela,
       matricula_policial: matriculaPolicial,
-      matricula_armeiro_retirada: armeiroSvc.matricula,
+      matricula_armeiro_retirada: armeiroSvcMatricula,
       data_retirada: new Date().toISOString(),
       previsao_devolucao: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString(),
       status_cautela: 'ativa',
@@ -670,7 +670,7 @@ export function useSupabaseDatabase() {
     const cautelaParaBaixa = cautelas.find(c => c.id_cautela === cautId);
     if (!cautelaParaBaixa) return;
 
-    const armeiroResponsavel = usuarios.find(u => u.perfil === 'armeiro_gestor')?.matricula || 'SYS-AM';
+    const armeiroResponsavel = activeArmeiroMatricula || usuarios.find(u => u.perfil === 'armeiro_gestor')?.matricula || 'SYS-AM';
     const agora = new Date().toISOString();
 
     // 1. Atualizar materiais correspondentes no estoque (somente quantidade devolvida para controle_quantidade)

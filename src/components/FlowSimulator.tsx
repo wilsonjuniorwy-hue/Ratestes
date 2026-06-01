@@ -526,7 +526,12 @@ export default function FlowSimulator({
                 <tr key={log.id_log}>
                   <td>{new Date(log.data_hora).toLocaleDateString()} {new Date(log.data_hora).toLocaleTimeString()}</td>
                   <td>{log.tipo_evento.toUpperCase().replace('_', ' ')}</td>
-                  <td>{log.matricula_executor}</td>
+                   <td>
+                    {(() => {
+                      const exec = db.usuarios.find(u => u.matricula === log.matricula_executor);
+                      return exec ? `${exec.posto_graduacao} ${exec.nome_de_guerra || exec.nome} (${log.matricula_executor})` : log.matricula_executor;
+                    })()}
+                  </td>
                   <td>{log.detalhes}</td>
                   <td>{log.id_log}</td>
                 </tr>

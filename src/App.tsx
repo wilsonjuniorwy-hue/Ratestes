@@ -12,9 +12,9 @@ import LoginPortal from './components/LoginPortal';
 import { Usuario } from './types';
 
 export default function App() {
-  const db = useSupabaseDatabase();
-  const [authenticatedArmeiro, setAuthenticatedArmeiro] = useState<Usuario | null>(null);
   const [activeArmeiroMatricula, setActiveArmeiroMatricula] = useState('');
+  const db = useSupabaseDatabase(activeArmeiroMatricula);
+  const [authenticatedArmeiro, setAuthenticatedArmeiro] = useState<Usuario | null>(null);
   
   // Encontrar o armeiro ativo atual no banco de dados
   const activeArmeiro = db.usuarios.find(u => u.matricula === activeArmeiroMatricula);
