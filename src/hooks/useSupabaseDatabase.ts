@@ -90,21 +90,32 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
   useEffect(() => {
     fetchData();
 
-    // Inscreve nos eventos em tempo real do Supabase para atualizar a interface instantaneamente
+    let fetchTimeout: any = null;
+
+    // Inscreve nos eventos em tempo real do Supabase com debounce para evitar condições de corrida (race conditions)
+    // durante operações de escrita rápida (ex: delete + insert em lote).
     const channel = supabase
       .channel('reserva-realtime-sync')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public' },
         (payload) => {
-          console.log('SGBD Realtime: atualização de dados detectada.', payload);
-          // Busca os dados consolidados do Supabase para atualizar todos os computadores sincronizados
-          fetchData();
+          console.log('SGBD Realtime: alteração detectada.', payload);
+          
+          if (fetchTimeout) {
+            clearTimeout(fetchTimeout);
+          }
+          
+          fetchTimeout = setTimeout(() => {
+            console.log('SGBD Realtime: sincronizando dados em segundo plano...');
+            fetchData();
+          }, 350); // Debounce de 350ms garante que todas as querys da transação terminaram
         }
       )
       .subscribe();
 
     return () => {
+      if (fetchTimeout) clearTimeout(fetchTimeout);
       supabase.removeChannel(channel);
     };
   }, []);
