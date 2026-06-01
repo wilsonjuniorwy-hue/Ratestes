@@ -29,6 +29,11 @@ export default function App() {
           onLoginSuccess={(user) => {
             setAuthenticatedArmeiro(user);
             setActiveArmeiroMatricula(user.matricula);
+            db.registrarLogAuditoria(
+              user.matricula,
+              'login',
+              `Armeiro ${user.posto_graduacao} ${user.nome_de_guerra || user.nome} realizou login com sucesso no painel de controle do paiol.`
+            );
           }}
           cadastrarSenha={db.cadastrarSenha}
         />
