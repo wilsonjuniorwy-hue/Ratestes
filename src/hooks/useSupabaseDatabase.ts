@@ -89,6 +89,24 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
 
   useEffect(() => {
     fetchData();
+
+    // Inscreve nos eventos em tempo real do Supabase para atualizar a interface instantaneamente
+    const channel = supabase
+      .channel('reserva-realtime-sync')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public' },
+        (payload) => {
+          console.log('SGBD Realtime: atualização de dados detectada.', payload);
+          // Busca os dados consolidados do Supabase para atualizar todos os computadores sincronizados
+          fetchData();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   // ---- TRIGGERS DE LOG DE AUDITORIA ----
