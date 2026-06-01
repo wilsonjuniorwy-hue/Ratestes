@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { 
-  Terminal, ShieldAlert, CheckCircle, Printer, Boxes, BookOpen, Check, AlertTriangle
+  Terminal, ShieldAlert, CheckCircle, Printer, Boxes, BookOpen, Check, AlertTriangle, X
 } from 'lucide-react';
 import { OcorrenciaRelatorio, Material } from '../types';
 
@@ -21,8 +21,8 @@ export function OcorrenciasView({
   salvarOcorrencia,
   handlePrintOcorrencia
 }: OcorrenciasViewProps) {
-  // Controle de Abas
-  const [activeTab, setActiveTab] = useState<'diario' | 'estoque'>('diario');
+  // Controle de Visualização do Modal
+  const [isStockModalOpen, setIsStockModalOpen] = useState(false);
 
   // Estados locais do Livro de Ocorrências (Aba Diário)
   const [ocorrenciaTitulo, setOcorrenciaTitulo] = useState('');
@@ -173,269 +173,123 @@ ${estoqueObservacao.trim() || 'Sem divergências ou alterações físicas relata
     setEstoqueObservacao('');
     setEstoqueSuccess('Conferência de estoque registrada no Livro de Ocorrências com sucesso!');
     
-    // Voltar para a aba diário após 1.8s para ver o log gerado
+    // Fechar o modal após 1.8s para ver o log gerado
     setTimeout(() => {
-      setActiveTab('diario');
+      setIsStockModalOpen(false);
       setEstoqueSuccess('');
     }, 1800);
   };
 
+  const handleTentativaFecharModal = () => {
+    const hasProgress = Object.values(conferidos).some(val => val === true) || estoqueObservacao.trim() !== '';
+    if (hasProgress) {
+      const confirmClose = window.confirm(
+        "Você possui alterações pendentes na contagem de estoque. Deseja realmente fechar? Todo o progresso não gravado será perdido."
+      );
+      if (!confirmClose) return;
+    }
+    // Limpar estados e fechar
+    setConferidos({});
+    setEstoqueObservacao('');
+    setEstoqueError('');
+    setEstoqueSuccess('');
+    setIsStockModalOpen(false);
+  };
+
   return (
     <div className="space-y-6 animate-fadeIn" id="arm-ocorrencias-view">
-      {/* Top Banner com Seletor de Abas */}
+      {/* Top Banner com Botão de Abertura do Modal */}
       <div className="flex items-center justify-between flex-wrap gap-4 bg-slate-900/60 backdrop-blur-md border border-slate-800/80 rounded-xl p-4 shadow-lg">
         <div className="space-y-1">
           <h3 className="text-xs font-bold font-mono text-slate-205 uppercase tracking-widest flex items-center gap-2">
-            <Terminal className="h-4.5 w-4.5 text-blue-500 glow-blue" />
+            <Terminal className="h-4.5 w-4.5 text-blue-505 glow-blue" />
             <span>Livro Digital de Ocorrências</span>
           </h3>
           <p className="text-xs text-slate-450 font-sans">Visualização e registro histórico das atividades diárias e ocorrências bélicas da reserva.</p>
         </div>
 
-        {/* Abas */}
-        <div className="flex bg-slate-950 p-1 border border-slate-850 rounded-lg">
-          <button
-            onClick={() => setActiveTab('diario')}
-            className={`px-4 py-2 rounded text-xs font-bold font-mono transition-all flex items-center gap-2 cursor-pointer ${
-              activeTab === 'diario'
-                ? 'bg-blue-600/10 text-white border border-blue-500/30 shadow-[0_0_8px_rgba(59,130,246,0.1)]'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/40 border border-transparent'
-            }`}
-          >
-            <BookOpen className="h-4 w-4 text-blue-505" />
-            <span>OCORRÊNCIAS</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('estoque')}
-            className={`px-4 py-2 rounded text-xs font-bold font-mono transition-all flex items-center gap-2 cursor-pointer ${
-              activeTab === 'estoque'
-                ? 'bg-blue-600/10 text-white border border-blue-500/30 shadow-[0_0_8px_rgba(59,130,246,0.1)]'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/40 border border-transparent'
-            }`}
-          >
-            <Boxes className="h-4 w-4 text-cyan-405" />
-            <span>CONTAGEM DE ESTOQUE</span>
-          </button>
-        </div>
+        {/* Botão de Contagem de Estoque */}
+        <button
+          onClick={() => setIsStockModalOpen(true)}
+          className="px-4 py-2 bg-cyan-600 hover:bg-cyan-550 active:scale-95 text-white font-bold font-mono text-xs rounded-lg transition-all flex items-center gap-2 cursor-pointer shadow-md shadow-cyan-950/45 glow-cyan duration-150"
+        >
+          <Boxes className="h-4 w-4 text-white animate-pulse" />
+          <span>CONTAGEM DE ESTOQUE</span>
+        </button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Lado Esquerdo: Formulário ou Contagem de Estoque */}
+        {/* Lado Esquerdo: Formulário de Registro de Ocorrência (Sempre Visível) */}
         <div className="lg:col-span-7 space-y-4">
-          {activeTab === 'diario' ? (
-            <div className="bg-slate-900/60 backdrop-blur-md border border-slate-800/80 rounded-xl p-5 shadow-lg space-y-4" id="arm-ocorrencias-form-wrapper">
-              <div className="border-b border-slate-850 pb-3 flex items-center gap-2">
-                <Terminal className="h-4.5 w-4.5 text-blue-550" />
-                <h3 className="text-xs font-bold font-mono text-slate-200 uppercase tracking-widest">Registrar Nova Ocorrência</h3>
+          <div className="bg-slate-900/60 backdrop-blur-md border border-slate-800/80 rounded-xl p-5 shadow-lg space-y-4" id="arm-ocorrencias-form-wrapper">
+            <div className="border-b border-slate-850 pb-3 flex items-center gap-2">
+              <Terminal className="h-4.5 w-4.5 text-blue-550" />
+              <h3 className="text-xs font-bold font-mono text-slate-200 uppercase tracking-widest">Registrar Nova Ocorrência</h3>
+            </div>
+            
+            <form onSubmit={handleSalvarOcorrenciaSubmit} className="space-y-4 font-sans text-xs">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wide">Título / Assunto:</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="EX: TROCA DE TURNO - SEM ALTERAÇÕES"
+                  value={ocorrenciaTitulo}
+                  onChange={(e) => setOcorrenciaTitulo(e.target.value)}
+                  className="w-full bg-slate-955 border border-slate-805 p-2.5 text-xs text-slate-200 focus:outline-none rounded-lg focus:ring-1 focus:ring-blue-500/20 uppercase"
+                />
               </div>
-              
-              <form onSubmit={handleSalvarOcorrenciaSubmit} className="space-y-4 font-sans text-xs">
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wide">Título / Assunto:</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="EX: TROCA DE TURNO - SEM ALTERAÇÕES"
-                    value={ocorrenciaTitulo}
-                    onChange={(e) => setOcorrenciaTitulo(e.target.value)}
-                    className="w-full bg-slate-955 border border-slate-805 p-2.5 text-xs text-slate-200 focus:outline-none rounded-lg focus:ring-1 focus:ring-blue-500/20 uppercase"
-                  />
-                </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wide block">Tipo de Ocorrência:</label>
-                  <select
-                    value={ocorrenciaTipo}
-                    onChange={(e) => setOcorrenciaTipo(e.target.value as any)}
-                    className="w-full bg-slate-950 border border-slate-805 p-2.5 text-xs text-slate-205 focus:outline-none rounded-lg cursor-pointer font-sans"
-                  >
-                    <option value="troca_turno">Passagem/Troca de Turno</option>
-                    <option value="avaria_material">Avaria / Falha de Material</option>
-                    <option value="fiscalizacao">Fiscalização / Vistoria</option>
-                    <option value="conferencia_estoque">Conferência de Estoque</option>
-                    <option value="outros">Outros Incidentes</option>
-                  </select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wide block">Descrição Detalhada:</label>
-                  <textarea
-                    required
-                    rows={6}
-                    placeholder="Descreva detalhadamente o evento, informando seriais de armas envolvidas, estado do cofre, selos de segurança ou anomalias observadas..."
-                    value={ocorrenciaDescricao}
-                    onChange={(e) => setOcorrenciaDescricao(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-805 p-2.5 text-xs text-slate-200 focus:outline-none rounded-lg focus:ring-1 focus:ring-blue-500/20"
-                  />
-                </div>
-
-                {ocorrenciaError && (
-                  <div className="bg-red-955/30 border border-red-900/40 p-3 rounded-lg text-xs text-red-400 font-mono flex items-start gap-2 animate-pulse">
-                    <ShieldAlert className="h-4 w-4 shrink-0 mt-0.5" />
-                    <span>{ocorrenciaError}</span>
-                  </div>
-                )}
-
-                {ocorrenciaSuccess && (
-                  <div className="bg-emerald-950/30 border border-emerald-900/40 p-3 rounded-lg text-xs text-emerald-450 font-mono flex items-start gap-2">
-                    <CheckCircle className="h-4 w-4 shrink-0 mt-0.5" />
-                    <span>{ocorrenciaSuccess}</span>
-                  </div>
-                )}
-
-                <button
-                  type="submit"
-                  id="btn-registrar-ocorrencia-submit"
-                  className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold font-mono py-2.5 rounded-lg text-xs transition-all shadow-md uppercase tracking-wider cursor-pointer glow-blue"
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wide block">Tipo de Ocorrência:</label>
+                <select
+                  value={ocorrenciaTipo}
+                  onChange={(e) => setOcorrenciaTipo(e.target.value as any)}
+                  className="w-full bg-slate-950 border border-slate-805 p-2.5 text-xs text-slate-205 focus:outline-none rounded-lg cursor-pointer font-sans"
                 >
-                  Registrar no Livro
-                </button>
-              </form>
-            </div>
-          ) : (
-            <div className="bg-slate-900/60 backdrop-blur-md border border-slate-800/80 rounded-xl p-5 shadow-lg space-y-5" id="arm-conferencia-estoque-wrapper">
-              <div className="border-b border-slate-850 pb-3 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Boxes className="h-4.5 w-4.5 text-cyan-405" />
-                  <h3 className="text-xs font-bold font-mono text-slate-200 uppercase tracking-widest">Painel de Contagem de Estoque</h3>
-                </div>
-                <span className="text-[8px] bg-cyan-955/50 text-cyan-400 font-mono border border-cyan-900/50 px-2.5 py-0.5 rounded font-black uppercase">
-                  Total Modelos: {estoqueAgrupado.length}
-                </span>
+                  <option value="troca_turno">Passagem/Troca de Turno</option>
+                  <option value="avaria_material">Avaria / Falha de Material</option>
+                  <option value="fiscalizacao">Fiscalização / Vistoria</option>
+                  <option value="conferencia_estoque">Conferência de Estoque</option>
+                  <option value="outros">Outros Incidentes</option>
+                </select>
               </div>
 
-              <form onSubmit={handleFinalizarConferencia} className="space-y-5 font-sans text-xs">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[380px] overflow-y-auto pr-1">
-                  {estoqueAgrupado.map((group) => {
-                    const isChecked = !!conferidos[group.modelo];
-                    const isAmmo = group.categoriaId === 'CAT-MUNICAO';
-                    return (
-                      <div 
-                        key={group.modelo} 
-                        className={`p-3.5 border rounded-xl transition-all duration-200 flex flex-col justify-between gap-3 ${
-                          isChecked 
-                            ? 'bg-emerald-950/10 border-emerald-500/30 shadow-[0_0_12px_rgba(16,185,129,0.05)]' 
-                            : 'bg-slate-955/40 border-slate-850 hover:border-slate-800'
-                        }`}
-                      >
-                        <div className="space-y-2">
-                          <div className="flex justify-between items-start gap-2">
-                            <div className="min-w-0">
-                              <span className="text-[8px] font-mono text-slate-500 block uppercase tracking-wider truncate">{group.fabricante}</span>
-                              <h4 className="text-[11px] font-bold text-slate-205 uppercase leading-snug truncate">{group.modelo}</h4>
-                            </div>
-                            <span className={`text-[8px] font-mono font-black px-1.5 py-0.5 rounded shrink-0 ${
-                              isAmmo ? 'bg-amber-955/50 text-amber-400 border border-amber-900/40' : 'bg-blue-955/50 text-blue-400 border border-blue-900/40'
-                            }`}>
-                              {isAmmo ? 'MUNIÇÃO' : 'PATRIMÔNIO'}
-                            </span>
-                          </div>
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wide block">Descrição Detalhada:</label>
+                <textarea
+                  required
+                  rows={6}
+                  placeholder="Descreva detalhadamente o evento, informando seriais de armas envolvidas, estado do cofre, selos de segurança ou anomalias observadas..."
+                  value={ocorrenciaDescricao}
+                  onChange={(e) => setOcorrenciaDescricao(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-805 p-2.5 text-xs text-slate-200 focus:outline-none rounded-lg focus:ring-1 focus:ring-blue-500/20"
+                />
+              </div>
 
-                          <div className="text-xs font-mono py-0.5">
-                            <div className="text-slate-350 font-black text-[12px] flex flex-wrap items-center gap-1">
-                              <span>{group.quantidadeTotal} {isAmmo ? 'munições' : 'unidades'}</span>
-                              {group.carregadoresTotal > 0 && (
-                                <span className="text-slate-500 text-[10px] font-normal">
-                                  (+ {group.carregadoresTotal} carregadores)
-                                </span>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Detalhamento de Status */}
-                          <div className="flex flex-wrap gap-1 pt-1.5 border-t border-slate-900/60">
-                            <span className="text-[8px] bg-slate-900/60 text-emerald-400 border border-slate-850/50 px-1.5 py-0.5 rounded font-mono">
-                              {group.breakdown.disponivel} na reserva
-                            </span>
-                            {group.breakdown.cautelado > 0 && (
-                              <span className="text-[8px] bg-slate-900/60 text-blue-400 border border-slate-850/50 px-1.5 py-0.5 rounded font-mono">
-                                {group.breakdown.cautelado} na rua
-                              </span>
-                            )}
-                            {group.breakdown.manutencao > 0 && (
-                              <span className="text-[8px] bg-slate-900/60 text-amber-500 border border-slate-850/50 px-1.5 py-0.5 rounded font-mono">
-                                {group.breakdown.manutencao} em manutenção
-                              </span>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Botão de Toggle Checkbox */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setConferidos(prev => ({
-                              ...prev,
-                              [group.modelo]: !prev[group.modelo]
-                            }));
-                          }}
-                          className={`w-full py-1.5 px-2 rounded-lg border font-mono text-[9px] font-bold uppercase transition-all duration-150 cursor-pointer flex items-center justify-center gap-1.5 ${
-                            isChecked 
-                              ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/20' 
-                              : 'bg-slate-900 border-slate-800 text-slate-450 hover:border-slate-750 hover:text-slate-350'
-                          }`}
-                        >
-                          {isChecked ? (
-                            <>
-                              <Check className="h-3 w-3" />
-                              <span>Estoque Conferido</span>
-                            </>
-                          ) : (
-                            <>
-                              <div className="w-1.5 h-1.5 rounded-full bg-slate-500 animate-pulse" />
-                              <span>Marcar como Conferido</span>
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    );
-                  })}
+              {ocorrenciaError && (
+                <div className="bg-red-955/30 border border-red-900/40 p-3 rounded-lg text-xs text-red-400 font-mono flex items-start gap-2 animate-pulse">
+                  <ShieldAlert className="h-4 w-4 shrink-0 mt-0.5" />
+                  <span>{ocorrenciaError}</span>
                 </div>
+              )}
 
-                <div className="space-y-4 pt-3 border-t border-slate-850">
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wide flex items-center gap-1">
-                      <span>Observações / Relato de Divergências:</span>
-                      {estoqueAgrupado.some(g => !conferidos[g.modelo]) && (
-                        <span className="text-red-400 text-[8px] font-bold font-mono animate-pulse">
-                          (OBRIGATÓRIO: ITENS EM ABERTO)
-                        </span>
-                      )}
-                    </label>
-                    <textarea
-                      rows={3}
-                      value={estoqueObservacao}
-                      onChange={(e) => setEstoqueObservacao(e.target.value)}
-                      placeholder="Justifique discrepâncias físicas ou o porquê de deixar algum item sem marcar..."
-                      className="w-full bg-slate-955 border border-slate-805 p-2 text-xs text-slate-200 focus:outline-none rounded-lg focus:ring-1 focus:ring-blue-500/20 placeholder-slate-655"
-                    />
-                  </div>
-
-                  {estoqueError && (
-                    <div className="bg-red-955/30 border border-red-900/40 p-2.5 rounded-lg text-[10px] text-red-400 font-mono flex items-start gap-2 animate-pulse">
-                      <AlertTriangle className="h-4 w-4 shrink-0 text-red-500" />
-                      <span>{estoqueError}</span>
-                    </div>
-                  )}
-
-                  {estoqueSuccess && (
-                    <div className="bg-emerald-950/30 border border-emerald-900/40 p-2.5 rounded-lg text-[10px] text-emerald-450 font-mono flex items-start gap-2">
-                      <CheckCircle className="h-4 w-4 shrink-0 text-emerald-500" />
-                      <span>{estoqueSuccess}</span>
-                    </div>
-                  )}
-
-                  <button
-                    type="submit"
-                    className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold font-mono py-2.5 rounded-lg text-xs transition-all shadow-md uppercase tracking-wider cursor-pointer glow-blue flex items-center justify-center gap-2"
-                  >
-                    <Boxes className="h-4.5 w-4.5 text-white" />
-                    <span>Finalizar Conferência e Gravar Ocorrência</span>
-                  </button>
+              {ocorrenciaSuccess && (
+                <div className="bg-emerald-950/30 border border-emerald-900/40 p-3 rounded-lg text-xs text-emerald-450 font-mono flex items-start gap-2">
+                  <CheckCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                  <span>{ocorrenciaSuccess}</span>
                 </div>
-              </form>
-            </div>
-          )}
+              )}
+
+              <button
+                type="submit"
+                id="btn-registrar-ocorrencia-submit"
+                className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold font-mono py-2.5 rounded-lg text-xs transition-all shadow-md uppercase tracking-wider cursor-pointer glow-blue"
+              >
+                Registrar no Livro
+              </button>
+            </form>
+          </div>
         </div>
 
         {/* Lado Direito: Histórico de Ocorrências (Sempre Visível) */}
@@ -503,6 +357,184 @@ ${estoqueObservacao.trim() || 'Sem divergências ou alterações físicas relata
           </div>
         </div>
       </div>
+
+      {/* JANELA MODAL DE CONTAGEM DE ESTOQUE */}
+      {isStockModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-955/80 backdrop-blur-md animate-fadeIn">
+          <div 
+            className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-slideUp"
+            id="arm-conferencia-estoque-wrapper"
+          >
+            {/* Header do Modal */}
+            <div className="p-5 border-b border-slate-850 bg-slate-950/40 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Boxes className="h-5 w-5 text-cyan-405" />
+                <div>
+                  <h3 className="text-sm font-bold font-mono text-slate-100 uppercase tracking-widest">Painel de Contagem de Estoque</h3>
+                  <p className="text-[10px] text-slate-450 font-sans mt-0.5 font-normal">Realize a conferência física dos itens ativos do paiol.</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-[9px] bg-cyan-955/50 text-cyan-400 font-mono border border-cyan-900/50 px-2.5 py-1 rounded font-black uppercase">
+                  Total Modelos: {estoqueAgrupado.length}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleTentativaFecharModal}
+                  className="p-1.5 rounded-lg bg-slate-955 hover:bg-slate-800 border border-slate-850 hover:border-slate-700 text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+                  title="Fechar Janela"
+                >
+                  <X className="h-4.5 w-4.5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Form / Body do Modal */}
+            <form onSubmit={handleFinalizarConferencia} className="flex-1 flex flex-col overflow-hidden">
+              {/* Área Rolável Interna */}
+              <div className="p-6 overflow-y-auto space-y-5 flex-1 custom-scrollbar">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {estoqueAgrupado.map((group) => {
+                    const isChecked = !!conferidos[group.modelo];
+                    const isAmmo = group.categoriaId === 'CAT-MUNICAO';
+                    return (
+                      <div 
+                        key={group.modelo} 
+                        className={`p-3.5 border rounded-xl transition-all duration-200 flex flex-col justify-between gap-3 ${
+                          isChecked 
+                            ? 'bg-emerald-950/10 border-emerald-500/30 shadow-[0_0_12px_rgba(16,185,129,0.05)]' 
+                            : 'bg-slate-955/40 border-slate-850 hover:border-slate-800'
+                        }`}
+                      >
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-start gap-2">
+                            <div className="min-w-0">
+                              <span className="text-[8px] font-mono text-slate-500 block uppercase tracking-wider truncate">{group.fabricante}</span>
+                              <h4 className="text-[11px] font-bold text-slate-205 uppercase leading-snug truncate">{group.modelo}</h4>
+                            </div>
+                            <span className={`text-[8px] font-mono font-black px-1.5 py-0.5 rounded shrink-0 ${
+                              isAmmo ? 'bg-amber-955/50 text-amber-400 border border-amber-900/40' : 'bg-blue-955/50 text-blue-400 border border-blue-900/40'
+                            }`}>
+                              {isAmmo ? 'MUNIÇÃO' : 'PATRIMÔNIO'}
+                            </span>
+                          </div>
+
+                          <div className="text-xs font-mono py-0.5">
+                            <div className="text-slate-350 font-black text-[12px] flex flex-wrap items-center gap-1">
+                              <span>{group.quantidadeTotal} {isAmmo ? 'munições' : 'unidades'}</span>
+                              {group.carregadoresTotal > 0 && (
+                                <span className="text-slate-500 text-[10px] font-normal">
+                                  (+ {group.carregadoresTotal} carregadores)
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Detalhamento de Status */}
+                          <div className="flex flex-wrap gap-1.5 pt-1.5 border-t border-slate-900/60">
+                            <span className="text-xs bg-slate-900/60 text-emerald-400 border border-slate-850/50 px-2 py-1 rounded font-mono">
+                              {group.breakdown.disponivel} na reserva
+                            </span>
+                            {group.breakdown.cautelado > 0 && (
+                              <span className="text-xs bg-slate-900/60 text-blue-400 border border-slate-850/50 px-2 py-1 rounded font-mono">
+                                {group.breakdown.cautelado} na rua
+                              </span>
+                            )}
+                            {group.breakdown.manutencao > 0 && (
+                              <span className="text-xs bg-slate-900/60 text-amber-500 border border-slate-850/50 px-2 py-1 rounded font-mono">
+                                {group.breakdown.manutencao} em manutenção
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Botão de Toggle Checkbox */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setConferidos(prev => ({
+                              ...prev,
+                              [group.modelo]: !prev[group.modelo]
+                            }));
+                          }}
+                          className={`w-full py-1.5 px-2 rounded-lg border font-mono text-[9px] font-bold uppercase transition-all duration-150 cursor-pointer flex items-center justify-center gap-1.5 ${
+                            isChecked 
+                              ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/20' 
+                              : 'bg-slate-900 border-slate-800 text-slate-450 hover:border-slate-750 hover:text-slate-350'
+                          }`}
+                        >
+                          {isChecked ? (
+                            <>
+                              <Check className="h-3 w-3" />
+                              <span>Estoque Conferido</span>
+                            </>
+                          ) : (
+                            <>
+                              <div className="w-1.5 h-1.5 rounded-full bg-slate-500 animate-pulse" />
+                              <span>Marcar como Conferido</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="space-y-1.5 pt-3 border-t border-slate-850">
+                  <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wide flex items-center gap-1">
+                    <span>Observações / Relato de Divergências:</span>
+                    {estoqueAgrupado.some(g => !conferidos[g.modelo]) && (
+                      <span className="text-red-400 text-[8px] font-bold font-mono animate-pulse">
+                        (OBRIGATÓRIO: ITENS EM ABERTO)
+                      </span>
+                    )}
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={estoqueObservacao}
+                    onChange={(e) => setEstoqueObservacao(e.target.value)}
+                    placeholder="Justifique discrepâncias físicas ou o porquê de deixar algum item sem marcar..."
+                    className="w-full bg-slate-955 border border-slate-805 p-2 text-xs text-slate-205 focus:outline-none rounded-lg focus:ring-1 focus:ring-blue-500/20 placeholder-slate-650"
+                  />
+                </div>
+
+                {estoqueError && (
+                  <div className="bg-red-955/30 border border-red-900/40 p-2.5 rounded-lg text-[10px] text-red-400 font-mono flex items-start gap-2 animate-pulse">
+                    <AlertTriangle className="h-4 w-4 shrink-0 text-red-500" />
+                    <span>{estoqueError}</span>
+                  </div>
+                )}
+
+                {estoqueSuccess && (
+                  <div className="bg-emerald-950/30 border border-emerald-900/40 p-2.5 rounded-lg text-[10px] text-emerald-450 font-mono flex items-start gap-2">
+                    <CheckCircle className="h-4 w-4 shrink-0 text-emerald-500" />
+                    <span>{estoqueSuccess}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Rodapé do Modal */}
+              <div className="p-4 bg-slate-950/40 border-t border-slate-850 flex items-center justify-end gap-3 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleTentativaFecharModal}
+                  className="px-4 py-2 border border-slate-800 hover:border-slate-700 bg-slate-900 hover:bg-slate-850 text-slate-400 hover:text-slate-200 font-bold font-mono text-xs rounded-lg transition-colors cursor-pointer"
+                >
+                  Cancelar / Fechar
+                </button>
+                
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold font-mono text-xs rounded-lg transition-all shadow-md hover:shadow-blue-500/20 active:scale-95 duration-150 cursor-pointer flex items-center gap-1.5 glow-blue"
+                >
+                  <Boxes className="h-4 w-4" />
+                  <span>Finalizar Conferência</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
