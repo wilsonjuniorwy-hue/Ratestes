@@ -1233,7 +1233,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
       }
 
       const userEmail = user?.email?.toUpperCase() || '';
-      const targetEmail = `${matriculaNorm}@RESERVA.PM`;
+      const targetEmail = `${matriculaNorm}@CAVALARIA.PM`;
 
       // 2. Se for o próprio armeiro logado, atualizar no Auth
       if (user && userEmail === targetEmail) {
