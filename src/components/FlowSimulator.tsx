@@ -91,6 +91,8 @@ export default function FlowSimulator({
         materiais: db.materiais,
         cautelas: db.cautelas,
         cautela_itens: db.cautelaItens,
+        armas_particulares: db.armasParticulares,
+        pendencias_servico: db.pendenciasServico,
         ocorrencias: db.ocorrencias,
         auditoria_logs: db.auditoriaLogs,
       }, null, 2);
@@ -336,6 +338,9 @@ export default function FlowSimulator({
             activeArmeiroMatricula={activeArmeiroMatricula}
             excluirPolicialTotal={db.excluirPolicialTotal}
             excluirMaterialTotal={db.excluirMaterialTotal}
+            armasParticulares={db.armasParticulares}
+            adicionarArmaParticular={db.adicionarArmaParticular}
+            devolverArmasParticulares={db.devolverArmasParticulares}
           />
         </ErrorBoundary>
       )}
@@ -347,6 +352,10 @@ export default function FlowSimulator({
             materiais={db.materiais}
             salvarOcorrencia={db.salvarOcorrencia}
             handlePrintOcorrencia={handlePrintOcorrencia}
+            activeArmeiroMatricula={activeArmeiroMatricula}
+            pendenciasServico={db.pendenciasServico}
+            adicionarPendencia={db.adicionarPendencia}
+            resolverPendencia={db.resolverPendencia}
           />
         </ErrorBoundary>
       )}

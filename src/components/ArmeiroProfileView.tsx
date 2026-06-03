@@ -9,7 +9,7 @@ interface ArmeiroProfileViewProps {
   activeArmeiroMatricula: string;
   setActiveArmeiroMatricula: (matricula: string) => void;
   alterarSenhaArmeiro: (matricula: string, novaSenha: string) => void;
-  cadastrarPolicial: (novoPolicial: Usuario) => void;
+  cadastrarPolicial: (novoPolicial: Usuario) => Promise<{ success: boolean; error?: string }>;
   editarPolicial: (matricula: string, dadosAtualizados: Partial<Usuario>) => Promise<{ success: boolean }>;
   excluirUsuario: (matricula: string) => Promise<{ success: boolean }>;
 }
@@ -43,6 +43,7 @@ export function ArmeiroProfileView({
   const [newSenha, setNewSenha] = useState('');
   const [regError, setRegError] = useState('');
   const [regSuccess, setRegSuccess] = useState('');
+  const [isRegistering, setIsRegistering] = useState(false);
 
   // Estados locais para gerenciamento de armeiros (Admin)
   const [editingMatricula, setEditingMatricula] = useState<string | null>(null);
@@ -144,8 +145,9 @@ export function ArmeiroProfileView({
   };
 
   // Cadastrar armeiro submit
-  const handleCadastrarArmeiro = (e: React.FormEvent) => {
+  const handleCadastrarArmeiro = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isRegistering) return;
     setRegError('');
     setRegSuccess('');
 
@@ -176,14 +178,24 @@ export function ArmeiroProfileView({
       data_ultimo_teste_psicologico: new Date().toISOString().split('T')[0]
     };
 
-    cadastrarPolicial(novoArmeiro);
-
-    setNewMatricula('');
-    setNewNome('');
-    setNewNomeDeGuerra('');
-    setNewSenha('');
-    setNewPosto('Sargento');
-    setRegSuccess(`Armeiro ${guerraNorm} cadastrado e liberado para acesso com sucesso!`);
+    setIsRegistering(true);
+    try {
+      const result = await cadastrarPolicial(novoArmeiro);
+      if (result && !result.success) {
+        setRegError(result.error || 'Erro ao cadastrar armeiro.');
+      } else {
+        setNewMatricula('');
+        setNewNome('');
+        setNewNomeDeGuerra('');
+        setNewSenha('');
+        setNewPosto('Sargento');
+        setRegSuccess(`Armeiro ${guerraNorm} cadastrado e liberado para acesso com sucesso!`);
+      }
+    } catch (err: any) {
+      setRegError(err.message || 'Erro ao realizar cadastro.');
+    } finally {
+      setIsRegistering(false);
+    }
   };
 
   return (
@@ -403,10 +415,15 @@ export function ArmeiroProfileView({
 
               <button
                 type="submit"
-                className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold font-mono py-2.5 rounded-lg text-xs transition-all shadow-md uppercase tracking-wider cursor-pointer glow-cyan flex items-center justify-center gap-2"
+                disabled={isRegistering}
+                className={`w-full font-bold font-mono py-2.5 rounded-lg text-xs transition-all shadow-md uppercase tracking-wider flex items-center justify-center gap-2 ${
+                  isRegistering 
+                    ? 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700' 
+                    : 'bg-cyan-600 hover:bg-cyan-500 text-white cursor-pointer glow-cyan'
+                }`}
               >
                 <UserPlus className="h-4 w-4" />
-                <span>Salvar Cadastro de Armeiro</span>
+                <span>{isRegistering ? 'Salvando no Auth...' : 'Salvar Cadastro de Armeiro'}</span>
               </button>
             </form>
           </div>

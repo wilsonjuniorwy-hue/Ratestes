@@ -148,7 +148,7 @@ export function useMockDatabase() {
   };
 
   // ---- CADASTRO DE NOVO POLICIAL MILITAR ----
-  const cadastrarPolicial = (novoPolicial: Usuario) => {
+  const cadastrarPolicial = async (novoPolicial: Usuario): Promise<{ success: boolean; error?: string }> => {
     const novosUsuarios = [...usuarios, novoPolicial];
     setUsuarios(novosUsuarios);
 
@@ -157,6 +157,7 @@ export function useMockDatabase() {
       'cadastro_militar',
       `Novo policial militar cadastrado: ${novoPolicial.posto_graduacao} ${novoPolicial.nome} (Guerra: ${novoPolicial.nome_de_guerra || 'N/A'}, Matrícula: ${novoPolicial.matricula}, Porte: ${novoPolicial.situacao_cautela.toUpperCase()}).`
     );
+    return { success: true };
   };
 
   // ---- SALVAR REGISTRO NO LIVRO DE OCORRÊNCIAS ----

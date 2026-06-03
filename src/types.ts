@@ -28,6 +28,7 @@ export interface Usuario {
   situacao_cautela: SituacaoMilitar;
   data_ultimo_teste_psicologico: string; // ISO Date (Validade anual)
   motivo_suspensao?: string;
+  auth_user_id?: string;
 }
 
 export interface Categoria {
@@ -106,3 +107,32 @@ export interface OcorrenciaRelatorio {
   descricao: string;
   matricula_armeiro: string; // Autor do registro
 }
+
+export interface ArmaParticular {
+  id_particular: string; // Chave Primária (UUID)
+  matricula_policial: string; // Chave Estrangeira -> Usuario(matricula)
+  tipo_item: 'arma' | 'colete' | 'municao';
+  modelo: string;
+  fabricante?: string;
+  calibre?: string;
+  numero_serie?: string;
+  quantidade: number;
+  carregadores?: number;
+  data_deposito: string; // ISO DateTime
+  data_devolucao?: string; // ISO DateTime
+  status: 'guardado' | 'devolvido';
+  observacoes?: string;
+}
+
+export interface PendenciaServico {
+  id_pendencia: string; // Chave Primária (UUID)
+  descricao: string;
+  status: 'aberto' | 'resolvido';
+  data_criacao: string; // ISO DateTime
+  matricula_criador: string;
+  resolucao?: string;
+  data_resolucao?: string; // ISO DateTime
+  matricula_resolvedor?: string;
+}
+
+

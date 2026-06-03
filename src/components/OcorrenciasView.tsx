@@ -1,8 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import { 
-  Terminal, ShieldAlert, CheckCircle, Printer, Boxes, BookOpen, Check, AlertTriangle, X
+  Terminal, ShieldAlert, CheckCircle, Printer, Boxes, BookOpen, Check, AlertTriangle, X,
+  PlusCircle, ClipboardList, AlertCircle, History, FileText
 } from 'lucide-react';
-import { OcorrenciaRelatorio, Material } from '../types';
+import { OcorrenciaRelatorio, Material, PendenciaServico } from '../types';
 
 interface OcorrenciasViewProps {
   ocorrencias: OcorrenciaRelatorio[];
@@ -13,16 +14,25 @@ interface OcorrenciasViewProps {
     descricao: string
   ) => void;
   handlePrintOcorrencia: (oco: OcorrenciaRelatorio) => void;
+  activeArmeiroMatricula: string;
+  pendenciasServico: PendenciaServico[];
+  adicionarPendencia: (descricao: string) => Promise<void>;
+  resolverPendencia: (id: string, resolucao: string) => Promise<void>;
 }
 
 export function OcorrenciasView({
   ocorrencias,
   materiais,
   salvarOcorrencia,
-  handlePrintOcorrencia
+  handlePrintOcorrencia,
+  activeArmeiroMatricula,
+  pendenciasServico,
+  adicionarPendencia,
+  resolverPendencia
 }: OcorrenciasViewProps) {
   // Controle de Visualização do Modal
   const [isStockModalOpen, setIsStockModalOpen] = useState(false);
+  const [isAlteracoesModalOpen, setIsAlteracoesModalOpen] = useState(false);
 
   // Estados locais do Livro de Ocorrências (Aba Diário)
   const [ocorrenciaTitulo, setOcorrenciaTitulo] = useState('');
@@ -36,6 +46,17 @@ export function OcorrenciasView({
   const [estoqueObservacao, setEstoqueObservacao] = useState('');
   const [estoqueSuccess, setEstoqueSuccess] = useState('');
   const [estoqueError, setEstoqueError] = useState('');
+
+  // Estados locais do Painel de Alterações (Pendências)
+  const [alteracaoFilter, setAlteracaoFilter] = useState<'todas' | 'abertas' | 'resolvidas'>('todas');
+  const [isNovaPendenciaFormOpen, setIsNovaPendenciaFormOpen] = useState(false);
+  const [novaPendenciaDescricao, setNovaPendenciaDescricao] = useState('');
+  const [pendenciaError, setPendenciaError] = useState('');
+  const [pendenciaSuccess, setPendenciaSuccess] = useState('');
+  
+  const [isResolvingPendenciaId, setIsResolvingPendenciaId] = useState<string | null>(null);
+  const [resolucaoTexto, setResolucaoTexto] = useState('');
+  const [isSubmittingPendencia, setIsSubmittingPendencia] = useState(false);
 
   // Agrupamento de materiais por modelo para contagem
   const estoqueAgrupado = useMemo(() => {
@@ -196,6 +217,62 @@ ${estoqueObservacao.trim() || 'Sem divergências ou alterações físicas relata
     setIsStockModalOpen(false);
   };
 
+  const handleNovaPendenciaSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPendenciaError('');
+    setPendenciaSuccess('');
+    
+    const desc = novaPendenciaDescricao.trim();
+    if (!desc) {
+      setPendenciaError('Descreva a pendência antes de gravar.');
+      return;
+    }
+
+    try {
+      setIsSubmittingPendencia(true);
+      await adicionarPendencia(desc);
+      setPendenciaSuccess('Pendência de serviço registrada com sucesso!');
+      setNovaPendenciaDescricao('');
+      setIsNovaPendenciaFormOpen(false);
+      
+      setTimeout(() => {
+        setPendenciaSuccess('');
+      }, 3000);
+    } catch (err: any) {
+      setPendenciaError('Erro ao registrar pendência: ' + err.message);
+    } finally {
+      setIsSubmittingPendencia(false);
+    }
+  };
+
+  const handleResolverPendenciaSubmit = async (e: React.FormEvent, idPendencia: string) => {
+    e.preventDefault();
+    setPendenciaError('');
+    setPendenciaSuccess('');
+
+    const res = resolucaoTexto.trim();
+    if (!res) {
+      setPendenciaError('Descreva o que foi feito para resolver a pendência.');
+      return;
+    }
+
+    try {
+      setIsSubmittingPendencia(true);
+      await resolverPendencia(idPendencia, res);
+      setPendenciaSuccess('Pendência marcada como resolvida com sucesso!');
+      setIsResolvingPendenciaId(null);
+      setResolucaoTexto('');
+      
+      setTimeout(() => {
+        setPendenciaSuccess('');
+      }, 3000);
+    } catch (err: any) {
+      setPendenciaError('Erro ao resolver pendência: ' + err.message);
+    } finally {
+      setIsSubmittingPendencia(false);
+    }
+  };
+
   return (
     <div className="space-y-6 animate-fadeIn" id="arm-ocorrencias-view">
       {/* Top Banner com Botão de Abertura do Modal */}
@@ -208,14 +285,33 @@ ${estoqueObservacao.trim() || 'Sem divergências ou alterações físicas relata
           <p className="text-xs text-slate-450 font-sans">Visualização e registro histórico das atividades diárias e ocorrências bélicas da reserva.</p>
         </div>
 
-        {/* Botão de Contagem de Estoque */}
-        <button
-          onClick={() => setIsStockModalOpen(true)}
-          className="px-4 py-2 bg-cyan-600 hover:bg-cyan-550 active:scale-95 text-white font-bold font-mono text-xs rounded-lg transition-all flex items-center gap-2 cursor-pointer shadow-md shadow-cyan-950/45 glow-cyan duration-150"
-        >
-          <Boxes className="h-4 w-4 text-white animate-pulse" />
-          <span>CONTAGEM DE ESTOQUE</span>
-        </button>
+        <div className="flex gap-2.5 flex-wrap">
+          {/* Botão de Contagem de Estoque */}
+          <button
+            onClick={() => setIsStockModalOpen(true)}
+            className="px-4 py-2 bg-cyan-600 hover:bg-cyan-550 active:scale-95 text-white font-bold font-mono text-xs rounded-lg transition-all flex items-center gap-2 cursor-pointer shadow-md shadow-cyan-950/45 glow-cyan duration-150"
+          >
+            <Boxes className="h-4 w-4 text-white animate-pulse" />
+            <span>CONTAGEM DE ESTOQUE</span>
+          </button>
+
+          {/* Botão de Alterações do Serviço */}
+          <button
+            onClick={() => {
+              setIsAlteracoesModalOpen(true);
+              setPendenciaError('');
+              setPendenciaSuccess('');
+              setIsNovaPendenciaFormOpen(false);
+              setNovaPendenciaDescricao('');
+              setIsResolvingPendenciaId(null);
+              setResolucaoTexto('');
+            }}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-550 active:scale-95 text-white font-bold font-mono text-xs rounded-lg transition-all flex items-center gap-2 cursor-pointer shadow-md shadow-blue-950/45 glow-blue duration-150"
+          >
+            <BookOpen className="h-4 w-4 text-white animate-pulse" />
+            <span>ALTERAÇÕES DO SERVIÇO</span>
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -532,6 +628,284 @@ ${estoqueObservacao.trim() || 'Sem divergências ou alterações físicas relata
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* JANELA MODAL DE ALTERAÇÕES DO SERVIÇO (PENDÊNCIAS) */}
+      {isAlteracoesModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-955/80 backdrop-blur-md animate-fadeIn">
+          <div 
+            className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-slideUp"
+            id="arm-alteracoes-servico-wrapper"
+          >
+            {/* Header do Modal */}
+            <div className="p-5 border-b border-slate-850 bg-slate-950/40 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ClipboardList className="h-5 w-5 text-blue-505 animate-pulse" />
+                <div>
+                  <h3 className="text-sm font-bold font-mono text-slate-100 uppercase tracking-widest">Alterações do Serviço & Pendências</h3>
+                  <p className="text-[10px] text-slate-455 font-sans mt-0.5 font-normal">Quadro bélico de pendências em aberto e histórico de resoluções de plantão.</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsNovaPendenciaFormOpen(prev => !prev);
+                    setPendenciaError('');
+                    setPendenciaSuccess('');
+                  }}
+                  className="px-3.5 py-1.5 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 border border-blue-900/30 rounded-lg font-mono text-[10px] uppercase font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
+                >
+                  <PlusCircle className="h-3.5 w-3.5" />
+                  <span>{isNovaPendenciaFormOpen ? 'Ver Pendências' : 'Criar Nova Pendência'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsAlteracoesModalOpen(false)}
+                  className="p-1.5 rounded-lg bg-slate-955 hover:bg-slate-800 border border-slate-850 hover:border-slate-700 text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+                  title="Fechar Janela"
+                >
+                  <X className="h-4.5 w-4.5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 flex flex-col overflow-hidden p-6 space-y-4">
+              {/* Avisos rápidos de Sucesso / Erro */}
+              {pendenciaSuccess && (
+                <div className="bg-emerald-950/30 border border-emerald-900/40 p-3 rounded-lg text-xs text-emerald-450 font-mono flex items-center gap-2 animate-fadeIn">
+                  <CheckCircle className="h-4 w-4 shrink-0 text-emerald-500" />
+                  <span>{pendenciaSuccess}</span>
+                </div>
+              )}
+              {pendenciaError && (
+                <div className="bg-red-955/30 border border-red-900/40 p-3 rounded-lg text-xs text-red-400 font-mono flex items-center gap-2 animate-pulse">
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-red-500" />
+                  <span>{pendenciaError}</span>
+                </div>
+              )}
+
+              {isNovaPendenciaFormOpen ? (
+                /* Formulário de Nova Pendência */
+                <form onSubmit={handleNovaPendenciaSubmit} className="space-y-4 bg-slate-955/50 border border-slate-850 p-5 rounded-xl animate-fadeIn">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1">
+                      <FileText className="h-3.5 w-3.5 text-blue-450" />
+                      <span>Descreva a alteração ou pendência a ser registrada:</span>
+                    </label>
+                    <textarea
+                      required
+                      rows={5}
+                      value={novaPendenciaDescricao}
+                      onChange={(e) => setNovaPendenciaDescricao(e.target.value)}
+                      placeholder="Descreva detalhadamente a alteração observada (Ex: 'Substituição da lâmpada de emergência queimada na sala de munições', 'Rádio HT patrimônio 2812 com carregador quebrado'...)"
+                      className="w-full bg-slate-950 border border-slate-800 focus:border-blue-500 p-3 text-xs text-slate-205 focus:outline-none rounded-lg focus:ring-1 focus:ring-blue-500/20"
+                      disabled={isSubmittingPendencia}
+                    />
+                  </div>
+                  <div className="flex items-center justify-end gap-3.5 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsNovaPendenciaFormOpen(false);
+                        setNovaPendenciaDescricao('');
+                        setPendenciaError('');
+                      }}
+                      className="px-4 py-2 border border-slate-800 hover:border-slate-700 bg-slate-900 hover:bg-slate-850 text-slate-400 hover:text-slate-200 font-bold font-mono text-[10px] uppercase rounded-lg transition-colors cursor-pointer"
+                      disabled={isSubmittingPendencia}
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-550 text-white font-bold font-mono text-[10px] uppercase rounded-lg transition-all shadow-md cursor-pointer flex items-center gap-1.5 glow-blue"
+                      disabled={isSubmittingPendencia}
+                    >
+                      {isSubmittingPendencia ? 'Gravando...' : 'Gravar Alteração/Pendência'}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                /* Listagem de Pendências */
+                <div className="flex-1 flex flex-col overflow-hidden space-y-4">
+                  {/* Filtros de Status */}
+                  <div className="flex items-center gap-2 border-b border-slate-850 pb-2">
+                    {(['todas', 'abertas', 'resolvidas'] as const).map((filter) => {
+                      const isActive = alteracaoFilter === filter;
+                      const label = filter === 'todas' ? 'Todas' : filter === 'abertas' ? 'Em Aberto' : 'Resolvidas';
+                      return (
+                        <button
+                          key={filter}
+                          type="button"
+                          onClick={() => {
+                            setAlteracaoFilter(filter);
+                            setIsResolvingPendenciaId(null);
+                            setResolucaoTexto('');
+                            setPendenciaError('');
+                          }}
+                          className={`px-3 py-1.5 rounded-lg text-[10px] font-mono font-bold uppercase transition-all tracking-wider ${
+                            isActive
+                              ? 'bg-blue-600/15 border border-blue-500/30 text-blue-400'
+                              : 'bg-slate-950 border border-slate-800 text-slate-450 hover:text-slate-350'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Lista Rolável */}
+                  <div className="flex-1 overflow-y-auto space-y-3.5 pr-1.5 custom-scrollbar">
+                    {(() => {
+                      const filtered = pendenciasServico.filter((p) => {
+                        if (alteracaoFilter === 'abertas') return p.status === 'aberto';
+                        if (alteracaoFilter === 'resolvidas') return p.status === 'resolvido';
+                        return true;
+                      });
+
+                      if (filtered.length === 0) {
+                        return (
+                          <div className="text-center py-12 text-slate-505 font-mono text-xs border border-dashed border-slate-805 rounded-xl bg-slate-955/20">
+                            Nenhuma alteração ou pendência encontrada neste filtro.
+                          </div>
+                        );
+                      }
+
+                      return filtered.map((item) => {
+                        const isOpen = item.status === 'aberto';
+                        const isResolving = isResolvingPendenciaId === item.id_pendencia;
+                        return (
+                          <div
+                            key={item.id_pendencia}
+                            className={`p-4 border rounded-xl transition-all duration-205 flex flex-col gap-3.5 relative ${
+                              isOpen
+                                ? 'bg-red-955/5 border-red-900/30 hover:border-red-900/50 shadow-[0_0_12px_rgba(239,68,68,0.02)]'
+                                : 'bg-emerald-955/5 border-emerald-900/20 hover:border-emerald-900/40'
+                            }`}
+                          >
+                            {/* Top info and status badge */}
+                            <div className="flex items-center justify-between gap-3 border-b border-slate-850/40 pb-2">
+                              <div className="flex items-center gap-2">
+                                <span className={`text-[10px] font-mono font-black uppercase px-2.5 py-0.5 rounded border ${
+                                  isOpen
+                                    ? 'bg-red-955/35 text-red-400 border-red-900/40 animate-pulse'
+                                    : 'bg-emerald-950/35 text-emerald-450 border-emerald-900/40'
+                                }`}>
+                                  {isOpen ? 'Em Aberto' : 'Resolvido'}
+                                </span>
+                                <span className="text-xs text-slate-400 font-mono">ID: {item.id_pendencia.substring(0, 8).toUpperCase()}</span>
+                              </div>
+                              <div className="text-xs text-slate-400 font-mono flex items-center gap-1.5 flex-wrap">
+                                <span>Criado em: {new Date(item.data_criacao).toLocaleString()}</span>
+                                <span className="text-slate-300 font-bold">Por: {item.matricula_criador}</span>
+                              </div>
+                            </div>
+
+                            {/* Description text */}
+                            <div className="text-slate-100 text-sm font-sans font-medium leading-relaxed whitespace-pre-wrap">
+                              {item.descricao}
+                            </div>
+
+                            {/* Resolution Details or Resolve Form */}
+                            {!isOpen && item.resolucao && (
+                              <div className="bg-emerald-950/15 border border-emerald-900/25 p-3.5 rounded-lg flex flex-col gap-1.5 animate-fadeIn">
+                                <div className="flex items-center justify-between text-[11px] font-mono text-emerald-400 border-b border-emerald-900/10 pb-1.5 flex-wrap gap-1">
+                                  <span className="flex items-center gap-1 font-bold">
+                                    <Check className="h-4 w-4" />
+                                    <span>RESOLVIDO</span>
+                                  </span>
+                                  <span>
+                                    Em: {new Date(item.data_resolucao || '').toLocaleString()} | Resolvedor: <strong className="text-emerald-300">{item.matricula_resolvedor}</strong>
+                                  </span>
+                                </div>
+                                <p className="text-sm font-sans text-slate-200 leading-relaxed italic">
+                                  &ldquo;{item.resolucao}&rdquo;
+                                </p>
+                              </div>
+                            )}
+
+                            {isOpen && (
+                              <div className="flex flex-col gap-3">
+                                {!isResolving ? (
+                                  <div className="flex justify-end pt-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setIsResolvingPendenciaId(item.id_pendencia);
+                                        setResolucaoTexto('');
+                                        setPendenciaError('');
+                                      }}
+                                      className="px-3.5 py-2 bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-400 border border-emerald-900/30 hover:border-emerald-800/80 rounded-lg text-[11px] font-mono font-bold uppercase transition-all duration-150 cursor-pointer flex items-center gap-1.5"
+                                    >
+                                      <Check className="h-4 w-4" />
+                                      <span>Marcar como Resolvido</span>
+                                    </button>
+                                  </div>
+                                ) : (
+                                  /* Form de Resolução */
+                                  <form 
+                                    onSubmit={(e) => handleResolverPendenciaSubmit(e, item.id_pendencia)}
+                                    className="bg-slate-955 border border-slate-805 p-4 rounded-lg space-y-3.5 animate-fadeIn"
+                                  >
+                                    <div className="space-y-1.5">
+                                      <label className="text-[9px] font-mono font-bold text-slate-455 uppercase tracking-wide block">Descreva o que foi feito para resolver (justificativa de resolução) *:</label>
+                                      <textarea
+                                        required
+                                        rows={2}
+                                        value={resolucaoTexto}
+                                        onChange={(e) => setResolucaoTexto(e.target.value)}
+                                        placeholder="Ex: HT enviado para substituição no DLS, ou HT reparado com troca de bateria..."
+                                        className="w-full bg-slate-900 border border-slate-800 focus:border-emerald-500 p-2 text-xs text-slate-205 focus:outline-none rounded focus:ring-1 focus:ring-emerald-500/20"
+                                        disabled={isSubmittingPendencia}
+                                      />
+                                    </div>
+                                    <div className="flex items-center justify-end gap-2.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setIsResolvingPendenciaId(null);
+                                          setResolucaoTexto('');
+                                        }}
+                                        className="px-3 py-1.5 bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-450 hover:text-slate-205 text-[9px] font-mono font-bold uppercase rounded cursor-pointer"
+                                        disabled={isSubmittingPendencia}
+                                      >
+                                        Cancelar
+                                      </button>
+                                      <button
+                                        type="submit"
+                                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-555 text-white text-[9px] font-mono font-bold uppercase rounded cursor-pointer transition-colors shadow-md"
+                                        disabled={isSubmittingPendencia}
+                                      >
+                                        {isSubmittingPendencia ? 'Enviando...' : 'Confirmar Resolução'}
+                                      </button>
+                                    </div>
+                                  </form>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Rodapé do Modal */}
+            <div className="p-4 bg-slate-955/40 border-t border-slate-850 flex items-center justify-end gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsAlteracoesModalOpen(false)}
+                className="px-4 py-2 border border-slate-800 hover:border-slate-700 bg-slate-900 hover:bg-slate-850 text-slate-400 hover:text-slate-200 font-bold font-mono text-xs rounded-lg transition-colors cursor-pointer"
+              >
+                Fechar Janela
+              </button>
+            </div>
           </div>
         </div>
       )}

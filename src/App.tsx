@@ -3,13 +3,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Shield } from 'lucide-react';
 import { motion } from 'motion/react';
 import FlowSimulator from './components/FlowSimulator';
 import { useSupabaseDatabase } from './hooks/useSupabaseDatabase';
 import LoginPortal from './components/LoginPortal';
 import { Usuario } from './types';
+import { supabase } from './supabaseClient';
 
 export default function App() {
   const [activeArmeiroMatricula, setActiveArmeiroMatricula] = useState<string>(() => {
@@ -20,6 +21,45 @@ export default function App() {
     const saved = sessionStorage.getItem('authenticatedArmeiro');
     return saved ? JSON.parse(saved) : null;
   });
+
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session) {
+        if (sessionStorage.getItem('logging_in') === 'true') {
+          return;
+        }
+
+        const userUuid = session.user.id;
+        try {
+          const { data: dbUser, error } = await supabase
+            .from('usuarios')
+            .select('*')
+            .eq('auth_user_id', userUuid)
+            .single();
+
+          if (!error && dbUser && dbUser.perfil === 'armeiro_gestor') {
+            setAuthenticatedArmeiro(dbUser);
+            setActiveArmeiroMatricula(dbUser.matricula);
+            sessionStorage.setItem('activeArmeiroMatricula', dbUser.matricula);
+            sessionStorage.setItem('authenticatedArmeiro', JSON.stringify(dbUser));
+          }
+        } catch (err) {
+          console.error('Erro ao restaurar sessão:', err);
+        }
+      } else {
+        if (sessionStorage.getItem('logging_in') !== 'true') {
+          setAuthenticatedArmeiro(null);
+          setActiveArmeiroMatricula('');
+          sessionStorage.removeItem('activeArmeiroMatricula');
+          sessionStorage.removeItem('authenticatedArmeiro');
+        }
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
   
   // Encontrar o armeiro ativo atual no banco de dados
   const activeArmeiro = db.usuarios.find(u => u.matricula === activeArmeiroMatricula);
@@ -112,13 +152,14 @@ export default function App() {
           
           {authenticatedArmeiro && (
             <button
-              onClick={() => {
+              onClick={async () => {
+                await supabase.auth.signOut();
                 setAuthenticatedArmeiro(null);
                 setActiveArmeiroMatricula('');
                 sessionStorage.removeItem('activeArmeiroMatricula');
                 sessionStorage.removeItem('authenticatedArmeiro');
               }}
-              className="text-[10px] font-mono font-bold text-red-400 hover:text-red-300 hover:bg-red-950/20 px-3.5 py-2 border border-red-900/40 rounded-lg transition-all duration-200 cursor-pointer uppercase tracking-wider"
+              className="text-[10px] font-mono font-bold text-red-400 hover:text-red-300 hover:bg-red-955/20 px-3.5 py-2 border border-red-900/40 rounded-lg transition-all duration-200 cursor-pointer uppercase tracking-wider"
               id="btn-logout-armeiro"
             >
               Bloquear / Sair

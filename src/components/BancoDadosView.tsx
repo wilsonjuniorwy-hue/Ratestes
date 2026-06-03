@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { 
-  Database, Search, KeyRound, Package, ShieldAlert, CheckCircle, AlertTriangle, Plus
+  Database, Search, KeyRound, Package, ShieldAlert, CheckCircle, AlertTriangle, Plus, Lock, X, FolderLock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Usuario, Material, SituacaoMilitar, StatusMaterial, Categoria, Cautela, CautelaItem } from '../types';
+import { Usuario, Material, SituacaoMilitar, StatusMaterial, Categoria, Cautela, CautelaItem, ArmaParticular } from '../types';
+import { comparePassword } from '../utils/crypto';
+import { supabase } from '../supabaseClient';
 
 interface BancoDadosViewProps {
   usuarios: Usuario[];
@@ -22,6 +24,9 @@ interface BancoDadosViewProps {
   activeArmeiroMatricula?: string;
   excluirPolicialTotal?: (matricula: string) => Promise<{ success: boolean }>;
   excluirMaterialTotal?: (idMaterial: string) => Promise<{ success: boolean }>;
+  armasParticulares: ArmaParticular[];
+  adicionarArmaParticular: (novoItem: Omit<ArmaParticular, 'id_particular' | 'data_deposito' | 'status'>) => Promise<void>;
+  devolverArmasParticulares: (idsParticulares: string[], matriculaPolicial: string) => Promise<void>;
 }
 
 export function BancoDadosView({
@@ -40,10 +45,13 @@ export function BancoDadosView({
   adicionarModeloArma,
   activeArmeiroMatricula,
   excluirPolicialTotal,
-  excluirMaterialTotal
+  excluirMaterialTotal,
+  armasParticulares,
+  adicionarArmaParticular,
+  devolverArmasParticulares
 }: BancoDadosViewProps) {
   // --- ESTADOS DA ABA BANCO DE DADOS ---
-  const [bancoDadosSubSection, setBancoDadosSubSection] = useState<'policiais' | 'estoque'>('policiais');
+  const [bancoDadosSubSection, setBancoDadosSubSection] = useState<'policiais' | 'estoque' | 'particulares'>('policiais');
   const [userSearchTerm, setUserSearchTerm] = useState('');
   const [stockSearchTerm, setStockSearchTerm] = useState('');
 
@@ -62,6 +70,34 @@ export function BancoDadosView({
   // Estados Adicionais para Calibres
   const [calibresDisponiveis, setCalibresDisponiveis] = useState<string[]>(['9mm', '.40 S&W', '5.56x45mm NATO']);
   const [customCalibreValue, setCustomCalibreValue] = useState('');
+
+  // --- ESTADOS DE ARMAS PARTICULARES ---
+  const [particularMode, setParticularMode] = useState<'menu' | 'cadastro' | 'visualizar'>('menu');
+  const [isTotemModalOpen, setIsTotemModalOpen] = useState(false);
+  const [totemMatricula, setTotemMatricula] = useState('');
+  const [totemSenha, setTotemSenha] = useState('');
+  const [totemError, setTotemError] = useState('');
+  const [authenticatedPolicial, setAuthenticatedPolicial] = useState<Usuario | null>(null);
+
+  // Estados Formulário Cadastro Particular
+  const [partTipoItem, setPartTipoItem] = useState<'arma' | 'colete' | 'municao'>('arma');
+  const [partModelo, setPartModelo] = useState('');
+  const [partFabricante, setPartFabricante] = useState('');
+  const [partCalibre, setPartCalibre] = useState('');
+  const [partNumeroSerie, setPartNumeroSerie] = useState('');
+  const [partQuantidade, setPartQuantidade] = useState(1);
+  const [partCarregadores, setPartCarregadores] = useState(0);
+  const [partMuniQtd, setPartMuniQtd] = useState(0);
+  const [partObservacoes, setPartObservacoes] = useState('');
+  const [partError, setPartError] = useState('');
+  const [partSuccess, setPartSuccess] = useState('');
+
+  // Estados Devolução Particular
+  const [selectedPolicialMatriculaDevolucao, setSelectedPolicialMatriculaDevolucao] = useState<string | null>(null);
+  const [selectedItensDevolucao, setSelectedItensDevolucao] = useState<string[]>([]);
+  const [devolucaoSenhaInput, setDevolucaoSenhaInput] = useState('');
+  const [devolucaoError, setDevolucaoError] = useState('');
+  const [devolucaoSuccess, setDevolucaoSuccess] = useState('');
 
   // Helpers para identificar tipo de categoria
   const isWeaponCategory = (catId: string) => {
@@ -370,6 +406,139 @@ export function BancoDadosView({
     setRemovalError('');
   };
 
+  // ---- HANDLERS DE ARMAS PARTICULARES ----
+  const handleTotemAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setTotemError('');
+    const matNorm = totemMatricula.trim().toUpperCase();
+    if (!matNorm || !totemSenha) {
+      setTotemError('Matrícula e senha são obrigatórias.');
+      return;
+    }
+
+    try {
+      const { data: dbUser, error } = await supabase
+        .from('usuarios')
+        .select('*')
+        .eq('matricula', matNorm)
+        .single();
+
+      if (error || !dbUser) {
+        setTotemError('Militar não cadastrado no SGBD.');
+        return;
+      }
+
+      const { matches } = await comparePassword(totemSenha, dbUser.senha_hash);
+      if (!matches) {
+        setTotemError('Inconsistência cadastral. Senha inválida.');
+        return;
+      }
+
+      // Success
+      setAuthenticatedPolicial(dbUser);
+      setParticularMode('cadastro');
+      setIsTotemModalOpen(false);
+      setTotemMatricula('');
+      setTotemSenha('');
+    } catch (err) {
+      console.error(err);
+      setTotemError('Erro na autenticação com o SGBD.');
+    }
+  };
+
+  const handleCadastroParticular = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPartError('');
+    setPartSuccess('');
+
+    if (!authenticatedPolicial) {
+      setPartError('Nenhum militar autenticado.');
+      return;
+    }
+
+    if (!partModelo.trim()) {
+      setPartError('O modelo é obrigatório.');
+      return;
+    }
+
+    try {
+      const novoItem: Omit<ArmaParticular, 'id_particular' | 'data_deposito' | 'status'> = {
+        matricula_policial: authenticatedPolicial.matricula,
+        tipo_item: partTipoItem,
+        modelo: partModelo.trim(),
+        fabricante: partFabricante.trim() || undefined,
+        calibre: partTipoItem !== 'colete' ? (partCalibre.trim() || undefined) : undefined,
+        numero_serie: partTipoItem !== 'municao' ? (partNumeroSerie.trim() || undefined) : undefined,
+        quantidade: partTipoItem === 'municao' ? partQuantidade : 1,
+        carregadores: partTipoItem === 'arma' ? partCarregadores : undefined,
+        observacoes: partObservacoes.trim() || undefined
+      };
+
+      await adicionarArmaParticular(novoItem);
+      setPartSuccess(`O equipamento do policial ${authenticatedPolicial.nome} foi registrado com sucesso.`);
+      
+      // Limpar campos
+      setPartModelo('');
+      setPartFabricante('');
+      setPartCalibre('');
+      setPartNumeroSerie('');
+      setPartQuantidade(1);
+      setPartCarregadores(0);
+      setPartObservacoes('');
+    } catch (err: any) {
+      setPartError('Erro ao cadastrar: ' + err.message);
+    }
+  };
+
+  const handleDevolucaoParticular = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setDevolucaoError('');
+    setDevolucaoSuccess('');
+
+    if (!selectedPolicialMatriculaDevolucao) return;
+    if (selectedItensDevolucao.length === 0) {
+      setDevolucaoError('Selecione pelo menos um item para devolver.');
+      return;
+    }
+    if (!devolucaoSenhaInput) {
+      setDevolucaoError('Digite a senha para autorizar a devolução.');
+      return;
+    }
+
+    try {
+      // Obter senha do militar
+      const { data: dbUser, error } = await supabase
+        .from('usuarios')
+        .select('*')
+        .eq('matricula', selectedPolicialMatriculaDevolucao)
+        .single();
+
+      if (error || !dbUser) {
+        setDevolucaoError('Falha ao autenticar militar no SGBD.');
+        return;
+      }
+
+      const { matches } = await comparePassword(devolucaoSenhaInput, dbUser.senha_hash);
+      if (!matches) {
+        setDevolucaoError('Senha individual de assinatura digital incorreta.');
+        return;
+      }
+
+      // Proceder com a devolução
+      await devolverArmasParticulares(selectedItensDevolucao, selectedPolicialMatriculaDevolucao);
+      setDevolucaoSuccess('Armamento devolvido e assinatura digital validada!');
+      
+      setTimeout(() => {
+        setDevolucaoSuccess('');
+        setSelectedPolicialMatriculaDevolucao(null);
+        setSelectedItensDevolucao([]);
+        setDevolucaoSenhaInput('');
+      }, 1500);
+    } catch (err: any) {
+      setDevolucaoError('Erro na devolução: ' + err.message);
+    }
+  };
+
   return (
     <div className="space-y-6 animate-fadeIn" id="arm-banco-dados-view">
       
@@ -404,6 +573,16 @@ export function BancoDadosView({
             }`}
           >
             ESTOQUE DA RESERVA
+          </button>
+          <button
+            onClick={() => setBancoDadosSubSection('particulares')}
+            className={`px-4 py-2.5 rounded-lg text-xs font-mono font-bold transition-all duration-200 cursor-pointer ${
+              bancoDadosSubSection === 'particulares'
+                ? 'bg-blue-600/10 text-white border border-blue-500/30 shadow-[0_0_10px_rgba(59,130,246,0.1)]'
+                : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/30'
+            }`}
+          >
+            ARMAS PARTICULARES
           </button>
         </div>
       </div>
@@ -987,6 +1166,386 @@ export function BancoDadosView({
         </div>
       )}
 
+      {/* CONTEÚDO: ARMAS PARTICULARES */}
+      {bancoDadosSubSection === 'particulares' && (
+        <div className="bg-slate-900/60 backdrop-blur-md border border-slate-800/80 rounded-xl p-5 shadow-lg space-y-6">
+          <div className="border-b border-slate-850 pb-3 flex items-center justify-between">
+            <div className="space-y-1">
+              <h3 className="text-xs font-bold font-mono text-slate-200 uppercase tracking-widest flex items-center gap-2">
+                <FolderLock className="h-4.5 w-4.5 text-blue-500" />
+                <span>Custódia de Armas Particulares</span>
+              </h3>
+              <p className="text-xs text-slate-400 font-sans">Depósito provisório e restituição de armamento pessoal de militares na reserva bélica.</p>
+            </div>
+            
+            {particularMode !== 'menu' && (
+              <button
+                onClick={() => {
+                  setParticularMode('menu');
+                  setAuthenticatedPolicial(null);
+                  setPartError('');
+                  setPartSuccess('');
+                }}
+                className="px-3 py-1.5 bg-slate-950 hover:bg-slate-900 border border-slate-850 hover:border-slate-800 text-[10px] font-mono text-slate-400 hover:text-slate-200 rounded-lg transition-colors cursor-pointer uppercase font-bold"
+              >
+                Voltar ao Menu
+              </button>
+            )}
+          </div>
+
+          {/* MODO MENU */}
+          {particularMode === 'menu' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 py-4">
+              <div 
+                onClick={() => {
+                  setTotemMatricula('');
+                  setTotemSenha('');
+                  setTotemError('');
+                  setIsTotemModalOpen(true);
+                }}
+                className="bg-slate-955/40 hover:bg-slate-950/70 border border-slate-800 hover:border-blue-500/50 p-6 rounded-xl transition-all duration-300 cursor-pointer flex flex-col justify-between space-y-4 group text-left shadow-lg hover:shadow-[0_0_15px_rgba(59,130,246,0.05)]"
+              >
+                <div className="space-y-2">
+                  <div className="w-10 h-10 rounded-lg bg-blue-600/10 border border-blue-500/20 flex items-center justify-center text-blue-400 group-hover:scale-105 transition-transform duration-300">
+                    <KeyRound className="h-5 w-5" />
+                  </div>
+                  <h4 className="text-sm font-bold font-mono text-slate-200 uppercase">Cadastrar Novo Depósito Particular</h4>
+                  <p className="text-xs text-slate-400 leading-relaxed font-sans">Receber arma de fogo, colete balístico ou munições particulares de militares. Exige a matrícula e a senha de assinatura digital do proprietário no Totem.</p>
+                </div>
+                <span className="text-[10px] font-mono text-blue-400 font-bold group-hover:translate-x-1.5 transition-transform duration-200 block uppercase tracking-wider font-black">Acessar Totem & Cadastro →</span>
+              </div>
+
+              <div 
+                onClick={() => setParticularMode('visualizar')}
+                className="bg-slate-955/40 hover:bg-slate-950/70 border border-slate-800 hover:border-blue-500/50 p-6 rounded-xl transition-all duration-300 cursor-pointer flex flex-col justify-between space-y-4 group text-left shadow-lg hover:shadow-[0_0_15px_rgba(59,130,246,0.05)]"
+              >
+                <div className="space-y-2">
+                  <div className="w-10 h-10 rounded-lg bg-emerald-600/10 border border-emerald-500/20 flex items-center justify-center text-emerald-450 group-hover:scale-105 transition-transform duration-300">
+                    <FolderLock className="h-5 w-5" />
+                  </div>
+                  <h4 className="text-sm font-bold font-mono text-slate-200 uppercase">Visualizar Armas e Devolver</h4>
+                  <p className="text-xs text-slate-400 leading-relaxed font-sans">Consultar todo o acervo particular que se encontra acautelado no paiol e realizar a devolução total ou parcial com validação de senha do militar.</p>
+                </div>
+                <span className="text-[10px] font-mono text-emerald-400 font-bold group-hover:translate-x-1.5 transition-transform duration-200 block uppercase tracking-wider font-black">Consultar Inventário →</span>
+              </div>
+            </div>
+          )}
+
+          {/* MODO CADASTRO (FORMULÁRIO) */}
+          {particularMode === 'cadastro' && authenticatedPolicial && (
+            <div className="max-w-2xl mx-auto w-full space-y-6">
+              {/* Banner Identificador do Militar */}
+              <div className="bg-blue-955/25 border border-blue-900/35 p-4 rounded-xl flex items-center justify-between font-mono text-xs shadow-md">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 bg-blue-600/10 border border-blue-500/30 rounded-lg flex items-center justify-center text-blue-400">
+                    <CheckCircle className="h-4.5 w-4.5" />
+                  </div>
+                  <div>
+                    <span className="text-slate-500 text-[10px] block">Militar Proprietário Autenticado:</span>
+                    <strong className="text-slate-200 font-sans text-xs uppercase">{authenticatedPolicial.posto_graduacao} {authenticatedPolicial.nome}</strong>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="text-slate-500 text-[10px] block font-mono">Matrícula:</span>
+                  <span className="text-blue-400 font-bold text-xs font-mono">{authenticatedPolicial.matricula}</span>
+                </div>
+              </div>
+
+              <form onSubmit={handleCadastroParticular} className="space-y-4 font-sans text-xs">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  
+                  {/* Tipo de Item */}
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-mono font-bold text-slate-450 uppercase tracking-wide block">Tipo de Equipamento *:</label>
+                    <select
+                      required
+                      value={partTipoItem}
+                      onChange={(e) => {
+                        setPartTipoItem(e.target.value as any);
+                        setPartModelo('');
+                        setPartFabricante('');
+                        setPartCalibre('');
+                        setPartNumeroSerie('');
+                        setPartQuantidade(1);
+                        setPartCarregadores(0);
+                      }}
+                      className="w-full bg-slate-950 border border-slate-800 focus:border-blue-500 p-2.5 text-xs text-slate-200 focus:outline-none rounded-lg cursor-pointer font-mono"
+                    >
+                      <option value="arma">Arma de Fogo</option>
+                      <option value="colete">Colete Balístico</option>
+                      <option value="municao">Munições (Lote)</option>
+                    </select>
+                  </div>
+
+                  {/* Modelo */}
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-mono font-bold text-slate-450 uppercase tracking-wide block">
+                      {partTipoItem === 'arma' ? 'Modelo da Arma *' : partTipoItem === 'colete' ? 'Tamanho / Modelo do Colete *' : 'Identificação da Munição *'}:
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder={partTipoItem === 'arma' ? 'Ex: Glock G17 Gen 5' : partTipoItem === 'colete' ? 'Ex: Colete Inbra IIIA M' : 'Ex: Munição 9mm Gold Flat'}
+                      value={partModelo}
+                      onChange={(e) => setPartModelo(e.target.value)}
+                      className="w-full bg-slate-955 border border-slate-800 focus:border-blue-500 p-2.5 text-xs text-slate-205 focus:outline-none rounded-lg focus:ring-1 focus:ring-blue-500/20"
+                    />
+                  </div>
+
+                  {/* Fabricante */}
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-mono font-bold text-slate-450 uppercase tracking-wide block">Fabricante / Marca:</label>
+                    <input
+                      type="text"
+                      placeholder="Ex: Taurus, CBC, Glock, Inbra"
+                      value={partFabricante}
+                      onChange={(e) => setPartFabricante(e.target.value)}
+                      className="w-full bg-slate-955 border border-slate-800 focus:border-blue-500 p-2.5 text-xs text-slate-205 focus:outline-none rounded-lg focus:ring-1 focus:ring-blue-500/20"
+                    />
+                  </div>
+
+                  {/* Calibre (Apenas para Arma e Munição) */}
+                  {partTipoItem !== 'colete' && (
+                    <div className="space-y-1.5 animate-fadeIn">
+                      <label className="text-[10px] font-mono font-bold text-slate-450 uppercase tracking-wide block">Calibre *:</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Ex: 9mm, .40 S&W, .38 SPL, 12"
+                        value={partCalibre}
+                        onChange={(e) => setPartCalibre(e.target.value)}
+                        className="w-full bg-slate-955 border border-slate-800 focus:border-blue-500 p-2.5 text-xs text-slate-205 focus:outline-none rounded-lg focus:ring-1 focus:ring-blue-500/20"
+                      />
+                    </div>
+                  )}
+
+                  {/* Número de Série (Apenas para Arma e Colete) */}
+                  {partTipoItem !== 'municao' && (
+                    <div className="space-y-1.5 animate-fadeIn">
+                      <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wide block">Número de Série / Código *:</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Ex: ABD837482"
+                        value={partNumeroSerie}
+                        onChange={(e) => setPartNumeroSerie(e.target.value)}
+                        className="w-full bg-slate-955 border border-slate-800 focus:border-blue-500 p-2.5 text-xs font-mono text-slate-205 focus:outline-none rounded-lg focus:ring-1 focus:ring-blue-500/20"
+                      />
+                    </div>
+                  )}
+
+                  {/* Quantidade (Apenas para Munição) */}
+                  {partTipoItem === 'municao' && (
+                    <div className="space-y-1.5 animate-fadeIn">
+                      <label className="text-[10px] font-mono font-bold text-slate-450 uppercase tracking-wide block">Quantidade de Cartuchos *:</label>
+                      <input
+                        type="number"
+                        required
+                        min={1}
+                        value={partQuantidade}
+                        onChange={(e) => setPartQuantidade(parseInt(e.target.value) || 1)}
+                        className="w-full bg-slate-955 border border-slate-800 focus:border-blue-500 p-2.5 text-xs font-mono text-slate-205 focus:outline-none rounded-lg focus:ring-1 focus:ring-blue-500/20"
+                      />
+                    </div>
+                  )}
+
+                  {/* Quantidade de Carregadores (Apenas para Arma) */}
+                  {partTipoItem === 'arma' && (
+                    <div className="space-y-1.5 animate-fadeIn">
+                      <label className="text-[10px] font-mono font-bold text-slate-450 uppercase tracking-wide block">Quantidade de Carregadores:</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={partCarregadores}
+                        onChange={(e) => setPartCarregadores(parseInt(e.target.value) || 0)}
+                        className="w-full bg-slate-955 border border-slate-800 focus:border-blue-500 p-2.5 text-xs font-mono text-slate-205 focus:outline-none rounded-lg focus:ring-1 focus:ring-blue-500/20"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Observações */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-mono font-bold text-slate-450 uppercase tracking-wide block">Observações / Detalhes de Conservação:</label>
+                  <textarea
+                    rows={3}
+                    placeholder="Descreva o estado do armamento, quantidade de munições no carregador, ou observações gerais..."
+                    value={partObservacoes}
+                    onChange={(e) => setPartObservacoes(e.target.value)}
+                    className="w-full bg-slate-955 border border-slate-800 focus:border-blue-500 p-2.5 text-xs text-slate-205 focus:outline-none rounded-lg focus:ring-1 focus:ring-blue-500/20"
+                  />
+                </div>
+
+                {partError && (
+                  <div className="bg-red-955/30 border border-red-900/40 p-3 rounded-lg text-xs text-red-400 font-mono flex items-start gap-2">
+                    <ShieldAlert className="h-4 w-4 shrink-0 mt-0.5 text-red-500" />
+                    <span>{partError}</span>
+                  </div>
+                )}
+
+                {partSuccess ? (
+                  <div className="space-y-4 bg-emerald-950/20 border border-emerald-900/40 p-5 rounded-xl text-xs font-mono animate-fadeIn">
+                    <div className="flex items-start gap-2 text-emerald-450">
+                      <CheckCircle className="h-5 w-5 shrink-0 mt-0.5 text-emerald-455" />
+                      <div>
+                        <strong className="text-white block uppercase">Depósito Registrado</strong>
+                        <span>{partSuccess}</span>
+                      </div>
+                    </div>
+                    
+                    <div className="flex flex-col sm:flex-row gap-2.5 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          // Limpa feedback
+                          setPartSuccess('');
+                          setPartError('');
+                          // Limpa campos do formulário para o próximo item
+                          setPartTipoItem('arma');
+                          setPartModelo('');
+                          setPartFabricante('');
+                          setPartCalibre('');
+                          setPartNumeroSerie('');
+                          setPartQuantidade(1);
+                          setPartCarregadores(0);
+                          setPartMuniQtd(0);
+                          setPartObservacoes('');
+                        }}
+                        className="px-4 py-2.5 bg-blue-600 hover:bg-blue-555 text-white font-bold rounded-lg transition-colors cursor-pointer uppercase text-[10px]"
+                      >
+                        Cadastrar outro item para este policial
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPartSuccess('');
+                          setPartError('');
+                          setParticularMode('menu');
+                          setAuthenticatedPolicial(null);
+                          setTotemMatricula('');
+                          setTotemSenha('');
+                          setTotemError('');
+                          setIsTotemModalOpen(true);
+                        }}
+                        className="px-4 py-2.5 bg-slate-950 hover:bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-white font-bold rounded-lg transition-colors cursor-pointer uppercase text-[10px]"
+                      >
+                        Voltar para tela de login
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="submit"
+                    className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold font-mono py-3 rounded-lg text-xs transition-all shadow-md uppercase tracking-wider cursor-pointer glow-blue"
+                  >
+                    Cadastrar em Custódia Particular
+                  </button>
+                )}
+              </form>
+            </div>
+          )}
+
+          {/* MODO VISUALIZAR (LISTAGEM DE CUSTÓDIA) */}
+          {particularMode === 'visualizar' && (
+            <div className="space-y-4 animate-fadeIn">
+              <div className="overflow-x-auto pr-1">
+                <table className="w-full text-left text-xs text-slate-350">
+                  <thead className="bg-[#0b1329]/65 border border-slate-850 text-slate-455 font-mono text-[9px] uppercase tracking-wider">
+                    <tr>
+                      <th className="p-4">Proprietário (Militar)</th>
+                      <th className="p-4">Tipo</th>
+                      <th className="p-4">Armamento / Equipamento Particular</th>
+                      <th className="p-4">Data Depósito</th>
+                      <th className="p-4 text-center">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-850/50 font-sans text-xs">
+                    {(() => {
+                      const activeItems = armasParticulares.filter(ap => ap.status === 'guardado');
+                      if (activeItems.length === 0) {
+                        return (
+                          <tr>
+                            <td colSpan={5} className="p-8 text-center text-slate-505 font-mono text-xs">
+                              Nenhuma arma ou item particular sob custódia no paiol no momento.
+                            </td>
+                          </tr>
+                        );
+                      }
+
+                      return activeItems.map((item) => {
+                        const policial = usuarios.find(u => u.matricula === item.matricula_policial);
+                        return (
+                          <tr key={item.id_particular} className="hover:bg-slate-900/25 transition-colors">
+                            <td className="p-4">
+                              <div className="flex flex-col">
+                                <span className="font-bold text-slate-205">
+                                  {policial?.posto_graduacao} {policial?.nome_de_guerra || policial?.nome}
+                                </span>
+                                <span className="text-[9px] text-slate-500 font-mono mt-0.5">Matrícula: {item.matricula_policial}</span>
+                              </div>
+                            </td>
+                            <td className="p-4">
+                              <span className={`text-[8px] font-mono font-black uppercase px-2 py-0.5 rounded border ${
+                                item.tipo_item === 'arma'
+                                  ? 'bg-blue-955/35 text-blue-400 border-blue-900/40'
+                                  : item.tipo_item === 'colete'
+                                  ? 'bg-purple-955/35 text-purple-400 border-purple-900/40'
+                                  : 'bg-amber-955/35 text-amber-400 border-amber-900/40'
+                              }`}>
+                                {item.tipo_item === 'arma' ? 'Arma' : item.tipo_item === 'colete' ? 'Colete' : 'Munição'}
+                              </span>
+                            </td>
+                            <td className="p-4">
+                              <div className="flex flex-col font-sans">
+                                <span className="font-bold text-slate-205 uppercase">{item.modelo}</span>
+                                <span className="text-[10px] text-slate-500 font-mono mt-0.5">
+                                  {item.fabricante && `Fabricante: ${item.fabricante}`}
+                                  {item.calibre && ` | Calibre: ${item.calibre}`}
+                                  {item.numero_serie && ` | S/N: ${item.numero_serie}`}
+                                  {item.quantidade && item.tipo_item === 'municao' && ` | Quantidade: ${item.quantidade} un`}
+                                  {item.carregadores !== undefined && item.carregadores > 0 && ` | Carregadores: ${item.carregadores}`}
+                                </span>
+                                {item.observacoes && (
+                                  <span className="text-[9px] text-slate-505 italic mt-1 font-mono">Obs: {item.observacoes}</span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="p-4 font-mono text-[10px] text-slate-400">
+                              {new Date(item.data_deposito).toLocaleString('pt-BR', {
+                                day: '2-digit',
+                                month: '2-digit',
+                                year: '2-digit',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </td>
+                            <td className="p-4 text-center">
+                              <button
+                                onClick={() => {
+                                  setSelectedPolicialMatriculaDevolucao(item.matricula_policial);
+                                  setSelectedItensDevolucao([item.id_particular]); // Seleciona esse item
+                                  setDevolucaoSenhaInput('');
+                                  setDevolucaoError('');
+                                  setDevolucaoSuccess('');
+                                }}
+                                className="px-3 py-1.5 bg-emerald-950/20 hover:bg-emerald-950/45 border border-emerald-900/30 hover:border-emerald-800/80 text-[10px] font-mono text-emerald-400 hover:text-emerald-300 rounded-lg transition-colors flex items-center justify-center gap-1.5 mx-auto font-bold uppercase cursor-pointer"
+                              >
+                                <KeyRound className="h-3.5 w-3.5" />
+                                <span>Devolver</span>
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      });
+                    })()}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* MODAL DE JUSTIFICATIVA DE RETIRADA */}
       <AnimatePresence>
         {removalMaterialId && (
@@ -1161,6 +1720,257 @@ export function BancoDadosView({
                     className="px-4 py-2 bg-blue-600 hover:bg-blue-550 text-white rounded-lg transition-colors font-bold uppercase cursor-pointer shadow-md glow-blue"
                   >
                     Salvar Categoria
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL DE TOTEM DE AUTENTICAÇÃO (CADASTRO PARTICULAR) */}
+      <AnimatePresence>
+        {isTotemModalOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-955/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 no-print"
+          >
+            <motion.div
+              initial={{ scale: 0.95 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0.95 }}
+              className="bg-slate-900 border border-slate-800 rounded-xl max-w-md w-full p-6 shadow-2xl space-y-4 text-xs font-sans relative overflow-hidden"
+            >
+              <div className="absolute top-0 left-0 right-0 h-[2px] bg-blue-500" />
+              
+              <div className="flex items-start gap-3">
+                <div className="bg-blue-955/40 p-2.5 rounded-lg border border-blue-900/30 text-blue-450">
+                  <KeyRound className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-slate-200 font-mono uppercase tracking-widest">Totem de Identificação Tática</h3>
+                  <p className="text-xs text-slate-450 leading-relaxed mt-0.5 font-medium">O militar proprietário do armamento deve autenticar-se para validar a guarda e assinar digitalmente o depósito.</p>
+                </div>
+              </div>
+
+              <form onSubmit={handleTotemAuth} className="space-y-4 font-mono text-xs">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-slate-455 uppercase tracking-wider block">Matrícula (RG Funcional) *:</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="EX: PM-921384"
+                    value={totemMatricula}
+                    onChange={(e) => setTotemMatricula(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 focus:border-blue-500 rounded-lg p-2.5 text-xs text-slate-200 uppercase focus:outline-none focus:ring-1 focus:ring-blue-500/20"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-slate-455 uppercase tracking-wider block">Senha de Assinatura (4 números) *:</label>
+                  <input
+                    type="password"
+                    required
+                    maxLength={4}
+                    placeholder="••••"
+                    value={totemSenha}
+                    onChange={(e) => setTotemSenha(e.target.value.replace(/\D/g, ''))}
+                    className="w-full bg-slate-950 border border-slate-800 focus:border-blue-500 rounded-lg p-2.5 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500/20 text-center tracking-widest text-lg"
+                  />
+                </div>
+
+                {totemError && (
+                  <div className="bg-red-955/30 border border-red-900/40 p-3 rounded-lg text-xs text-red-400 font-mono flex items-start gap-2">
+                    <ShieldAlert className="h-4 w-4 shrink-0 mt-0.5 text-red-550" />
+                    <span>{totemError}</span>
+                  </div>
+                )}
+
+                <div className="flex justify-end gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsTotemModalOpen(false);
+                      setTotemMatricula('');
+                      setTotemSenha('');
+                      setTotemError('');
+                    }}
+                    className="px-4 py-2 border border-slate-800 hover:border-slate-700 bg-transparent text-slate-400 hover:text-slate-205 rounded-lg transition-colors font-bold uppercase cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-550 text-white rounded-lg transition-colors font-bold uppercase cursor-pointer shadow-md glow-blue"
+                  >
+                    Autenticar
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL DE DEVOLUÇÃO / RESTITUIÇÃO PARTICULAR */}
+      <AnimatePresence>
+        {selectedPolicialMatriculaDevolucao && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-955/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 no-print"
+          >
+            <motion.div
+              initial={{ scale: 0.95 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0.95 }}
+              className="bg-slate-900 border border-slate-800 rounded-xl max-w-lg w-full p-6 shadow-2xl space-y-4 text-xs font-sans relative overflow-hidden"
+            >
+              <div className="absolute top-0 left-0 right-0 h-[2px] bg-emerald-500" />
+              
+              <div className="flex items-start gap-3 border-b border-slate-850 pb-3">
+                <div className="bg-emerald-955/40 p-2.5 rounded-lg border border-emerald-900/30 text-emerald-450">
+                  <FolderLock className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-slate-200 font-mono uppercase tracking-widest">Restituição de Carga Particular</h3>
+                  <p className="text-xs text-slate-450 leading-relaxed mt-0.5 font-medium">
+                    Militar: <strong className="text-slate-200 uppercase font-sans">
+                      {(() => {
+                        const pol = usuarios.find(u => u.matricula === selectedPolicialMatriculaDevolucao);
+                        return pol ? `${pol.posto_graduacao} ${pol.nome}` : selectedPolicialMatriculaDevolucao;
+                      })()}
+                    </strong>
+                  </p>
+                </div>
+              </div>
+
+              <form onSubmit={handleDevolucaoParticular} className="space-y-4">
+                {/* Listagem de itens do Militar */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-mono font-bold text-slate-450 uppercase tracking-wide">Selecione os itens a serem restituídos:</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const itemsOfPol = armasParticulares
+                          .filter(ap => ap.status === 'guardado' && ap.matricula_policial === selectedPolicialMatriculaDevolucao)
+                          .map(ap => ap.id_particular);
+                        
+                        if (selectedItensDevolucao.length === itemsOfPol.length) {
+                          setSelectedItensDevolucao([]); // Desmarcar todos
+                        } else {
+                          setSelectedItensDevolucao(itemsOfPol); // Marcar todos
+                        }
+                      }}
+                      className="text-[9px] font-mono text-blue-400 hover:text-blue-300 font-bold uppercase tracking-wider bg-transparent border-none cursor-pointer"
+                    >
+                      {(() => {
+                        const itemsOfPol = armasParticulares.filter(ap => ap.status === 'guardado' && ap.matricula_policial === selectedPolicialMatriculaDevolucao);
+                        return selectedItensDevolucao.length === itemsOfPol.length ? 'Desmarcar Todos' : 'Marcar Todos';
+                      })()}
+                    </button>
+                  </div>
+
+                  <div className="bg-slate-950 p-3 rounded-lg border border-slate-850 max-h-40 overflow-y-auto space-y-2">
+                    {armasParticulares
+                      .filter(ap => ap.status === 'guardado' && ap.matricula_policial === selectedPolicialMatriculaDevolucao)
+                      .map((item) => {
+                        const isChecked = selectedItensDevolucao.includes(item.id_particular);
+                        return (
+                          <div 
+                            key={item.id_particular}
+                            onClick={() => {
+                              if (isChecked) {
+                                setSelectedItensDevolucao(prev => prev.filter(id => id !== item.id_particular));
+                              } else {
+                                setSelectedItensDevolucao(prev => [...prev, item.id_particular]);
+                              }
+                            }}
+                            className={`p-2.5 rounded border transition-all duration-150 cursor-pointer flex items-center justify-between gap-3 text-xs ${
+                              isChecked 
+                                ? 'bg-emerald-950/20 border-emerald-900/50 text-emerald-400' 
+                                : 'bg-slate-900/40 border-slate-850 text-slate-400'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <input 
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => {}} // Handle pelo container click
+                                className="rounded text-emerald-600 bg-slate-950 border-slate-800 focus:ring-emerald-505 shrink-0 cursor-pointer"
+                              />
+                              <div className="text-[11px] font-mono uppercase">
+                                <strong>{item.modelo}</strong>
+                                <span className="text-[9px] text-slate-500 ml-1.5 font-bold">
+                                  {item.numero_serie ? `[S/N: ${item.numero_serie}]` : item.quantidade && `[Qtd: ${item.quantidade}]`}
+                                </span>
+                              </div>
+                            </div>
+                            <span className="text-[8px] font-mono bg-slate-950 px-1.5 py-0.5 rounded border border-slate-850 uppercase shrink-0">
+                              {item.tipo_item}
+                            </span>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+
+                {/* Confirmação por Senha */}
+                <div className="space-y-1.5 font-mono">
+                  <label className="text-[10px] font-bold text-slate-455 uppercase tracking-wider block">Assinatura Digital do Militar (Senha de 4 dígitos) *:</label>
+                  <input
+                    type="password"
+                    required
+                    maxLength={4}
+                    placeholder="••••"
+                    value={devolucaoSenhaInput}
+                    onChange={(e) => setDevolucaoSenhaInput(e.target.value.replace(/\D/g, ''))}
+                    className="w-full bg-slate-950 border border-slate-800 focus:border-emerald-500 rounded-lg p-2.5 text-xs text-slate-202 focus:outline-none focus:ring-1 focus:ring-emerald-500/20 text-center tracking-widest text-lg"
+                  />
+                </div>
+
+                {devolucaoError && (
+                  <div className="bg-red-955/30 border border-red-900/40 p-3 rounded-lg text-xs text-red-400 font-mono flex items-start gap-2">
+                    <ShieldAlert className="h-4 w-4 shrink-0 mt-0.5 text-red-550" />
+                    <span>{devolucaoError}</span>
+                  </div>
+                )}
+
+                {devolucaoSuccess && (
+                  <div className="bg-emerald-950/30 border border-emerald-900/40 p-3 rounded-lg text-xs text-emerald-450 font-mono flex items-start gap-2 animate-fadeIn">
+                    <CheckCircle className="h-4 w-4 shrink-0 mt-0.5 text-emerald-455" />
+                    <span>{devolucaoSuccess}</span>
+                  </div>
+                )}
+
+                <div className="flex justify-end gap-2.5 font-mono">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedPolicialMatriculaDevolucao(null);
+                      setSelectedItensDevolucao([]);
+                      setDevolucaoSenhaInput('');
+                      setDevolucaoError('');
+                      setDevolucaoSuccess('');
+                    }}
+                    className="px-4 py-2 border border-slate-800 hover:border-slate-700 bg-transparent text-slate-400 hover:text-slate-205 rounded-lg transition-colors font-bold uppercase cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={selectedItensDevolucao.length === 0}
+                    className={`px-4 py-2 rounded-lg transition-colors font-bold uppercase cursor-pointer shadow-md ${
+                      selectedItensDevolucao.length === 0
+                        ? 'bg-slate-950 border border-slate-850 text-slate-600 cursor-not-allowed opacity-40'
+                        : 'bg-emerald-655 hover:bg-emerald-500 text-white glow-emerald'
+                    }`}
+                  >
+                    Confirmar Restituição
                   </button>
                 </div>
               </form>

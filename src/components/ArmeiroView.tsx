@@ -12,7 +12,7 @@ interface ArmeiroViewProps {
   cautelas: Cautela[];
   cautelaItens: CautelaItem[];
   auditoriaLogs: AuditoriaLog[];
-  cadastrarPolicial: (novoPolicial: Usuario) => void;
+  cadastrarPolicial: (novoPolicial: Usuario) => Promise<{ success: boolean; error?: string }>;
   processDevolucao: (
     cautId: string, 
     idsMateriaisDevolvidos: string[], 
@@ -97,7 +97,7 @@ export function ArmeiroView({
   };
 
   // ---- CADASTRO DE NOVO POLICIAL MILITAR ----
-  const handleCadastrarPolicialSubmit = (e: React.FormEvent) => {
+  const handleCadastrarPolicialSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setCadastroUsuarioError('');
     setCadastroUsuarioSuccess('');
@@ -124,14 +124,21 @@ export function ArmeiroView({
       data_ultimo_teste_psicologico: new Date().toISOString().split('T')[0], // data de hoje
     };
 
-    cadastrarPolicial(novoPolicial);
-
-    setNewMatricula('');
-    setNewNome('');
-    setNewNomeDeGuerra('');
-    setNewPosto('Soldado');
-    setNewSituacao('apto');
-    setCadastroUsuarioSuccess('Policial cadastrado com sucesso! Matrícula liberada para primeiro acesso no Totem.');
+    try {
+      const result = await cadastrarPolicial(novoPolicial);
+      if (result && !result.success) {
+        setCadastroUsuarioError(result.error || 'Erro ao cadastrar policial.');
+      } else {
+        setNewMatricula('');
+        setNewNome('');
+        setNewNomeDeGuerra('');
+        setNewPosto('Soldado');
+        setNewSituacao('apto');
+        setCadastroUsuarioSuccess('Policial cadastrado com sucesso! Matrícula liberada para primeiro acesso no Totem.');
+      }
+    } catch (err: any) {
+      setCadastroUsuarioError(err.message || 'Erro ao realizar cadastro.');
+    }
   };
 
   // ---- EXCLUIR CAUTELA CLIQUE (ADMIN) ----

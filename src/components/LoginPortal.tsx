@@ -8,7 +8,7 @@ import { Shield, KeyRound, ShieldAlert, CheckCircle, RefreshCw, Eye, EyeOff } fr
 import { motion } from 'motion/react';
 import { Usuario } from '../types';
 import { supabase } from '../supabaseClient';
-import { comparePassword } from '../utils/crypto';
+import { comparePassword, hashSHA256 } from '../utils/crypto';
 
 interface LoginPortalProps {
   usuarios: Usuario[];
@@ -48,13 +48,14 @@ export default function LoginPortal({
     const senhaNorm = senha.trim();
 
     try {
-      const { data: user, error } = await supabase
+      // 1. Consultar a tabela usuarios para obter informações básicas (como perfil)
+      const { data: user, error: userError } = await supabase
         .from('usuarios')
         .select('*')
         .eq('matricula', matriculaNorm)
         .single();
 
-      if (error || !user) {
+      if (userError || !user) {
         setAuthError('Matrícula funcional não encontrada no SGBD.');
         setIsAuthenticating(false);
         return;
@@ -68,25 +69,38 @@ export default function LoginPortal({
       }
 
       // Validar se é primeiro acesso (senha em branco)
-      if (user.senha_hash === '' || !user.senha_hash) {
+      // Se não tiver auth_user_id ou senha_hash, é primeiro acesso
+      if ((user.senha_hash === '' || !user.senha_hash) && !user.auth_user_id) {
         setPrimeiroAcessoUser(user);
         setStep('primeiro_acesso');
         setIsAuthenticating(false);
         return;
       }
 
-      // Validar senha de forma segura com hash
-      const { matches, needsMigration } = await comparePassword(senhaNorm, user.senha_hash);
+      // Sinalizar que estamos realizando o fluxo de login manual (para evitar que o listener de auth corte a animação)
+      sessionStorage.setItem('logging_in', 'true');
 
-      if (!matches) {
-        setAuthError('Senha de acesso incorreta. Verifique suas credenciais.');
+      // 2. Tentar autenticação via Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: `${matriculaNorm}@cavalaria.pm`,
+        password: senhaNorm,
+      });
+
+      if (authError) {
+        sessionStorage.removeItem('logging_in');
+        setAuthError('Senha de acesso incorreta ou usuário não cadastrado no Supabase Auth.');
         setIsAuthenticating(false);
         return;
       }
 
-      // Migrar senha legada se necessário
-      if (needsMigration) {
-        cadastrarSenha(user.matricula, senhaNorm);
+      // Se o usuário foi autenticado com sucesso no Auth, mas seu auth_user_id no banco ainda não está vinculado, vinculamos agora!
+      if (authData.user && user.auth_user_id !== authData.user.id) {
+        await supabase
+          .from('usuarios')
+          .update({ auth_user_id: authData.user.id })
+          .eq('matricula', matriculaNorm);
+        
+        user.auth_user_id = authData.user.id;
       }
 
       // Sucesso no login
@@ -96,15 +110,17 @@ export default function LoginPortal({
       }, 1000);
     } catch (err) {
       console.error('Erro de autenticação:', err);
+      sessionStorage.removeItem('logging_in');
       setAuthError('Falha de conexão com o SGBD.');
       setIsAuthenticating(false);
     }
   };
 
   // ---- SUBMIT DO PRIMEIRO ACESSO ----
-  const handlePrimeiroAcessoSubmit = (e: React.FormEvent) => {
+  const handlePrimeiroAcessoSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
+    setIsAuthenticating(true);
 
     const newPwdTrim = newSenha.trim();
     const confirmPwdTrim = confirmNewSenha.trim();
@@ -113,22 +129,74 @@ export default function LoginPortal({
 
     if (newPwdTrim.length < 4) {
       setAuthError('A senha deve conter no mínimo 4 dígitos.');
+      setIsAuthenticating(false);
       return;
     }
 
     if (newPwdTrim !== confirmPwdTrim) {
       setAuthError('A confirmação da nova senha não confere.');
+      setIsAuthenticating(false);
       return;
     }
 
-    // Salvar senha
-    cadastrarSenha(primeiroAcessoUser.matricula, newPwdTrim);
-    
-    // Transitar para sucesso
-    setStep('sucesso');
-    setTimeout(() => {
-      onLoginSuccess({ ...primeiroAcessoUser, senha_hash: newPwdTrim });
-    }, 1000);
+    try {
+      sessionStorage.setItem('logging_in', 'true');
+      const matriculaNorm = primeiroAcessoUser.matricula.toUpperCase();
+
+      // Criar a conta no Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: `${matriculaNorm}@cavalaria.pm`,
+        password: newPwdTrim,
+      });
+
+      if (authError) {
+        sessionStorage.removeItem('logging_in');
+        setAuthError(`Erro ao registrar no Auth: ${authError.message}`);
+        setIsAuthenticating(false);
+        return;
+      }
+
+      const authUserId = authData.user?.id;
+      if (!authUserId) {
+        sessionStorage.removeItem('logging_in');
+        setAuthError('Erro ao obter identificador do usuário autenticado.');
+        setIsAuthenticating(false);
+        return;
+      }
+
+      const hashed = await hashSHA256(newPwdTrim);
+
+      // Atualizar no banco
+      const { error: updateError } = await supabase
+        .from('usuarios')
+        .update({ 
+          auth_user_id: authUserId,
+          senha_hash: hashed 
+        })
+        .eq('matricula', matriculaNorm);
+
+      if (updateError) {
+        console.error('Erro ao atualizar usuarios com auth_user_id:', updateError);
+      }
+
+      // Sincronizar senha localmente se o app precisar
+      cadastrarSenha(primeiroAcessoUser.matricula, newPwdTrim);
+
+      // Transitar para sucesso
+      setStep('sucesso');
+      setTimeout(() => {
+        onLoginSuccess({ 
+          ...primeiroAcessoUser, 
+          auth_user_id: authUserId,
+          senha_hash: hashed 
+        });
+      }, 1000);
+    } catch (err) {
+      console.error('Erro no primeiro acesso:', err);
+      sessionStorage.removeItem('logging_in');
+      setAuthError('Falha ao registrar credenciais de primeiro acesso.');
+      setIsAuthenticating(false);
+    }
   };
 
   return (

@@ -8,7 +8,7 @@ import { supabase } from '../supabaseClient';
 import { 
   Usuario, Categoria, Material, Cautela, CautelaItem, 
   AuditoriaLog, OcorrenciaRelatorio, SituacaoMilitar, 
-  StatusMaterial, CondicaoUso 
+  StatusMaterial, CondicaoUso, ArmaParticular, PendenciaServico
 } from '../types';
 import { hashSHA256 } from '../utils/crypto';
 import { 
@@ -32,6 +32,9 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
   const [auditoriaLogs, setAuditoriaLogs] = useState<AuditoriaLog[]>([]);
   const [ocorrencias, setOcorrencias] = useState<OcorrenciaRelatorio[]>([]);
   const [modelosArmas, setModelosArmas] = useState<Array<{ modelo: string; calibre: string }>>([]);
+  const [armasParticulares, setArmasParticulares] = useState<ArmaParticular[]>([]);
+  const [pendenciasServico, setPendenciasServico] = useState<PendenciaServico[]>([]);
+
 
   const [isLoading, setIsLoading] = useState(true);
   const [dbError, setDbError] = useState<string | null>(null);
@@ -50,7 +53,9 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
         { data: items, error: errItems },
         { data: logs, error: errLogs },
         { data: ocos, error: errOcos },
-        { data: models, error: errModels }
+        { data: models, error: errModels },
+        { data: privateWeapons, error: errPrivateWeapons },
+        { data: dbPendencias, error: errPendencias }
       ] = await Promise.all([
         supabase.from('usuarios').select('matricula, nome, nome_de_guerra, perfil, posto_graduacao, situacao_cautela, data_ultimo_teste_psicologico, motivo_suspensao'),
         supabase.from('materiais').select('*'),
@@ -59,7 +64,9 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
         supabase.from('cautela_itens').select('*'),
         supabase.from('auditoria_logs').select('*').order('data_hora', { ascending: false }),
         supabase.from('ocorrencias').select('*').order('data_hora', { ascending: false }),
-        supabase.from('modelos_armas').select('*')
+        supabase.from('modelos_armas').select('*'),
+        supabase.from('armas_particulares').select('*').order('data_deposito', { ascending: false }),
+        supabase.from('pendencias_servico').select('*').order('data_criacao', { ascending: false })
       ]);
 
       if (errUsers) throw errUsers;
@@ -70,6 +77,8 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
       if (errLogs) throw errLogs;
       if (errOcos) throw errOcos;
       if (errModels) throw errModels;
+      if (errPrivateWeapons) throw errPrivateWeapons;
+      if (errPendencias) throw errPendencias;
 
       setUsuarios((users || []).map(u => ({ ...u, senha_hash: '' } as Usuario)));
       setMateriais(materials || []);
@@ -79,6 +88,8 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
       setAuditoriaLogs(logs || []);
       setOcorrencias(ocos || []);
       setModelosArmas(models || []);
+      setArmasParticulares(privateWeapons || []);
+      setPendenciasServico(dbPendencias || []);
 
       // Auto-seeding do usuário armeiro se não existir na base de dados (com migração de caixa)
       const userList = users || [];
@@ -192,6 +203,8 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
       // 1. Limpar todas as tabelas em ordem reversa de chaves estrangeiras
       await supabase.from('cautela_itens').delete().neq('id_cautela_item', '');
       await supabase.from('cautelas').delete().neq('id_cautela', '');
+      await supabase.from('armas_particulares').delete().neq('id_particular', '');
+      await supabase.from('pendencias_servico').delete().neq('id_pendencia', '');
       await supabase.from('materiais').delete().neq('id_material', '');
       await supabase.from('categorias').delete().neq('id_categoria', '');
       await supabase.from('ocorrencias').delete().neq('id_ocorrencia', '');
@@ -221,43 +234,44 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
       }
 
       // Estágio 2: Materiais (Depende de Categorias)
-      const { error: errM } = await supabase.from('materiais').insert(mockMateriais);
-      if (errM) {
-        console.error('Falha ao inserir materiais no reset:', errM);
-        throw new Error(`Tabela materiais: ${errM.message} (${errM.details || ''})`);
+      const { error: errMat } = await supabase.from('materiais').insert(mockMateriais);
+      if (errMat) {
+        console.error('Falha ao inserir materiais no reset:', errMat);
+        throw new Error(`Tabela materiais: ${errMat.message} (${errMat.details || ''})`);
       }
 
       // Estágio 3: Cautelas, Logs, Ocorrências (Dependem de Usuários e/ou Materiais)
-      const { error: errCaut } = await supabase.from('cautelas').insert(mockCautelas);
-      if (errCaut) {
-        console.error('Falha ao inserir cautelas no reset:', errCaut);
-        throw new Error(`Tabela cautelas: ${errCaut.message} (${errCaut.details || ''})`);
+      const { error: errCautelasData } = await supabase.from('cautelas').insert(mockCautelas);
+      if (errCautelasData) {
+        console.error('Falha ao inserir cautelas no reset:', errCautelasData);
+        throw new Error(`Tabela cautelas: ${errCautelasData.message} (${errCautelasData.details || ''})`);
       }
 
-      const { error: errLogs } = await supabase.from('auditoria_logs').insert(mockAuditoriaLogs);
-      if (errLogs) {
-        console.error('Falha ao inserir auditoria_logs no reset:', errLogs);
-        throw new Error(`Tabela auditoria_logs: ${errLogs.message} (${errLogs.details || ''})`);
+      const { error: errLogsData } = await supabase.from('auditoria_logs').insert(mockAuditoriaLogs);
+      if (errLogsData) {
+        console.error('Falha ao inserir logs de auditoria no reset:', errLogsData);
+        throw new Error(`Tabela auditoria_logs: ${errLogsData.message} (${errLogsData.details || ''})`);
       }
 
-      const { error: errOcos } = await supabase.from('ocorrencias').insert(mockOcorrencias);
-      if (errOcos) {
-        console.error('Falha ao inserir ocorrencias no reset:', errOcos);
-        throw new Error(`Tabela ocorrencias: ${errOcos.message} (${errOcos.details || ''})`);
+      const { error: errOcosData } = await supabase.from('ocorrencias').insert(mockOcorrencias);
+      if (errOcosData) {
+        console.error('Falha ao inserir ocorrencias no reset:', errOcosData);
+        throw new Error(`Tabela ocorrencias: ${errOcosData.message} (${errOcosData.details || ''})`);
       }
 
       // Estágio 4: Cautela Itens (Depende de Cautelas e Materiais)
-      const { error: errItems } = await supabase.from('cautela_itens').insert(mockCautelaItens);
-      if (errItems) {
-        console.error('Falha ao inserir cautela_itens no reset:', errItems);
-        throw new Error(`Tabela cautela_itens: ${errItems.message} (${errItems.details || ''})`);
+      const { error: errItemsData } = await supabase.from('cautela_itens').insert(mockCautelaItens);
+      if (errItemsData) {
+        console.error('Falha ao inserir itens de cautela no reset:', errItemsData);
+        throw new Error(`Tabela cautela_itens: ${errItemsData.message} (${errItemsData.details || ''})`);
       }
 
-      // Re-fetch clean data to synchronize local state
+      console.log('SGBD: Reset de banco de dados efetuado com sucesso!');
       await fetchData();
     } catch (error: any) {
-      console.error('Erro ao resetar banco do Supabase:', error);
-      alert('Erro ao resetar banco remoto:\n' + error.message);
+      console.error('Falha crítica no reset de banco de dados do Supabase:', error);
+      setDbError(error.message);
+    } finally {
       setIsLoading(false);
     }
   };
@@ -282,6 +296,8 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
       // 1. Limpar todas as tabelas em ordem reversa de chaves estrangeiras
       await supabase.from('cautela_itens').delete().neq('id_cautela_item', '');
       await supabase.from('cautelas').delete().neq('id_cautela', '');
+      await supabase.from('armas_particulares').delete().neq('id_particular', '');
+      await supabase.from('pendencias_servico').delete().neq('id_pendencia', '');
       await supabase.from('materiais').delete().neq('id_material', '');
       await supabase.from('categorias').delete().neq('id_categoria', '');
       await supabase.from('ocorrencias').delete().neq('id_ocorrencia', '');
@@ -317,6 +333,16 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
       if (backupData.cautelas && backupData.cautelas.length > 0) {
         const { error: errCaut } = await supabase.from('cautelas').insert(backupData.cautelas);
         if (errCaut) throw new Error(`Erro ao importar cautelas: ${errCaut.message}`);
+      }
+
+      if (backupData.armas_particulares && backupData.armas_particulares.length > 0) {
+        const { error: errPart } = await supabase.from('armas_particulares').insert(backupData.armas_particulares);
+        if (errPart) throw new Error(`Erro ao importar armas_particulares: ${errPart.message}`);
+      }
+
+      if (backupData.pendencias_servico && backupData.pendencias_servico.length > 0) {
+        const { error: errPend } = await supabase.from('pendencias_servico').insert(backupData.pendencias_servico);
+        if (errPend) throw new Error(`Erro ao importar pendencias_servico: ${errPend.message}`);
       }
 
       if (backupData.auditoria_logs && backupData.auditoria_logs.length > 0) {
@@ -391,26 +417,62 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
   };
 
   // ---- CADASTRO DE NOVO POLICIAL MILITAR ----
-  const cadastrarPolicial = (novoPolicial: Usuario) => {
+  const cadastrarPolicial = async (novoPolicial: Usuario): Promise<{ success: boolean; error?: string }> => {
     const rawSenha = novoPolicial.senha_hash;
     
-    hashSHA256(rawSenha).then(hashed => {
+    try {
+      const hashed = await hashSHA256(rawSenha);
       const userToInsert = { ...novoPolicial, senha_hash: hashed };
       
+      const { error: insertError } = await supabase.from('usuarios').insert(userToInsert);
+      if (insertError) {
+        console.error('Erro ao cadastrar policial/armeiro:', insertError);
+        return { success: false, error: `Erro ao cadastrar: ${insertError.message}` };
+      }
+
       // Store empty password hash locally so it is not visible in memory listings
       setUsuarios(prev => [...prev, { ...novoPolicial, senha_hash: '' }]);
 
-      supabase.from('usuarios').insert(userToInsert).then(({ error }) => {
-        if (error) console.error('Erro ao cadastrar policial:', error);
-      });
-    });
+      // Se o usuário cadastrado for armeiro_gestor, chama a Edge Function para criar a conta no Auth e vincular
+      if (novoPolicial.perfil === 'armeiro_gestor') {
+        try {
+          const { data, error: funcError } = await supabase.functions.invoke('criar-armeiro-auth', {
+            body: { matricula: novoPolicial.matricula, senha: rawSenha }
+          });
 
-    registrarLogAuditoria(
-      activeArmeiroMatricula || 'SYS-AM',
-      'cadastro_militar',
-      `Novo policial militar cadastrado: ${novoPolicial.posto_graduacao} ${novoPolicial.nome} (Guerra: ${novoPolicial.nome_de_guerra || 'N/A'}, Matrícula: ${novoPolicial.matricula}, Porte: ${novoPolicial.situacao_cautela.toUpperCase()}).`
-    );
+          if (funcError || (data && data.error)) {
+            const errMsg = funcError?.message || data?.error || 'Erro desconhecido na Edge Function';
+            console.error('Erro na Edge Function ao criar Auth:', errMsg);
+            
+            // Reverter inserção na tabela usuarios para manter consistência
+            await supabase.from('usuarios').delete().eq('matricula', novoPolicial.matricula);
+            setUsuarios(prev => prev.filter(u => u.matricula !== novoPolicial.matricula));
+
+            return { success: false, error: `Erro ao criar conta de login: ${errMsg}` };
+          }
+        } catch (funcErr: any) {
+          console.error('Falha de rede ao invocar Edge Function:', funcErr);
+          // Reverter inserção
+          await supabase.from('usuarios').delete().eq('matricula', novoPolicial.matricula);
+          setUsuarios(prev => prev.filter(u => u.matricula !== novoPolicial.matricula));
+
+          return { success: false, error: `Falha na comunicação com o servidor de autenticação: ${funcErr.message}` };
+        }
+      }
+
+      registrarLogAuditoria(
+        activeArmeiroMatricula || 'SYS-AM',
+        'cadastro_militar',
+        `Novo ${novoPolicial.perfil === 'armeiro_gestor' ? 'armeiro' : 'policial'} militar cadastrado: ${novoPolicial.posto_graduacao} ${novoPolicial.nome} (Guerra: ${novoPolicial.nome_de_guerra || 'N/A'}, Matrícula: ${novoPolicial.matricula}, Porte: ${novoPolicial.situacao_cautela.toUpperCase()}).`
+      );
+
+      return { success: true };
+    } catch (err: any) {
+      console.error('Erro interno no cadastro:', err);
+      return { success: false, error: err.message || 'Erro inesperado no cadastro.' };
+    }
   };
+
 
   // ---- EDITAR PERFIL DE USUÁRIO (POLICIAL OU ARMEIRO) ----
   const editarPolicial = async (matricula: string, dadosAtualizados: Partial<Usuario>) => {
@@ -708,10 +770,19 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
       return m;
     });
 
+    // Marcar militar como pendente_devolucao
+    const usuariosAtualizados = usuarios.map(u => {
+      if (u.matricula === matriculaPolicial) {
+        return { ...u, situacao_cautela: 'pendente_devolucao' as const };
+      }
+      return u;
+    });
+
     // Update local state
     setCautelas(prev => [novaCautela, ...prev]);
     setCautelaItens(prev => [...prev, ...novosItensCautela]);
     setMateriais(materiaisAtualizados);
+    setUsuarios(usuariosAtualizados);
 
     // Sync to Supabase - SEQUENTIALLY to avoid Foreign Key Violations!
     supabase.from('cautelas').insert(novaCautela).then(({ error: errCautela }) => {
@@ -743,10 +814,17 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
       });
     }
 
+    // Sincronizar status do militar para pendente_devolucao no Supabase
+    supabase.from('usuarios').update({ situacao_cautela: 'pendente_devolucao' }).eq('matricula', matriculaPolicial).then(({ error: errUser }) => {
+      if (errUser) {
+        console.error('Erro ao atualizar situação do militar para pendente_devolucao:', errUser);
+      }
+    });
+
     registrarLogAuditoria(
-      matriculaPolicial, 
+      armeiroSvcMatricula, 
       'registro_cautela', 
-      `Cautela ${idNewCautela} criada com sucesso para ${user.nome}. Itens: ${Object.entries(groupedCart).map(([id, qty]) => `${id} (x${qty})`).join(', ')}.`
+      `Cautela ${idNewCautela} autorizada pelo armeiro para o policial ${user.posto_graduacao || ''} ${user.nome_de_guerra || user.nome} (Matrícula: ${matriculaPolicial}). Itens: ${Object.entries(groupedCart).map(([id, qty]) => `${id} (x${qty})`).join(', ')}.`
     );
 
     return novaCautela;
@@ -1010,6 +1088,136 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
       armeiroResponsavel,
       'registro_devolucao',
       `Baixa de Cautela efetuada para ${cautId} (Militar: ${policialResponsavel}). Itens processados: ${idsMateriaisDevolvidos.join(', ') || 'Nenhum'}. Cautela concluída: ${todosDevolvidos ? 'SIM' : 'NÃO'}. Prorrogada >24h: ${prorrogouStr}.`
+    );
+  };
+
+  const adicionarArmaParticular = async (novoItem: Omit<ArmaParticular, 'id_particular' | 'data_deposito' | 'status'>) => {
+    const idNew = (typeof crypto !== 'undefined' && crypto.randomUUID) 
+      ? crypto.randomUUID() 
+      : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+          const r = Math.random() * 16 | 0;
+          return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+        });
+    const itemToInsert: ArmaParticular = {
+      ...novoItem,
+      id_particular: idNew,
+      data_deposito: new Date().toISOString(),
+      status: 'guardado'
+    };
+
+    setArmasParticulares(prev => [itemToInsert, ...prev]);
+
+    const { error } = await supabase.from('armas_particulares').insert(itemToInsert);
+    if (error) {
+      console.error('Erro ao sincronizar armas_particulares:', error);
+      throw new Error(error.message);
+    }
+
+    const armeiroSvc = activeArmeiroMatricula || usuarios.find(u => u.perfil === 'armeiro_gestor')?.matricula || 'SYS-AM';
+    registrarLogAuditoria(
+      armeiroSvc,
+      'registro_cautela',
+      `Depósito de armamento particular cadastrado para o policial ${novoItem.matricula_policial}. Item: ${novoItem.modelo} (Tipo: ${novoItem.tipo_item.toUpperCase()}, S/N: ${novoItem.numero_serie || 'N/A'}).`
+    );
+  };
+
+  const devolverArmasParticulares = async (idsParticulares: string[], matriculaPolicial: string) => {
+    const agora = new Date().toISOString();
+    const armeiroSvc = activeArmeiroMatricula || usuarios.find(u => u.perfil === 'armeiro_gestor')?.matricula || 'SYS-AM';
+
+    setArmasParticulares(prev => prev.map(ap => {
+      if (idsParticulares.includes(ap.id_particular)) {
+        return { ...ap, status: 'devolvido', data_devolucao: agora };
+      }
+      return ap;
+    }));
+
+    const { error } = await supabase
+      .from('armas_particulares')
+      .update({ status: 'devolvido', data_devolucao: agora })
+      .in('id_particular', idsParticulares);
+
+    if (error) {
+      console.error('Erro ao devolver armas particulares no Supabase:', error);
+      throw new Error(error.message);
+    }
+
+    registrarLogAuditoria(
+      armeiroSvc,
+      'registro_devolucao',
+      `Restituição/Devolução de armas particulares concluída para o policial ${matriculaPolicial}. Itens devolvidos: ${idsParticulares.join(', ')}.`
+    );
+  };
+
+  const adicionarPendencia = async (descricao: string) => {
+    const idNew = (typeof crypto !== 'undefined' && crypto.randomUUID) 
+      ? crypto.randomUUID() 
+      : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+          const r = Math.random() * 16 | 0;
+          return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+        });
+
+    const armeiroSvc = activeArmeiroMatricula || usuarios.find(u => u.perfil === 'armeiro_gestor')?.matricula || 'SYS-AM';
+
+    const novaPendencia: PendenciaServico = {
+      id_pendencia: idNew,
+      descricao: descricao.trim(),
+      status: 'aberto',
+      data_criacao: new Date().toISOString(),
+      matricula_criador: armeiroSvc
+    };
+
+    setPendenciasServico(prev => [novaPendencia, ...prev]);
+
+    const { error } = await supabase.from('pendencias_servico').insert(novaPendencia);
+    if (error) {
+      console.error('Erro ao salvar pendência:', error);
+      throw new Error(error.message);
+    }
+
+    registrarLogAuditoria(
+      armeiroSvc,
+      'registro_cautela',
+      `Pendência registrada: "${descricao.trim().substring(0, 60)}..." (Criada por: ${armeiroSvc}).`
+    );
+  };
+
+  const resolverPendencia = async (idPendencia: string, resolucao: string) => {
+    const agora = new Date().toISOString();
+    const armeiroSvc = activeArmeiroMatricula || usuarios.find(u => u.perfil === 'armeiro_gestor')?.matricula || 'SYS-AM';
+
+    setPendenciasServico(prev => prev.map(p => {
+      if (p.id_pendencia === idPendencia) {
+        return { 
+          ...p, 
+          status: 'resolvido', 
+          resolucao: resolucao.trim(), 
+          data_resolucao: agora, 
+          matricula_resolvedor: armeiroSvc 
+        };
+      }
+      return p;
+    }));
+
+    const { error } = await supabase
+      .from('pendencias_servico')
+      .update({ 
+        status: 'resolvido', 
+        resolucao: resolucao.trim(), 
+        data_resolucao: agora, 
+        matricula_resolvedor: armeiroSvc 
+      })
+      .eq('id_pendencia', idPendencia);
+
+    if (error) {
+      console.error('Erro ao resolver pendência no Supabase:', error);
+      throw new Error(error.message);
+    }
+
+    registrarLogAuditoria(
+      armeiroSvc,
+      'registro_devolucao',
+      `Pendência resolvida: ID ${idPendencia.substring(0, 8)}. Solução: "${resolucao.trim().substring(0, 60)}..." (Resolvida por: ${armeiroSvc}).`
     );
   };
 
@@ -1329,6 +1537,12 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
     processDevolucao,
     adicionarCategoria,
     alterarSenhaArmeiro,
+    armasParticulares,
+    adicionarArmaParticular,
+    devolverArmasParticulares,
+    pendenciasServico,
+    adicionarPendencia,
+    resolverPendencia,
     isLoading,
     dbError
   };

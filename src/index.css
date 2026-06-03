@@ -72,6 +72,25 @@
   background: #3b82f6;
 }
 
+/* Explicit scrollbar utility class for components */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #3b82f6;
+}
+
 /* Custom styling for inputs and select lists */
 select, input, textarea {
   color-scheme: dark;
