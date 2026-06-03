@@ -252,23 +252,6 @@ export function ArmeiroProfileView({
                 </div>
               </div>
             </div>
-
-            {/* Dropdown Seletor de Armeiro Ativo (Simulador) */}
-            <div className="space-y-1.5 font-sans">
-              <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wide block">Alternar Armeiro Ativo (Simulador):</label>
-              <select
-                value={activeArmeiroMatricula}
-                onChange={(e) => setActiveArmeiroMatricula(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-805 p-2.5 text-xs text-slate-205 focus:outline-none rounded-lg cursor-pointer font-sans"
-              >
-                {armorersList.map(a => (
-                  <option key={a.matricula} value={a.matricula}>
-                    {a.posto_graduacao} {a.nome_de_guerra || a.nome} ({a.matricula})
-                  </option>
-                ))}
-              </select>
-              <span className="text-[9px] text-slate-500 italic block pt-0.5">Mude aqui para simular o uso do sistema por outro armeiro cadastrado.</span>
-            </div>
           </div>
 
           {/* Painel de Alteração de Senha */}
