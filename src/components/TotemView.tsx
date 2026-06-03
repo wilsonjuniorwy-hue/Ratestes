@@ -244,8 +244,8 @@ export function TotemView({
 
     if (!loggedUser) return;
 
-    if (!/^\d{4}$/.test(novaSenhaInput)) {
-      setCadastroSenhaError('A senha deve conter exatamente 4 números (ex: 1234).');
+    if (!/^\d{4,6}$/.test(novaSenhaInput)) {
+      setCadastroSenhaError('A senha deve conter de 4 a 6 números (ex: 1234 ou 123456).');
       return;
     }
 
@@ -536,18 +536,18 @@ export function TotemView({
                   </div>
                   <h3 className="text-xs font-bold text-slate-350 font-mono uppercase tracking-widest block text-cyan-400">Primeiro Acesso - Cadastrar Senha</h3>
                   <p className="text-xs text-slate-400 font-sans">
-                    Militar **{loggedUser.posto_graduacao} {loggedUser.nome}** identificado. Defina uma senha de 4 números para a sua assinatura eletrônica.
+                    Militar **{loggedUser.posto_graduacao} {loggedUser.nome}** identificado. Defina uma senha de 4 a 6 números para a sua assinatura eletrônica.
                   </p>
                 </div>
 
                 <form onSubmit={handleCadastrarSenha} className="space-y-4" id="form-cadastro-senha">
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-mono font-bold text-slate-450 uppercase tracking-wide">Nova Senha (4 dígitos numéricos):</label>
+                    <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wide">Nova Senha (4 a 6 dígitos numéricos):</label>
                     <input
                       type="password"
                       id="input-nova-senha"
-                      maxLength={4}
-                      placeholder="••••"
+                      maxLength={6}
+                      placeholder="••••••"
                       value={novaSenhaInput}
                       required
                       onChange={(e) => setNovaSenhaInput(e.target.value.replace(/\D/g, ''))}
@@ -556,12 +556,12 @@ export function TotemView({
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-mono font-bold text-slate-450 uppercase tracking-wide">Confirmar Nova Senha:</label>
+                    <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wide">Confirmar Nova Senha:</label>
                     <input
                       type="password"
                       id="input-confirmar-senha"
-                      maxLength={4}
-                      placeholder="••••"
+                      maxLength={6}
+                      placeholder="••••••"
                       value={confirmarSenhaInput}
                       required
                       onChange={(e) => setConfirmarSenhaInput(e.target.value.replace(/\D/g, ''))}
@@ -965,14 +965,14 @@ export function TotemView({
                   {/* Confirmação de Senha para Assinatura */}
                   <div className="space-y-1.5 border-t border-slate-850 pt-3">
                     <div className="flex justify-between items-center">
-                      <label className="text-[10px] font-mono font-bold text-slate-450 uppercase tracking-wider block">Assinatura Eletrônica (Sua Senha de 4 dígitos):</label>
+                      <label className="text-[10px] font-mono font-bold text-slate-450 uppercase tracking-wider block">Assinatura Eletrônica (Sua Senha):</label>
                       <span className="text-[9px] text-slate-500 font-mono">Confirme para homologar</span>
                     </div>
                     <input
                       type="password"
                       id="input-confirmar-cautela-pin"
-                      maxLength={4}
-                      placeholder="••••"
+                      maxLength={6}
+                      placeholder="••••••"
                       value={confirmarCautelaPin}
                       onChange={(e) => setConfirmarCautelaPin(e.target.value.replace(/\D/g, ''))}
                       className="w-full bg-slate-955 border border-slate-800 focus:border-blue-500 p-3 text-xs font-mono text-slate-200 focus:outline-none tracking-widest text-center rounded-lg transition-all focus:ring-1 focus:ring-blue-500/20 text-lg"
@@ -1323,8 +1323,8 @@ export function TotemView({
                       <label className="text-[10px] font-mono font-bold text-slate-450 uppercase tracking-wider block">Assinatura Eletrônica (Sua Senha):</label>
                       <input
                         type="password"
-                        maxLength={4}
-                        placeholder="••••"
+                        maxLength={6}
+                        placeholder="••••••"
                         value={confirmarCautelaPin}
                         onChange={(e) => setConfirmarCautelaPin(e.target.value.replace(/\D/g, ''))}
                         className="w-full bg-slate-955 border border-slate-800 focus:border-cyan-550 p-2.5 text-xs font-mono text-slate-200 focus:outline-none tracking-widest text-center rounded-lg transition-all focus:ring-1 focus:ring-cyan-500/20 text-lg"
