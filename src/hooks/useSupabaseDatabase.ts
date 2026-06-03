@@ -1221,25 +1221,63 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
     );
   };
 
-  const alterarSenhaArmeiro = (matricula: string, novaSenha: string) => {
-    hashSHA256(novaSenha).then(hashed => {
+  const alterarSenhaArmeiro = async (matricula: string, novaSenha: string): Promise<{ success: boolean; error?: string }> => {
+    const matriculaNorm = matricula.trim().toUpperCase();
+    
+    try {
+      // 1. Obter o usuário atualmente autenticado no Supabase Auth
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError) {
+        console.error('Erro ao obter usuário autenticado:', userError);
+        return { success: false, error: `Erro ao obter usuário: ${userError.message}` };
+      }
+
+      const userEmail = user?.email?.toUpperCase() || '';
+      const targetEmail = `${matriculaNorm}@RESERVA.PM`;
+
+      // 2. Se for o próprio armeiro logado, atualizar no Auth
+      if (user && userEmail === targetEmail) {
+        const { error: authError } = await supabase.auth.updateUser({ password: novaSenha });
+        if (authError) {
+          console.error('Erro ao alterar senha no Supabase Auth:', authError);
+          return { success: false, error: `Erro no Auth: ${authError.message}` };
+        }
+      } else {
+        // Se for no simulador mudando outro armeiro, ou sem a sessão correspondente
+        console.warn('Aviso: Não é possível alterar a senha do Auth para um armeiro diferente do usuário logado.');
+        return { success: false, error: 'Você só pode alterar a senha do usuário que está atualmente autenticado.' };
+      }
+
+      // 3. Atualizar a senha hash na tabela 'usuarios'
+      const hashed = await hashSHA256(novaSenha);
+      const { error: dbError } = await supabase
+        .from('usuarios')
+        .update({ senha_hash: hashed })
+        .eq('matricula', matriculaNorm);
+
+      if (dbError) {
+        console.error('Erro ao alterar senha do armeiro no banco de dados:', dbError);
+        return { success: false, error: `Erro ao atualizar no banco: ${dbError.message}` };
+      }
+
       setUsuarios(prev => prev.map(u => {
-        if (u.matricula === matricula) {
+        if (u.matricula.trim().toUpperCase() === matriculaNorm) {
           return { ...u, senha_hash: hashed };
         }
         return u;
       }));
 
-      supabase.from('usuarios').update({ senha_hash: hashed }).eq('matricula', matricula).then(({ error }) => {
-        if (error) console.error('Erro ao alterar senha do armeiro no Supabase:', error);
-      });
-    });
+      registrarLogAuditoria(
+        matriculaNorm,
+        'login',
+        `Senha do armeiro (Matrícula: ${matriculaNorm}) alterada com sucesso no Auth e banco de dados.`
+      );
 
-    registrarLogAuditoria(
-      matricula,
-      'login',
-      `Senha do armeiro (Matrícula: ${matricula}) alterada com sucesso.`
-    );
+      return { success: true };
+    } catch (err: any) {
+      console.error('Erro geral ao alterar senha:', err);
+      return { success: false, error: err.message || 'Erro inesperado ao alterar senha.' };
+    }
   };
 
   const adicionarModeloArma = (modelo: string, calibre: string) => {

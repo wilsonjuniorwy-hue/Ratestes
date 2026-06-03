@@ -609,7 +609,7 @@ export function useMockDatabase() {
   };
 
 
-  const alterarSenhaArmeiro = (matricula: string, novaSenha: string) => {
+  const alterarSenhaArmeiro = async (matricula: string, novaSenha: string): Promise<{ success: boolean; error?: string }> => {
     const usuariosAtualizados = usuarios.map(u => {
       if (u.matricula === matricula) {
         return { ...u, senha_hash: novaSenha };
@@ -622,6 +622,7 @@ export function useMockDatabase() {
       'login',
       `Senha do armeiro (Matrícula: ${matricula}) alterada com sucesso.`
     );
+    return { success: true };
   };
 
   const adicionarModeloArma = (modelo: string, calibre: string) => {

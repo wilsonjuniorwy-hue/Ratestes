@@ -8,7 +8,7 @@ interface ArmeiroProfileViewProps {
   usuarios: Usuario[];
   activeArmeiroMatricula: string;
   setActiveArmeiroMatricula: (matricula: string) => void;
-  alterarSenhaArmeiro: (matricula: string, novaSenha: string) => void;
+  alterarSenhaArmeiro: (matricula: string, novaSenha: string) => Promise<{ success: boolean; error?: string }>;
   cadastrarPolicial: (novoPolicial: Usuario) => Promise<{ success: boolean; error?: string }>;
   editarPolicial: (matricula: string, dadosAtualizados: Partial<Usuario>) => Promise<{ success: boolean }>;
   excluirUsuario: (matricula: string) => Promise<{ success: boolean }>;
@@ -115,7 +115,7 @@ export function ArmeiroProfileView({
   };
 
   // Trocar senha submit
-  const handleAlterarSenha = (e: React.FormEvent) => {
+  const handleAlterarSenha = async (e: React.FormEvent) => {
     e.preventDefault();
     setPwdError('');
     setPwdSuccess('');
@@ -138,10 +138,18 @@ export function ArmeiroProfileView({
       return;
     }
 
-    alterarSenhaArmeiro(activeArmeiro.matricula, newPwdTrim);
-    setNovaSenha('');
-    setConfirmarSenha('');
-    setPwdSuccess('Senha alterada com sucesso no SGBD!');
+    try {
+      const result = await alterarSenhaArmeiro(activeArmeiro.matricula, newPwdTrim);
+      if (result && !result.success) {
+        setPwdError(result.error || 'Erro ao alterar senha.');
+      } else {
+        setNovaSenha('');
+        setConfirmarSenha('');
+        setPwdSuccess('Senha alterada com sucesso no Auth e SGBD!');
+      }
+    } catch (err: any) {
+      setPwdError(err.message || 'Erro inesperado ao alterar senha.');
+    }
   };
 
   // Cadastrar armeiro submit
