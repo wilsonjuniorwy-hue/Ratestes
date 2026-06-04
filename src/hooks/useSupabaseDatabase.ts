@@ -541,13 +541,10 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
     try {
       const { error } = await supabase
         .from('usuarios')
-        .delete()
+        .update({ deletado_em: new Date().toISOString() })
         .eq('matricula', matricula);
 
       if (error) {
-        if (error.code === '23503') {
-          throw new Error('Este usuário possui históricos de cautelas, ocorrências ou auditorias registradas e não pode ser excluído fisicamente para manter a integridade dos dados bélicos.');
-        }
         throw error;
       }
 
@@ -556,8 +553,8 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
       const armeiroSvc = activeArmeiroMatricula || usuarios.find(u => u.perfil === 'armeiro_gestor')?.matricula || 'SYS-AM';
       registrarLogAuditoria(
         armeiroSvc,
-        'cadastro_militar',
-        `Usuário com matrícula ${matricula} foi excluído permanentemente do sistema.`
+        'cadastro_policial',
+        `Perfil de usuário (Matrícula: ${matricula}) excluído do sistema (soft delete).`
       );
 
       return { success: true };
