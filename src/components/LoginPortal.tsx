@@ -3,26 +3,28 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
-import { Shield, KeyRound, ShieldAlert, CheckCircle, RefreshCw, Eye, EyeOff } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Shield, KeyRound, ShieldAlert, CheckCircle, RefreshCw, Eye, EyeOff, Building2, ArrowLeft } from 'lucide-react';
 import { motion } from 'motion/react';
-import { Usuario } from '../types';
+import { Usuario, Quartel } from '../types';
 import { supabase } from '../supabaseClient';
 import { comparePassword, hashSHA256 } from '../utils/crypto';
 
 interface LoginPortalProps {
-  usuarios: Usuario[];
-  onLoginSuccess: (usuario: Usuario) => void;
+  onLoginSuccess: (usuario: Usuario, quartel: Quartel | null) => void;
   cadastrarSenha: (matricula: string, novaSenha: string) => void;
+  quarteis: Quartel[];
 }
 
 export default function LoginPortal({
-  usuarios,
   onLoginSuccess,
-  cadastrarSenha
+  cadastrarSenha,
+  quarteis
 }: LoginPortalProps) {
   // ---- FLUXO DA TELA ----
   const [step, setStep] = useState<'login' | 'primeiro_acesso' | 'sucesso'>('login');
+  const [selectedQuartel, setSelectedQuartel] = useState<Quartel | null>(null);
+  const [isAdminLogin, setIsAdminLogin] = useState(false);
   
   // ---- ESTADOS DOS CAMPOS ----
   const [matricula, setMatricula] = useState('');
@@ -37,6 +39,22 @@ export default function LoginPortal({
   
   // ---- ESTADOS DE CARREGAMENTO ----
   const [isAuthenticating, setIsAuthenticating] = useState(false);
+
+  // Seleciona o RPMON (ou a Cavalaria) por padrão ao iniciar
+  useEffect(() => {
+    if (quarteis && quarteis.length > 0 && !selectedQuartel && !isAdminLogin) {
+      const cavalaria = quarteis.find(
+        q => q.slug.includes('cavalaria') || 
+             q.nome.toLowerCase().includes('cavalaria') || 
+             q.nome.toLowerCase().includes('rpmon')
+      );
+      if (cavalaria) {
+        setSelectedQuartel(cavalaria);
+      } else {
+        setSelectedQuartel(quarteis[0]);
+      }
+    }
+  }, [quarteis, selectedQuartel, isAdminLogin]);
 
   // ---- SUBMIT DO LOGIN ----
   const handleLoginSubmit = async (e: React.FormEvent) => {
@@ -55,15 +73,9 @@ export default function LoginPortal({
         .eq('matricula', matriculaNorm)
         .single();
 
+
       if (userError || !user) {
         setAuthError('Matrícula funcional não encontrada no SGBD.');
-        setIsAuthenticating(false);
-        return;
-      }
-
-      // Validar se é armeiro
-      if (user.perfil !== 'armeiro_gestor') {
-        setAuthError('Acesso restrito. Este terminal é exclusivo para Armeiros Gestores.');
         setIsAuthenticating(false);
         return;
       }
@@ -77,16 +89,100 @@ export default function LoginPortal({
         return;
       }
 
+      // Validar se o usuário é admin
+      if (user.perfil === 'admin') {
+        const { data: authData, error: authErr } = await supabase.auth.signInWithPassword({
+          email: `${matriculaNorm}@admin.pm`,
+          password: senhaNorm,
+        });
+        if (authErr) {
+          // Fallback para admin caso dê rate limit
+          if (authErr.message.includes('rate limit') || authErr.message.includes('exceeded') || authErr.status === 429) {
+            const hashedInput = await hashSHA256(senhaNorm);
+            const { data: dbAdmin } = await supabase
+              .from('usuarios')
+              .select('senha_hash')
+              .eq('matricula', matriculaNorm)
+              .single();
+              
+            if (dbAdmin && dbAdmin.senha_hash === hashedInput) {
+              console.warn('Autenticação local realizada para Admin devido a rate limit no Auth.');
+              setStep('sucesso');
+              setTimeout(() => { onLoginSuccess(user, null); }, 1000);
+              return;
+            }
+          }
+          sessionStorage.removeItem('logging_in');
+          setAuthError('Matrícula funcional não encontrada no SGBD.');
+          setIsAuthenticating(false);
+          return;
+        }
+
+        // Se o admin foi autenticado com sucesso no Auth, mas seu auth_user_id no banco ainda não está vinculado, vinculamos agora!
+        if (authData.user && user.auth_user_id !== authData.user.id) {
+          await supabase
+            .from('usuarios')
+            .update({ auth_user_id: authData.user.id })
+            .eq('matricula', matriculaNorm);
+          
+          user.auth_user_id = authData.user.id;
+        }
+
+        setStep('sucesso');
+        setTimeout(() => { onLoginSuccess(user, null); }, 1000);
+        return;
+      }
+
+      // Validar se é armeiro
+      if (user.perfil !== 'armeiro_gestor') {
+        setAuthError('Acesso restrito. Este terminal é exclusivo para Armeiros Gestores e Administradores.');
+        setIsAuthenticating(false);
+        return;
+      }
+
+      // Verificar se um quartel foi selecionado
+      if (!selectedQuartel) {
+        setAuthError('Selecione o quartel antes de fazer login.');
+        setIsAuthenticating(false);
+        return;
+      }
+
+      // Validar se o armeiro pertence ao quartel selecionado
+      if (user.id_quartel !== selectedQuartel.id) {
+        setAuthError('Acesso negado. Sua matrícula está vinculada a outro quartel.');
+        setIsAuthenticating(false);
+        return;
+      }
+
       // Sinalizar que estamos realizando o fluxo de login manual (para evitar que o listener de auth corte a animação)
       sessionStorage.setItem('logging_in', 'true');
 
       // 2. Tentar autenticação via Supabase Auth
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email: `${matriculaNorm}@cavalaria.pm`,
+        email: `${matriculaNorm}@${selectedQuartel.slug}.pm`,
         password: senhaNorm,
       });
 
       if (authError) {
+        // Fallback para armeiro caso dê rate limit
+        if (authError.message.includes('rate limit') || authError.message.includes('exceeded') || authError.status === 429) {
+          const hashedInput = await hashSHA256(senhaNorm);
+          const { data: dbUserWithHash } = await supabase
+            .from('usuarios')
+            .select('senha_hash')
+            .eq('matricula', matriculaNorm)
+            .single();
+            
+          if (dbUserWithHash && dbUserWithHash.senha_hash === hashedInput) {
+            console.warn('Autenticação local realizada com sucesso devido a rate limit no Auth.');
+            sessionStorage.removeItem('logging_in');
+            setStep('sucesso');
+            setTimeout(() => {
+              onLoginSuccess(user, selectedQuartel);
+            }, 1000);
+            return;
+          }
+        }
         sessionStorage.removeItem('logging_in');
         setAuthError('Senha de acesso incorreta ou usuário não cadastrado no Supabase Auth.');
         setIsAuthenticating(false);
@@ -106,7 +202,7 @@ export default function LoginPortal({
       // Sucesso no login
       setStep('sucesso');
       setTimeout(() => {
-        onLoginSuccess(user);
+        onLoginSuccess(user, selectedQuartel);
       }, 1000);
     } catch (err) {
       console.error('Erro de autenticação:', err);
@@ -142,21 +238,33 @@ export default function LoginPortal({
     try {
       sessionStorage.setItem('logging_in', 'true');
       const matriculaNorm = primeiroAcessoUser.matricula.toUpperCase();
+      const emailAuth = primeiroAcessoUser.perfil === 'admin'
+        ? `${matriculaNorm}@admin.pm`
+        : `${matriculaNorm}@${selectedQuartel?.slug || 'cavalaria'}.pm`;
+
+      let authUserId = null;
 
       // Criar a conta no Supabase Auth
       const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: `${matriculaNorm}@cavalaria.pm`,
+        email: emailAuth,
         password: newPwdTrim,
       });
 
       if (authError) {
-        sessionStorage.removeItem('logging_in');
-        setAuthError(`Erro ao registrar no Auth: ${authError.message}`);
-        setIsAuthenticating(false);
-        return;
+        // Fallback se der rate limit no signUp do Auth
+        if (authError.message.includes('rate limit') || authError.message.includes('exceeded') || authError.status === 429) {
+          console.warn('Supabase Auth rate limit detectado no cadastro. Prosseguindo com ID provisório.');
+          authUserId = `local-${crypto.randomUUID()}`;
+        } else {
+          sessionStorage.removeItem('logging_in');
+          setAuthError(`Erro ao registrar no Auth: ${authError.message}`);
+          setIsAuthenticating(false);
+          return;
+        }
+      } else {
+        authUserId = authData.user?.id;
       }
 
-      const authUserId = authData.user?.id;
       if (!authUserId) {
         sessionStorage.removeItem('logging_in');
         setAuthError('Erro ao obter identificador do usuário autenticado.');
@@ -189,7 +297,7 @@ export default function LoginPortal({
           ...primeiroAcessoUser, 
           auth_user_id: authUserId,
           senha_hash: hashed 
-        });
+        }, selectedQuartel);
       }, 1000);
     } catch (err) {
       console.error('Erro no primeiro acesso:', err);
@@ -226,7 +334,7 @@ export default function LoginPortal({
           <div>
             <div className="flex items-center justify-center gap-2">
               <h2 className="text-sm font-extrabold tracking-wider uppercase text-white font-sans">
-                CAVALARIA - RESERVA DE ARMAMENTO
+                RESERVA DE ARMAMENTO
               </h2>
               <span className="text-[8px] bg-blue-955 text-blue-400 border border-blue-900/60 px-1 py-0.5 rounded font-black font-mono">PMDF</span>
             </div>
@@ -235,16 +343,45 @@ export default function LoginPortal({
           <div className="h-[1px] w-full bg-gradient-to-r from-transparent via-slate-800 to-transparent"></div>
         </div>
 
-        {/* STEP 1: FORMULÁRIO DE LOGIN */}
+        {/* FORMULÁRIO DE LOGIN COM SELETOR INLINE */}
         {step === 'login' && (
           <form onSubmit={handleLoginSubmit} className="space-y-5 relative font-sans text-xs">
+            
+            {/* HUD de Seleção de Unidade Bélica via Dropdown */}
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block">Unidade Bélica:</label>
+              <div className="relative">
+                <select
+                  value={selectedQuartel?.id || ''}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    const q = quarteis.find(item => item.id === val);
+                    if (q) {
+                      setSelectedQuartel(q);
+                    }
+                    setAuthError('');
+                  }}
+                  className="w-full bg-slate-950/80 border border-slate-800/80 p-3 text-xs font-mono text-slate-205 focus:outline-none focus:ring-1 focus:ring-blue-500/30 rounded-xl cursor-pointer appearance-none pr-10 focus:border-blue-500/40"
+                >
+                  {quarteis.map((q) => (
+                    <option key={q.id} value={q.id} className="bg-slate-900 text-slate-200">
+                      {q.nome.toUpperCase()} ({q.slug.toUpperCase() === 'CAVALARIA' ? 'RPMON' : q.slug.toUpperCase()})
+                    </option>
+                  ))}
+                </select>
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-500 text-[10px]">
+                  ▼
+                </div>
+              </div>
+            </div>
+
             <div className="space-y-1.5">
               <label className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block">Matrícula Funcional:</label>
               <input
                 type="text"
                 required
                 autoFocus
-                placeholder="Matrícula do Armeiro (EX: 7317573)"
+                placeholder="Matrícula Funcional"
                 value={matricula}
                 onChange={(e) => setMatricula(e.target.value)}
                 className="w-full bg-slate-950/70 border border-slate-800/80 p-3 text-xs font-mono uppercase text-slate-205 focus:outline-none focus:ring-1 focus:ring-blue-500/30 rounded-xl placeholder:text-slate-600 focus:border-blue-500/40"
@@ -390,7 +527,7 @@ export default function LoginPortal({
             animate={{ opacity: 1 }} 
             className="text-center py-6 space-y-4 font-sans text-xs relative"
           >
-            <div className="w-14 h-14 bg-emerald-600/10 border border-emerald-500/30 rounded-full flex items-center justify-center mx-auto text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.2)] animate-pulse">
+            <div className="w-14 h-14 bg-emerald-600/10 border border-emerald-500/30 rounded-full flex items-center justify-center mx-auto text-emerald-405 shadow-[0_0_15px_rgba(16,185,129,0.2)] animate-pulse">
               <CheckCircle className="h-8 w-8 text-emerald-400" />
             </div>
             <div>

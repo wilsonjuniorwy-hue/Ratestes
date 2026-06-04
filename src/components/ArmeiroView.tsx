@@ -27,6 +27,7 @@ interface ArmeiroViewProps {
   printLogDate: string;
   setPrintLogDate: (date: string) => void;
   activeArmeiroMatricula?: string;
+  authenticatedPerfil?: string;
   excluirCautelaTotal?: (idCautela: string) => Promise<{ success: boolean }>;
 }
 
@@ -43,6 +44,7 @@ export function ArmeiroView({
   printLogDate,
   setPrintLogDate,
   activeArmeiroMatricula,
+  authenticatedPerfil,
   excluirCautelaTotal
 }: ArmeiroViewProps) {
   // ---- FLUXO ARMEIRO: ESTADOS LOCAIS ----
@@ -308,7 +310,7 @@ export function ArmeiroView({
                       <th className="p-4">Itens Retirados</th>
                       <th className="p-4">Retirada / Limite</th>
                       <th className="p-4">Estado</th>
-                      {activeArmeiroMatricula === '7317573' && <th className="p-4">Ação</th>}
+                      {authenticatedPerfil === 'admin' && <th className="p-4">Ação</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-850/50 font-sans text-xs">
@@ -358,7 +360,7 @@ export function ArmeiroView({
                               )}
                             </div>
                           </td>
-                          {activeArmeiroMatricula === '7317573' && (
+                          {authenticatedPerfil === 'admin' && (
                             <td className="p-4">
                               <button
                                 onClick={() => handleExcluirCautelaClick(caut.id_cautela)}
@@ -373,7 +375,7 @@ export function ArmeiroView({
                     })}
                     {cautelas.filter(c => c.status_cautela === 'ativa' || c.status_cautela === 'atrasada' || c.status_cautela === 'prorrogada').length === 0 && (
                       <tr>
-                        <td colSpan={activeArmeiroMatricula === '7317573' ? 6 : 5} className="p-8 text-center text-slate-505 font-mono text-xs leading-loose">
+                        <td colSpan={authenticatedPerfil === 'admin' ? 6 : 5} className="p-8 text-center text-slate-505 font-mono text-xs leading-loose">
                           Nenhuma cautela tática ativa no momento. Toda a carga bélica encontra-se resguardada no paiol físico.
                         </td>
                       </tr>
@@ -575,7 +577,7 @@ export function ArmeiroView({
                     <th className="p-4">Retirada / Armeiro</th>
                     <th className="p-4">Devolução / Armeiro</th>
                     <th className="p-4">Status</th>
-                    {activeArmeiroMatricula === '7317573' && <th className="p-4 no-print">Ação</th>}
+                    {authenticatedPerfil === 'admin' && <th className="p-4 no-print">Ação</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-850/50 font-sans text-xs">
@@ -662,7 +664,7 @@ export function ArmeiroView({
                               {c.status_cautela === 'devolvida' ? '● DEVOLVIDA' : c.status_cautela === 'atrasada' ? '⚠️ ATRASADA' : '● ATIVA'}
                             </span>
                           </td>
-                          {activeArmeiroMatricula === '7317573' && (
+                          {authenticatedPerfil === 'admin' && (
                             <td className="p-4 align-top no-print">
                               <button
                                 onClick={() => handleExcluirCautelaClick(c.id_cautela)}
@@ -700,7 +702,7 @@ export function ArmeiroView({
                     return true;
                   }).length === 0 && (
                     <tr>
-                      <td colSpan={activeArmeiroMatricula === '7317573' ? 7 : 6} className="p-8 text-center text-slate-505 font-mono">
+                      <td colSpan={authenticatedPerfil === 'admin' ? 7 : 6} className="p-8 text-center text-slate-505 font-mono">
                         Nenhum registro de cautela encontrado para os filtros selecionados.
                       </td>
                     </tr>

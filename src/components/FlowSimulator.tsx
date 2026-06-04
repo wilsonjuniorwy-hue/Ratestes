@@ -23,12 +23,14 @@ import { ArmeiroProfileView } from './ArmeiroProfileView';
 interface FlowSimulatorProps {
   db: ReturnType<typeof useSupabaseDatabase>;
   activeArmeiroMatricula: string;
+  authenticatedPerfil: string;
   setActiveArmeiroMatricula: (matricula: string) => void;
 }
 
 export default function FlowSimulator({
   db,
   activeArmeiroMatricula,
+  authenticatedPerfil,
   setActiveArmeiroMatricula
 }: FlowSimulatorProps) {
   // ---- CONTROLE DE FLUXO/VISÃO ----
@@ -227,7 +229,7 @@ export default function FlowSimulator({
             </div>
           </div>
 
-          {activeArmeiroMatricula === '7317573' && (
+          {authenticatedPerfil === 'admin' && (
             <div className="flex items-center gap-2.5" id="admin-backup-controls">
               <button
                 id="btn-export-backup"
@@ -314,6 +316,7 @@ export default function FlowSimulator({
             printLogDate={printLogDate}
             setPrintLogDate={setPrintLogDate}
             activeArmeiroMatricula={activeArmeiroMatricula}
+            authenticatedPerfil={authenticatedPerfil}
             excluirCautelaTotal={db.excluirCautelaTotal}
           />
         </ErrorBoundary>
@@ -336,6 +339,7 @@ export default function FlowSimulator({
             modelosArmas={db.modelosArmas}
             adicionarModeloArma={db.adicionarModeloArma}
             activeArmeiroMatricula={activeArmeiroMatricula}
+            authenticatedPerfil={authenticatedPerfil}
             excluirPolicialTotal={db.excluirPolicialTotal}
             excluirMaterialTotal={db.excluirMaterialTotal}
             armasParticulares={db.armasParticulares}
@@ -365,6 +369,7 @@ export default function FlowSimulator({
           <ArmeiroProfileView
             usuarios={db.usuarios}
             activeArmeiroMatricula={activeArmeiroMatricula}
+            authenticatedPerfil={authenticatedPerfil}
             setActiveArmeiroMatricula={setActiveArmeiroMatricula}
             alterarSenhaArmeiro={db.alterarSenhaArmeiro}
             cadastrarPolicial={db.cadastrarPolicial}

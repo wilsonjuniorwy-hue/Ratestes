@@ -22,6 +22,7 @@ interface BancoDadosViewProps {
   modelosArmas: Array<{ modelo: string; calibre: string }>;
   adicionarModeloArma: (modelo: string, calibre: string) => void;
   activeArmeiroMatricula?: string;
+  authenticatedPerfil?: string;
   excluirPolicialTotal?: (matricula: string) => Promise<{ success: boolean }>;
   excluirMaterialTotal?: (idMaterial: string) => Promise<{ success: boolean }>;
   armasParticulares: ArmaParticular[];
@@ -44,6 +45,7 @@ export function BancoDadosView({
   modelosArmas,
   adicionarModeloArma,
   activeArmeiroMatricula,
+  authenticatedPerfil,
   excluirPolicialTotal,
   excluirMaterialTotal,
   armasParticulares,
@@ -657,7 +659,7 @@ export function BancoDadosView({
                             <span>Zerar Senha</span>
                           </button>
                           
-                          {activeArmeiroMatricula === '7317573' && (
+                          {authenticatedPerfil === 'admin' && (
                             <button
                               onClick={() => handleExcluirPolicialClick(user.matricula)}
                               className="px-3 py-1.5 bg-slate-955 hover:bg-red-955/20 border border-slate-800 hover:border-red-900/50 text-[10px] font-mono text-slate-400 hover:text-red-400 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer uppercase font-bold"
@@ -1144,7 +1146,7 @@ export function BancoDadosView({
                                    <span className="text-[9px] font-mono text-slate-500 italic font-bold">Item Fora</span>
                                  )}
 
-                                 {activeArmeiroMatricula === '7317573' && (
+                                 {authenticatedPerfil === 'admin' && (
                                    <button
                                      onClick={() => handleExcluirMaterialClick(mat.id_material)}
                                      className="px-3 py-1.5 bg-slate-955 hover:bg-red-955/20 border border-slate-800 hover:border-red-900/50 text-[10px] font-mono text-slate-400 hover:text-red-400 rounded-lg transition-colors flex items-center justify-center font-bold uppercase cursor-pointer"

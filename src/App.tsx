@@ -9,27 +9,52 @@ import { motion } from 'motion/react';
 import FlowSimulator from './components/FlowSimulator';
 import { useSupabaseDatabase } from './hooks/useSupabaseDatabase';
 import LoginPortal from './components/LoginPortal';
-import { Usuario } from './types';
+import { AdminPanelView } from './components/AdminPanelView';
+import { Usuario, Quartel } from './types';
 import { supabase } from './supabaseClient';
 
 export default function App() {
   const [activeArmeiroMatricula, setActiveArmeiroMatricula] = useState<string>(() => {
     return sessionStorage.getItem('activeArmeiroMatricula') || '';
   });
-  const db = useSupabaseDatabase(activeArmeiroMatricula);
   const [authenticatedArmeiro, setAuthenticatedArmeiro] = useState<Usuario | null>(() => {
     const saved = sessionStorage.getItem('authenticatedArmeiro');
     return saved ? JSON.parse(saved) : null;
   });
+  const [quartelAtivo, setQuartelAtivo] = useState<Quartel | null>(() => {
+    const saved = sessionStorage.getItem('quartelAtivo');
+    return saved ? JSON.parse(saved) : null;
+  });
+  // Rota interna: 'login' | 'admin_panel' | 'sistema'
+  const [rota, setRota] = useState<'login' | 'admin_panel' | 'sistema'>(() => {
+    return (sessionStorage.getItem('rota') as any) || 'login';
+  });
+
+  const db = useSupabaseDatabase(activeArmeiroMatricula, quartelAtivo?.id ?? null);
+
+  const [activeSession, setActiveSession] = useState<any>(null);
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session) {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('DEBUG [onAuthStateChange] - Evento:', event);
+      setActiveSession(session);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    async function handleSessionChange() {
+      if (activeSession) {
         if (sessionStorage.getItem('logging_in') === 'true') {
           return;
         }
 
-        const userUuid = session.user.id;
+        const userUuid = activeSession.user.id;
         try {
           const { data: dbUser, error } = await supabase
             .from('usuarios')
@@ -37,11 +62,20 @@ export default function App() {
             .eq('auth_user_id', userUuid)
             .single();
 
-          if (!error && dbUser && dbUser.perfil === 'armeiro_gestor') {
+          if (!active) return;
+
+          if (!error && dbUser && dbUser.perfil !== 'policial') {
             setAuthenticatedArmeiro(dbUser);
             setActiveArmeiroMatricula(dbUser.matricula);
             sessionStorage.setItem('activeArmeiroMatricula', dbUser.matricula);
             sessionStorage.setItem('authenticatedArmeiro', JSON.stringify(dbUser));
+
+            const savedRota = sessionStorage.getItem('rota') as any;
+            if (!savedRota || savedRota === 'login') {
+              const novaRota = dbUser.perfil === 'admin' ? 'admin_panel' : 'sistema';
+              setRota(novaRota);
+              sessionStorage.setItem('rota', novaRota);
+            }
           }
         } catch (err) {
           console.error('Erro ao restaurar sessão:', err);
@@ -50,43 +84,43 @@ export default function App() {
         if (sessionStorage.getItem('logging_in') !== 'true') {
           setAuthenticatedArmeiro(null);
           setActiveArmeiroMatricula('');
+          setQuartelAtivo(null);
+          setRota('login');
           sessionStorage.removeItem('activeArmeiroMatricula');
           sessionStorage.removeItem('authenticatedArmeiro');
+          sessionStorage.removeItem('quartelAtivo');
+          sessionStorage.removeItem('rota');
         }
       }
-    });
+    }
+
+    handleSessionChange();
 
     return () => {
-      subscription.unsubscribe();
+      active = false;
     };
-  }, []);
+  }, [activeSession]);
   
   // Encontrar o armeiro ativo atual no banco de dados
   const activeArmeiro = db.usuarios.find(u => u.matricula === activeArmeiroMatricula);
 
+  // Função de logout completo
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setAuthenticatedArmeiro(null);
+    setActiveArmeiroMatricula('');
+    setQuartelAtivo(null);
+    setRota('login');
+    sessionStorage.removeItem('activeArmeiroMatricula');
+    sessionStorage.removeItem('authenticatedArmeiro');
+    sessionStorage.removeItem('quartelAtivo');
+    sessionStorage.removeItem('rota');
+  };
+
   return (
     <div className="min-h-screen bg-slate-955 text-slate-100 font-sans flex flex-col overflow-x-hidden selection:bg-blue-600 selection:text-white" id="app-root">
       
-      {/* Tela de Login Tático Bloqueante */}
-      {!authenticatedArmeiro && !db.isLoading && (
-        <LoginPortal 
-          usuarios={db.usuarios}
-          onLoginSuccess={(user) => {
-            setAuthenticatedArmeiro(user);
-            setActiveArmeiroMatricula(user.matricula);
-            sessionStorage.setItem('activeArmeiroMatricula', user.matricula);
-            sessionStorage.setItem('authenticatedArmeiro', JSON.stringify(user));
-            db.registrarLogAuditoria(
-              user.matricula,
-              'login',
-              `Armeiro ${user.posto_graduacao} ${user.nome_de_guerra || user.nome} realizou login com sucesso no painel de controle do paiol.`
-            );
-          }}
-          cadastrarSenha={db.cadastrarSenha}
-        />
-      )}
-      
-      {/* Indicador de Conexão com Banco de Dados Cloud (Supabase) */}
+      {/* Telas Globais de Carregamento e Erro */}
       {db.isLoading && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-[9999] flex flex-col items-center justify-center space-y-4">
           <div className="w-12 h-12 border-t-2 border-r-2 border-blue-500 rounded-full animate-spin"></div>
@@ -116,8 +150,54 @@ export default function App() {
           </button>
         </div>
       )}
+      {/* Tela de Login */}
+      {rota === 'login' && !db.isLoading && (
+        <LoginPortal 
+          onLoginSuccess={(user, quartel) => {
+            setAuthenticatedArmeiro(user);
+            setActiveArmeiroMatricula(user.matricula);
+            sessionStorage.setItem('activeArmeiroMatricula', user.matricula);
+            sessionStorage.setItem('authenticatedArmeiro', JSON.stringify(user));
+            sessionStorage.removeItem('logging_in');
+            db.registrarLogAuditoria(
+              user.matricula,
+              'login',
+              `${user.perfil === 'admin' ? 'Admin' : `Armeiro ${user.posto_graduacao} ${user.nome_de_guerra || user.nome}`} realizou login com sucesso.${ quartel ? ` Quartel: ${quartel.nome}.` : ''}`
+            );
+            if (user.perfil === 'admin') {
+              setRota('admin_panel');
+              sessionStorage.setItem('rota', 'admin_panel');
+            } else {
+              setQuartelAtivo(quartel);
+              sessionStorage.setItem('quartelAtivo', JSON.stringify(quartel));
+              setRota('sistema');
+              sessionStorage.setItem('rota', 'sistema');
+            }
+          }}
+          cadastrarSenha={db.cadastrarSenha}
+          quarteis={db.quarteis.length > 0 ? db.quarteis : []}
+        />
+      )}
+
+      {/* Painel Admin */}
+      {rota === 'admin_panel' && authenticatedArmeiro?.perfil === 'admin' && (
+        <AdminPanelView
+          admin={authenticatedArmeiro}
+          db={db}
+          onSelecionarQuartel={(quartel) => {
+            setQuartelAtivo(quartel);
+            sessionStorage.setItem('quartelAtivo', JSON.stringify(quartel));
+            setRota('sistema');
+            sessionStorage.setItem('rota', 'sistema');
+          }}
+          onLogout={handleLogout}
+        />
+      )}
+      {/* Sistema Principal */}
+      {rota === 'sistema' && authenticatedArmeiro && (
+        <>
       
-      {/* Top Navigation Bar - Premium Tactical Cockpit HUD Theme */}
+      {/* Top Navigation Bar */}
       <header className="h-20 border-b border-slate-800/80 bg-slate-950/70 flex items-center justify-between px-6 shrink-0 sticky top-0 z-50 backdrop-blur-xl" id="app-header">
         <div className="flex items-center gap-4">
           <motion.div 
@@ -128,7 +208,9 @@ export default function App() {
           </motion.div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-base font-extrabold tracking-tight uppercase text-white font-sans">CAVALARIA - RESERVA DE ARMAMENTO</h1>
+              <h1 className="text-base font-extrabold tracking-tight uppercase text-white font-sans">
+                {quartelAtivo ? quartelAtivo.nome.toUpperCase() : 'RESERVA DE ARMAMENTO'}
+              </h1>
               <span className="text-[9px] bg-blue-955 text-blue-405 border border-blue-800/60 px-1.5 py-0.5 rounded font-black font-mono">PMDF</span>
             </div>
             <p className="text-[9px] text-slate-500 font-mono tracking-widest uppercase mt-0.5">
@@ -152,17 +234,20 @@ export default function App() {
           
           {authenticatedArmeiro && (
             <button
-              onClick={async () => {
-                await supabase.auth.signOut();
-                setAuthenticatedArmeiro(null);
-                setActiveArmeiroMatricula('');
-                sessionStorage.removeItem('activeArmeiroMatricula');
-                sessionStorage.removeItem('authenticatedArmeiro');
-              }}
+              onClick={handleLogout}
               className="text-[10px] font-mono font-bold text-red-400 hover:text-red-300 hover:bg-red-955/20 px-3.5 py-2 border border-red-900/40 rounded-lg transition-all duration-200 cursor-pointer uppercase tracking-wider"
               id="btn-logout-armeiro"
             >
               Bloquear / Sair
+            </button>
+          )}
+
+          {authenticatedArmeiro?.perfil === 'admin' && (
+            <button
+              onClick={() => { setRota('admin_panel'); sessionStorage.setItem('rota', 'admin_panel'); }}
+              className="text-[10px] font-mono font-bold text-amber-400 hover:text-amber-300 hover:bg-amber-955/20 px-3.5 py-2 border border-amber-900/40 rounded-lg transition-all duration-200 cursor-pointer uppercase tracking-wider"
+            >
+              ← Admin
             </button>
           )}
           
@@ -187,8 +272,10 @@ export default function App() {
         <FlowSimulator 
           db={db}
           activeArmeiroMatricula={activeArmeiroMatricula}
+          authenticatedPerfil={authenticatedArmeiro?.perfil || ''}
           setActiveArmeiroMatricula={setActiveArmeiroMatricula}
         />
+
       </main>
 
       {/* Footer Status Bar - Technical System Telemetry */}
@@ -197,8 +284,8 @@ export default function App() {
           <>
             <div className="flex flex-wrap gap-4 text-[9px] font-mono text-slate-505 uppercase tracking-widest">
               <span>Session: <strong className="text-slate-400">PMDF-CO-827A</strong></span>
-              <span>SGBD: <strong className="text-slate-400">SQL Server 2026 Enterprise</strong></span>
-              <span>Cluster: <strong className="text-slate-400">PRD-HUD-01</strong></span>
+              <span>SGBD: <strong className="text-slate-400">Supabase Cloud</strong></span>
+              <span>Quartel: <strong className="text-slate-400">{quartelAtivo?.nome || 'N/A'}</strong></span>
               <span className="flex items-center gap-1.5">
                 Latency: <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping" />
                 <strong className="text-emerald-400">9ms</strong>
@@ -216,6 +303,9 @@ export default function App() {
           </div>
         )}
       </footer>
+
+      </>
+      )}
 
     </div>
   );

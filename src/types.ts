@@ -4,7 +4,17 @@
  */
 
 // --- Perfis de Acesso ---
-export type PerfilUsuario = 'policial' | 'armeiro_gestor';
+export type PerfilUsuario = 'policial' | 'armeiro_gestor' | 'admin';
+
+// --- Quartel (Unidade Militar) ---
+export interface Quartel {
+  id: string;          // UUID
+  slug: string;        // ex: 'cavalaria', 'batalhao-infantaria'
+  nome: string;        // ex: 'Regimento de Cavalaria'
+  ativo: boolean;
+  criado_em: string;   // ISO DateTime
+  deletado_em?: string; // soft delete
+}
 
 // --- Situação do Militar para Cautela ---
 export type SituacaoMilitar = 'apto' | 'suspenso' | 'pendente_devolucao' | 'restrito_servico';
@@ -29,6 +39,8 @@ export interface Usuario {
   data_ultimo_teste_psicologico: string; // ISO Date (Validade anual)
   motivo_suspensao?: string;
   auth_user_id?: string;
+  id_quartel?: string;   // UUID do quartel — null/undefined para admin
+  deletado_em?: string;  // Soft delete (ISO DateTime)
 }
 
 export interface Categoria {

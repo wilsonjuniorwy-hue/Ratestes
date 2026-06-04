@@ -7,6 +7,7 @@ import { Usuario } from '../types';
 interface ArmeiroProfileViewProps {
   usuarios: Usuario[];
   activeArmeiroMatricula: string;
+  authenticatedPerfil: string;
   setActiveArmeiroMatricula: (matricula: string) => void;
   alterarSenhaArmeiro: (matricula: string, novaSenha: string) => Promise<{ success: boolean; error?: string }>;
   cadastrarPolicial: (novoPolicial: Usuario) => Promise<{ success: boolean; error?: string }>;
@@ -17,6 +18,7 @@ interface ArmeiroProfileViewProps {
 export function ArmeiroProfileView({
   usuarios,
   activeArmeiroMatricula,
+  authenticatedPerfil,
   setActiveArmeiroMatricula,
   alterarSenhaArmeiro,
   cadastrarPolicial,
@@ -26,8 +28,10 @@ export function ArmeiroProfileView({
   // Filtrar todos os usuários com perfil de armeiro
   const armorersList = usuarios.filter(u => u.perfil === 'armeiro_gestor');
   
-  // Obter armeiro atualmente ativo
-  const activeArmeiro = armorersList.find(u => u.matricula === activeArmeiroMatricula) || armorersList[0];
+  // Obter armeiro atualmente ativo (suporta admin logado buscando na lista geral)
+  console.log('ArmeiroProfileView - activeArmeiroMatricula:', activeArmeiroMatricula);
+  console.log('ArmeiroProfileView - usuarios disponíveis:', usuarios.map(u => ({ matricula: u.matricula, perfil: u.perfil })));
+  const activeArmeiro = usuarios.find(u => u.matricula.trim().toUpperCase() === activeArmeiroMatricula.trim().toUpperCase()) || armorersList[0];
 
   // Estados locais para alteração de senha
   const [novaSenha, setNovaSenha] = useState('');
@@ -93,21 +97,22 @@ export function ArmeiroProfileView({
     }
   };
 
-  const handleDeleteUser = async (matricula: string, nomeGuerra: string) => {
+  const handleDeleteUser = async (u: Usuario) => {
     setActionError('');
     setActionSuccess('');
 
-    if (matricula === '7317573') {
-      setActionError('Erro de segurança: O administrador principal não pode excluir a própria conta.');
+    if (u.perfil === 'admin') {
+      setActionError('Erro de segurança: A conta de administrador não pode ser excluída por este painel.');
       return;
     }
 
-    if (!window.confirm(`Tem certeza de que deseja apagar permanentemente o perfil do armeiro ${nomeGuerra} (Matrícula: ${matricula})? Esta ação é irreversível.`)) {
+    const nomeGuerra = u.nome_de_guerra || u.nome;
+    if (!window.confirm(`Tem certeza de que deseja apagar permanentemente o perfil do armeiro ${nomeGuerra} (Matrícula: ${u.matricula})? Esta ação é irreversível.`)) {
       return;
     }
 
     try {
-      await excluirUsuario(matricula);
+      await excluirUsuario(u.matricula);
       setActionSuccess(`Perfil do armeiro ${nomeGuerra} foi excluído do sistema.`);
     } catch (err: any) {
       setActionError(err.message || 'Erro ao excluir perfil do armeiro.');
@@ -117,29 +122,36 @@ export function ArmeiroProfileView({
   // Trocar senha submit
   const handleAlterarSenha = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log('DEBUG [handleAlterarSenha] - Botão clicado. Iniciando alteração...');
     setPwdError('');
     setPwdSuccess('');
 
     const newPwdTrim = novaSenha.trim();
     const confPwdTrim = confirmarSenha.trim();
+    console.log('DEBUG [handleAlterarSenha] - Senhas limpas:', { newPwdTrim, confPwdTrim });
 
     if (!newPwdTrim) {
+      console.log('DEBUG [handleAlterarSenha] - Senha vazia.');
       setPwdError('Insira a nova senha.');
       return;
     }
 
     if (newPwdTrim.length < 4) {
+      console.log('DEBUG [handleAlterarSenha] - Senha muito curta.');
       setPwdError('A senha deve conter pelo menos 4 dígitos.');
       return;
     }
 
     if (newPwdTrim !== confPwdTrim) {
+      console.log('DEBUG [handleAlterarSenha] - Senhas não coincidem.');
       setPwdError('A confirmação da senha não confere.');
       return;
     }
 
     try {
+      console.log('DEBUG [handleAlterarSenha] - Chamando alterarSenhaArmeiro para matrícula:', activeArmeiro.matricula);
       const result = await alterarSenhaArmeiro(activeArmeiro.matricula, newPwdTrim);
+      console.log('DEBUG [handleAlterarSenha] - Resultado obtido:', result);
       if (result && !result.success) {
         setPwdError(result.error || 'Erro ao alterar senha.');
       } else {
@@ -148,6 +160,7 @@ export function ArmeiroProfileView({
         setPwdSuccess('Senha alterada com sucesso no Auth e SGBD!');
       }
     } catch (err: any) {
+      console.error('DEBUG [handleAlterarSenha] - Erro capturado na Promise:', err);
       setPwdError(err.message || 'Erro inesperado ao alterar senha.');
     }
   };
@@ -423,7 +436,7 @@ export function ArmeiroProfileView({
       </div>
 
       {/* Seção de Gestão de Armeiros - Apenas para o Admin SGT Wagner Torres */}
-      {activeArmeiroMatricula === '7317573' && (
+      {authenticatedPerfil === 'admin' && (
         <div className="bg-slate-900/60 backdrop-blur-md border border-slate-800/80 rounded-xl p-5 shadow-lg space-y-4">
           <div className="border-b border-slate-850 pb-3 flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -538,15 +551,15 @@ export function ArmeiroProfileView({
                             >
                               Editar
                             </button>
-                            {u.matricula !== '7317573' ? (
+                            {u.perfil !== 'admin' ? (
                               <button
-                                onClick={() => handleDeleteUser(u.matricula, u.nome_de_guerra || u.nome)}
+                                onClick={() => handleDeleteUser(u)}
                                 className="text-red-400 hover:text-red-300 font-mono font-bold text-[10px] uppercase tracking-wider cursor-pointer"
                               >
                                 Apagar
                               </button>
                             ) : (
-                              <span className="text-slate-600 font-mono text-[10px] uppercase cursor-not-allowed select-none" title="Administrador principal">
+                              <span className="text-slate-600 font-mono text-[10px] uppercase cursor-not-allowed select-none" title="Conta de administrador protegida">
                                 Bloqueado
                               </span>
                             )}

@@ -8,7 +8,8 @@ import { supabase } from '../supabaseClient';
 import { 
   Usuario, Categoria, Material, Cautela, CautelaItem, 
   AuditoriaLog, OcorrenciaRelatorio, SituacaoMilitar, 
-  StatusMaterial, CondicaoUso, ArmaParticular, PendenciaServico
+  StatusMaterial, CondicaoUso, ArmaParticular, PendenciaServico,
+  Quartel
 } from '../types';
 import { hashSHA256 } from '../utils/crypto';
 import { 
@@ -23,7 +24,7 @@ const defaultModelosArmas = [
   { modelo: 'Espingarda Calibre 12', calibre: '12' }
 ];
 
-export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
+export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?: string | null) {
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [materiais, setMateriais] = useState<Material[]>([]);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
@@ -34,6 +35,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
   const [modelosArmas, setModelosArmas] = useState<Array<{ modelo: string; calibre: string }>>([]);
   const [armasParticulares, setArmasParticulares] = useState<ArmaParticular[]>([]);
   const [pendenciasServico, setPendenciasServico] = useState<PendenciaServico[]>([]);
+  const [quarteis, setQuarteis] = useState<Quartel[]>([]);
 
 
   const [isLoading, setIsLoading] = useState(true);
@@ -44,6 +46,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
     try {
       setIsLoading(true);
       setDbError(null);
+      console.log('SGBD: Iniciando busca de dados paralela (fetchData)...');
 
       const [
         { data: users, error: errUsers },
@@ -55,19 +58,23 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
         { data: ocos, error: errOcos },
         { data: models, error: errModels },
         { data: privateWeapons, error: errPrivateWeapons },
-        { data: dbPendencias, error: errPendencias }
+        { data: dbPendencias, error: errPendencias },
+        { data: quarteisData, error: errQuarteis }
       ] = await Promise.all([
-        supabase.from('usuarios').select('matricula, nome, nome_de_guerra, perfil, posto_graduacao, situacao_cautela, data_ultimo_teste_psicologico, motivo_suspensao'),
-        supabase.from('materiais').select('*'),
-        supabase.from('categorias').select('*'),
-        supabase.from('cautelas').select('*'),
-        supabase.from('cautela_itens').select('*'),
-        supabase.from('auditoria_logs').select('*').order('data_hora', { ascending: false }),
-        supabase.from('ocorrencias').select('*').order('data_hora', { ascending: false }),
-        supabase.from('modelos_armas').select('*'),
-        supabase.from('armas_particulares').select('*').order('data_deposito', { ascending: false }),
-        supabase.from('pendencias_servico').select('*').order('data_criacao', { ascending: false })
+        supabase.from('usuarios').select('matricula, nome, nome_de_guerra, perfil, posto_graduacao, situacao_cautela, data_ultimo_teste_psicologico, motivo_suspensao, id_quartel').is('deletado_em', null).then(r => { console.log('SGBD: 1. usuarios OK'); return r; }),
+        supabase.from('materiais').select('*').is('deletado_em', null).then(r => { console.log('SGBD: 2. materiais OK'); return r; }),
+        supabase.from('categorias').select('*').then(r => { console.log('SGBD: 3. categorias OK'); return r; }),
+        supabase.from('cautelas').select('*').is('deletado_em', null).then(r => { console.log('SGBD: 4. cautelas OK'); return r; }),
+        supabase.from('cautela_itens').select('*').is('deletado_em', null).then(r => { console.log('SGBD: 5. cautela_itens OK'); return r; }),
+        supabase.from('auditoria_logs').select('*').order('data_hora', { ascending: false }).then(r => { console.log('SGBD: 6. auditoria_logs OK'); return r; }),
+        supabase.from('ocorrencias').select('*').is('deletado_em', null).order('data_hora', { ascending: false }).then(r => { console.log('SGBD: 7. ocorrencias OK'); return r; }),
+        supabase.from('modelos_armas').select('*').then(r => { console.log('SGBD: 8. modelos_armas OK'); return r; }),
+        supabase.from('armas_particulares').select('*').is('deletado_em', null).order('data_deposito', { ascending: false }).then(r => { console.log('SGBD: 9. armas_particulares OK'); return r; }),
+        supabase.from('pendencias_servico').select('*').is('deletado_em', null).order('data_criacao', { ascending: false }).then(r => { console.log('SGBD: 10. pendencias_servico OK'); return r; }),
+        supabase.from('quarteis').select('*').is('deletado_em', null).eq('ativo', true).then(r => { console.log('SGBD: 11. quarteis OK'); return r; })
       ]);
+
+      console.log('SGBD: Todas as queries paralelas finalizadas com sucesso.');
 
       if (errUsers) throw errUsers;
       if (errMaterials) throw errMaterials;
@@ -79,8 +86,26 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
       if (errModels) throw errModels;
       if (errPrivateWeapons) throw errPrivateWeapons;
       if (errPendencias) throw errPendencias;
+      if (errQuarteis) throw errQuarteis;
 
-      setUsuarios((users || []).map(u => ({ ...u, senha_hash: '' } as Usuario)));
+      let mappedUsers = (users || []).map(u => ({ ...u, senha_hash: '' } as Usuario));
+      if (activeArmeiroMatricula && activeArmeiroMatricula.trim().toUpperCase() === 'ADMIN') {
+        const hasAdmin = mappedUsers.some(u => u.matricula.trim().toUpperCase() === 'ADMIN');
+        if (!hasAdmin) {
+          mappedUsers.push({
+            matricula: 'ADMIN',
+            nome: 'Administrador do Sistema',
+            nome_de_guerra: 'Admin',
+            senha_hash: '',
+            perfil: 'admin',
+            posto_graduacao: 'Administrador',
+            situacao_cautela: 'apto',
+            data_ultimo_teste_psicologico: '2099-12-31',
+            id_quartel: null
+          });
+        }
+      }
+      setUsuarios(mappedUsers);
       setMateriais(materials || []);
       setCategorias(categories || []);
       setCautelas(cautelasData || []);
@@ -90,6 +115,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
       setModelosArmas(models || []);
       setArmasParticulares(privateWeapons || []);
       setPendenciasServico(dbPendencias || []);
+      setQuarteis(quarteisData || []);
 
       // Auto-seeding do usuário armeiro se não existir na base de dados (com migração de caixa)
       const userList = users || [];
@@ -189,8 +215,12 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
     // Update local state instantly
     setAuditoriaLogs(prev => [novoLog, ...prev]);
 
+    // Montar o objeto de insert incluindo id_quartel se disponível
+    const logToInsert: any = { ...novoLog };
+    if (quartelId) logToInsert.id_quartel = quartelId;
+
     // Update Supabase in background
-    supabase.from('auditoria_logs').insert(novoLog).then(({ error }) => {
+    supabase.from('auditoria_logs').insert(logToInsert).then(({ error }) => {
       if (error) console.error('Erro ao sincronizar auditoria_logs:', error);
     });
   };
@@ -422,7 +452,13 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
     
     try {
       const hashed = await hashSHA256(rawSenha);
-      const userToInsert = { ...novoPolicial, senha_hash: hashed };
+      const finalQuartelId = novoPolicial.perfil === 'admin' ? null : (novoPolicial.id_quartel || quartelId);
+      
+      const userToInsert = { 
+        ...novoPolicial, 
+        senha_hash: hashed,
+        id_quartel: finalQuartelId
+      };
       
       const { error: insertError } = await supabase.from('usuarios').insert(userToInsert);
       if (insertError) {
@@ -431,7 +467,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
       }
 
       // Store empty password hash locally so it is not visible in memory listings
-      setUsuarios(prev => [...prev, { ...novoPolicial, senha_hash: '' }]);
+      setUsuarios(prev => [...prev, { ...novoPolicial, id_quartel: finalQuartelId, senha_hash: '' }]);
 
       // Se o usuário cadastrado for armeiro_gestor, chama a Edge Function para criar a conta no Auth e vincular
       if (novoPolicial.perfil === 'armeiro_gestor') {
@@ -550,7 +586,10 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
 
     setOcorrencias(prev => [novaOco, ...prev]);
 
-    supabase.from('ocorrencias').insert(novaOco).then(({ error }) => {
+    const ocoToInsert: any = { ...novaOco };
+    if (quartelId) ocoToInsert.id_quartel = quartelId;
+
+    supabase.from('ocorrencias').insert(ocoToInsert).then(({ error }) => {
       if (error) console.error('Erro ao salvar ocorrencia:', error);
     });
 
@@ -638,9 +677,13 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
         `Quantidade incrementada para o material: ${novoMaterial.modelo} (Código: ${novoMaterial.id_material}). Adicionado: ${novoMaterial.quantidade}. Novo total: ${newQty}.`
       );
     } else {
-      setMateriais(prev => [...prev, novoMaterial]);
+      // Incluir id_quartel ao inserir novo material
+      const materialToInsert: any = { ...novoMaterial };
+      if (quartelId) materialToInsert.id_quartel = quartelId;
 
-      supabase.from('materiais').insert(novoMaterial).then(({ error }) => {
+      setMateriais(prev => [...prev, materialToInsert]);
+
+      supabase.from('materiais').insert(materialToInsert).then(({ error }) => {
         if (error) console.error('Erro ao cadastrar novo material:', error);
       });
 
@@ -742,6 +785,10 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
       observacoes_retirada: observacoes
     };
 
+    // Incluir id_quartel na cautela e nos itens
+    const cautelaToInsert: any = { ...novaCautela };
+    if (quartelId) cautelaToInsert.id_quartel = quartelId;
+
     // Group cart items to handle quantity-based items
     const groupedCart: Record<string, number> = {};
     cartItens.forEach(id => {
@@ -785,12 +832,18 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
     setUsuarios(usuariosAtualizados);
 
     // Sync to Supabase - SEQUENTIALLY to avoid Foreign Key Violations!
-    supabase.from('cautelas').insert(novaCautela).then(({ error: errCautela }) => {
+    supabase.from('cautelas').insert(cautelaToInsert).then(({ error: errCautela }) => {
       if (errCautela) {
         console.error('Erro ao salvar nova cautela no Supabase:', errCautela);
       } else {
+        // Adicionar id_quartel nos itens também
+        const itensToInsert = novosItensCautela.map(item => {
+          const itemData: any = { ...item };
+          if (quartelId) itemData.id_quartel = quartelId;
+          return itemData;
+        });
         // Insert items only after the parent caution record is successfully saved
-        supabase.from('cautela_itens').insert(novosItensCautela).then(({ error: errItens }) => {
+        supabase.from('cautela_itens').insert(itensToInsert).then(({ error: errItens }) => {
           if (errItens) {
             console.error('Erro ao salvar itens da cautela no Supabase:', errItens);
           } else {
@@ -1223,32 +1276,91 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
 
   const alterarSenhaArmeiro = async (matricula: string, novaSenha: string): Promise<{ success: boolean; error?: string }> => {
     const matriculaNorm = matricula.trim().toUpperCase();
+    console.log('DEBUG [alterarSenhaArmeiro] - Iniciando com matrícula:', { matriculaNorm, activeArmeiroMatricula });
     
     try {
-      // 1. Obter o usuário atualmente autenticado no Supabase Auth
+      console.log('DEBUG [alterarSenhaArmeiro] - Buscando usuário ativo...');
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError) {
-        console.error('Erro ao obter usuário autenticado:', userError);
+        console.error('DEBUG [alterarSenhaArmeiro] - Erro ao obter usuário autenticado:', userError);
         return { success: false, error: `Erro ao obter usuário: ${userError.message}` };
       }
 
-      const userEmail = user?.email?.toUpperCase() || '';
-      const targetEmail = `${matriculaNorm}@CAVALARIA.PM`;
+      console.log('DEBUG [alterarSenhaArmeiro] - Usuário obtido:', user);
 
-      // 2. Se for o próprio armeiro logado, atualizar no Auth
-      if (user && userEmail === targetEmail) {
-        const { error: authError } = await supabase.auth.updateUser({ password: novaSenha });
-        if (authError) {
-          console.error('Erro ao alterar senha no Supabase Auth:', authError);
-          return { success: false, error: `Erro no Auth: ${authError.message}` };
+      if (!user) {
+        console.log('DEBUG [alterarSenhaArmeiro] - Sem usuário do Supabase Auth (modo local/fallback de rate limit)');
+        if (activeArmeiroMatricula && activeArmeiroMatricula.trim().toUpperCase() === matriculaNorm) {
+          console.log('DEBUG [alterarSenhaArmeiro] - Matrícula coincide com o ativo. Salvando localmente no SGBD...');
+          const hashed = await hashSHA256(novaSenha);
+          const { error: dbError } = await supabase
+            .from('usuarios')
+            .update({ senha_hash: hashed })
+            .eq('matricula', matriculaNorm);
+
+          if (dbError) {
+            console.error('DEBUG [alterarSenhaArmeiro] - Erro ao alterar senha localmente no banco:', dbError);
+            return { success: false, error: `Erro ao atualizar no banco: ${dbError.message}` };
+          }
+
+          setUsuarios(prev => prev.map(u => {
+            if (u.matricula.trim().toUpperCase() === matriculaNorm) {
+              return { ...u, senha_hash: hashed };
+            }
+            return u;
+          }));
+
+          registrarLogAuditoria(
+            matriculaNorm,
+            'login',
+            `Senha do armeiro (Matrícula: ${matriculaNorm}) alterada com sucesso no banco de dados (modo local).`
+          );
+
+          console.log('DEBUG [alterarSenhaArmeiro] - Sucesso no modo local.');
+          return { success: true };
         }
-      } else {
-        // Se for no simulador mudando outro armeiro, ou sem a sessão correspondente
-        console.warn('Aviso: Não é possível alterar a senha do Auth para um armeiro diferente do usuário logado.');
-        return { success: false, error: 'Você só pode alterar a senha do usuário que está atualmente autenticado.' };
+        console.warn('DEBUG [alterarSenhaArmeiro] - Acesso negado no modo local.');
+        return { success: false, error: 'Usuário não autenticado.' };
       }
 
-      // 3. Atualizar a senha hash na tabela 'usuarios'
+      // 2. Buscar a matrícula do usuário logado no banco de dados para validar
+      console.log('DEBUG [alterarSenhaArmeiro] - Validando usuário no banco com UUID:', user.id);
+      const { data: dbUser, error: dbUserError } = await supabase
+        .from('usuarios')
+        .select('matricula')
+        .eq('auth_user_id', user.id)
+        .single();
+
+      console.log('DEBUG [alterarSenhaArmeiro] - Retorno de validação no banco:', { dbUser, dbUserError });
+
+      if (dbUserError || !dbUser) {
+        console.warn('DEBUG [alterarSenhaArmeiro] - Usuário não encontrado pelo UUID. Tentando fallback por email...');
+        if (user.email && user.email.toUpperCase().startsWith(matriculaNorm)) {
+          const { error: authError } = await supabase.auth.updateUser({ password: novaSenha });
+          if (authError) {
+            console.error('DEBUG [alterarSenhaArmeiro] - Erro no Auth (fallback email):', authError);
+            return { success: false, error: `Erro no Auth: ${authError.message}` };
+          }
+        } else {
+          console.error('DEBUG [alterarSenhaArmeiro] - Falha na validação do usuário logado.');
+          return { success: false, error: 'Não foi possível validar as credenciais locais do usuário logado.' };
+        }
+      } else {
+        console.log('DEBUG [alterarSenhaArmeiro] - Usuário validado. Matrícula no banco:', dbUser.matricula);
+        if (dbUser.matricula.trim().toUpperCase() === matriculaNorm) {
+          console.log('DEBUG [alterarSenhaArmeiro] - Atualizando senha no Supabase Auth...');
+          const { error: authError } = await supabase.auth.updateUser({ password: novaSenha });
+          if (authError) {
+            console.error('DEBUG [alterarSenhaArmeiro] - Erro ao alterar senha no Supabase Auth:', authError);
+            return { success: false, error: `Erro no Auth: ${authError.message}` };
+          }
+        } else {
+          console.warn('DEBUG [alterarSenhaArmeiro] - Matrícula logada difere da matrícula alvo.');
+          return { success: false, error: 'Você só pode alterar a senha do usuário que está atualmente autenticado.' };
+        }
+      }
+
+      console.log('DEBUG [alterarSenhaArmeiro] - Atualizando senha_hash na tabela usuarios...');
       const hashed = await hashSHA256(novaSenha);
       const { error: dbError } = await supabase
         .from('usuarios')
@@ -1256,7 +1368,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
         .eq('matricula', matriculaNorm);
 
       if (dbError) {
-        console.error('Erro ao alterar senha do armeiro no banco de dados:', dbError);
+        console.error('DEBUG [alterarSenhaArmeiro] - Erro ao alterar senha no SGBD:', dbError);
         return { success: false, error: `Erro ao atualizar no banco: ${dbError.message}` };
       }
 
@@ -1273,9 +1385,10 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
         `Senha do armeiro (Matrícula: ${matriculaNorm}) alterada com sucesso no Auth e banco de dados.`
       );
 
+      console.log('DEBUG [alterarSenhaArmeiro] - Senha alterada com sucesso!');
       return { success: true };
     } catch (err: any) {
-      console.error('Erro geral ao alterar senha:', err);
+      console.error('DEBUG [alterarSenhaArmeiro] - Exceção capturada:', err);
       return { success: false, error: err.message || 'Erro inesperado ao alterar senha.' };
     }
   };
@@ -1538,6 +1651,42 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
     }
   };
 
+  // ---- FUNÇÕES DE GESTÃO DE QUARTEIS (ADMIN) ----
+  const fetchQuarteis = async (): Promise<Quartel[]> => {
+    const { data, error } = await supabase
+      .from('quarteis')
+      .select('*')
+      .is('deletado_em', null)
+      .order('nome', { ascending: true });
+    if (error) {
+      console.error('Erro ao buscar quarteis:', error);
+      return [];
+    }
+    setQuarteis(data || []);
+    return data || [];
+  };
+
+  const criarQuartel = async (slug: string, nome: string): Promise<{ success: boolean; error?: string }> => {
+    const { data, error } = await supabase
+      .from('quarteis')
+      .insert({ slug: slug.toLowerCase().replace(/\s+/g, '-'), nome })
+      .select()
+      .single();
+    if (error) return { success: false, error: error.message };
+    setQuarteis(prev => [...prev, data]);
+    return { success: true };
+  };
+
+  const toggleQuartelAtivo = async (idQuartel: string, ativo: boolean): Promise<{ success: boolean; error?: string }> => {
+    const { error } = await supabase
+      .from('quarteis')
+      .update({ ativo })
+      .eq('id', idQuartel);
+    if (error) return { success: false, error: error.message };
+    setQuarteis(prev => prev.map(q => q.id === idQuartel ? { ...q, ativo } : q));
+    return { success: true };
+  };
+
   return {
     usuarios,
     setUsuarios,
@@ -1581,6 +1730,11 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string) {
     pendenciasServico,
     adicionarPendencia,
     resolverPendencia,
+    // Multi-quartel
+    quarteis,
+    fetchQuarteis,
+    criarQuartel,
+    toggleQuartelAtivo,
     isLoading,
     dbError
   };
