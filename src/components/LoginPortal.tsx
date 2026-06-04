@@ -92,7 +92,7 @@ export default function LoginPortal({
       // Validar se o usuário é admin
       if (user.perfil === 'admin') {
         const { data: authData, error: authErr } = await supabase.auth.signInWithPassword({
-          email: `${matriculaNorm}@admin.pm`,
+          email: `${matriculaNorm.toLowerCase()}@admin.pm`,
           password: senhaNorm,
         });
         if (authErr) {
@@ -158,12 +158,81 @@ export default function LoginPortal({
       sessionStorage.setItem('logging_in', 'true');
 
       // 2. Tentar autenticação via Supabase Auth
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email: `${matriculaNorm}@${selectedQuartel.slug}.pm`,
-        password: senhaNorm,
-      });
+      let authData = null;
+      let authError = null;
+
+      try {
+        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+          email: `${matriculaNorm.toLowerCase()}@${selectedQuartel.slug.toLowerCase()}.pm`,
+          password: senhaNorm,
+        });
+        authData = signInData;
+        authError = signInError;
+      } catch (err: any) {
+        authError = err;
+      }
+
+      // Fallback: se falhar por credenciais incorretas (ou conta não cadastrada no quartel correspondente)
+      // e o quartel selecionado não for a cavalaria, tentar logar usando o domínio cavalaria.pm como contingência
+      // (caso a Edge Function antiga do Supabase na nuvem tenha forçado a criação da conta sob este domínio).
+      if (authError && selectedQuartel.slug.toLowerCase() !== 'cavalaria' && !authError.message?.includes('rate limit')) {
+        console.warn('Login com o domínio do quartel selecionado falhou. Executando fallback com o domínio cavalaria...');
+        try {
+          const { data: fbData, error: fbError } = await supabase.auth.signInWithPassword({
+            email: `${matriculaNorm.toLowerCase()}@cavalaria.pm`,
+            password: senhaNorm,
+          });
+          if (!fbError) {
+            authData = fbData;
+            authError = null;
+            console.log('Login com domínio cavalaria (fallback) autenticado com sucesso!');
+          }
+        } catch (fbErr) {
+          console.error('Erro no login de fallback cavalaria:', fbErr);
+        }
+      }
 
       if (authError) {
+        // Caso o usuário não tenha conta criada no Auth (por falha no cadastro/Edge Function),
+        // vamos validar a senha localmente e fazer auto-cadastro automático se a senha bater.
+        if (!user.auth_user_id) {
+          const hashedInput = await hashSHA256(senhaNorm);
+          if (user.senha_hash === hashedInput) {
+            console.log('Detectado armeiro cadastrado sem conta de login ativa no Auth. Efetuando auto-cadastro...');
+            const emailAuth = `${matriculaNorm.toLowerCase()}@${selectedQuartel.slug.toLowerCase()}.pm`;
+            
+            try {
+              const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+                email: emailAuth,
+                password: senhaNorm,
+              });
+
+              if (!signUpError && signUpData.user) {
+                console.log('Auto-cadastro realizado com sucesso para o Armeiro:', matriculaNorm);
+                
+                // Vincular o auth_user_id no banco de dados
+                await supabase
+                  .from('usuarios')
+                  .update({ auth_user_id: signUpData.user.id })
+                  .eq('matricula', matriculaNorm);
+
+                user.auth_user_id = signUpData.user.id;
+
+                sessionStorage.removeItem('logging_in');
+                setStep('sucesso');
+                setTimeout(() => {
+                  onLoginSuccess(user, selectedQuartel);
+                }, 1000);
+                return;
+              } else {
+                console.error('Falha ao tentar auto-cadastrar usuário no Auth:', signUpError);
+              }
+            } catch (signUpErr) {
+              console.error('Erro inesperado no auto-cadastro do Auth:', signUpErr);
+            }
+          }
+        }
+
         // Fallback para armeiro caso dê rate limit
         if (authError.message.includes('rate limit') || authError.message.includes('exceeded') || authError.status === 429) {
           const hashedInput = await hashSHA256(senhaNorm);
@@ -238,9 +307,9 @@ export default function LoginPortal({
     try {
       sessionStorage.setItem('logging_in', 'true');
       const matriculaNorm = primeiroAcessoUser.matricula.toUpperCase();
-      const emailAuth = primeiroAcessoUser.perfil === 'admin'
+      const emailAuth = (primeiroAcessoUser.perfil === 'admin'
         ? `${matriculaNorm}@admin.pm`
-        : `${matriculaNorm}@${selectedQuartel?.slug || 'cavalaria'}.pm`;
+        : `${matriculaNorm}@${selectedQuartel?.slug || 'cavalaria'}.pm`).toLowerCase();
 
       let authUserId = null;
 

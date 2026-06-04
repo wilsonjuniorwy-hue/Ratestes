@@ -40,15 +40,15 @@ serve(async (req) => {
       .eq('auth_user_id', user.id)
       .single()
 
-    if (dbError || !dbUser || dbUser.perfil !== 'armeiro_gestor') {
+    if (dbError || !dbUser || (dbUser.perfil !== 'armeiro_gestor' && dbUser.perfil !== 'admin')) {
       return new Response(
-        JSON.stringify({ error: 'Acesso negado. Somente armeiros gestores podem cadastrar outros armeiros.' }),
+        JSON.stringify({ error: 'Acesso negado. Somente armeiros gestores ou administradores podem cadastrar outros armeiros.' }),
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
     // 3. Ler os dados do body
-    const { matricula, senha } = await req.json()
+    const { matricula, senha, email } = await req.json()
 
     if (!matricula || !senha) {
       return new Response(
@@ -58,11 +58,12 @@ serve(async (req) => {
     }
 
     const matriculaNorm = matricula.trim().toUpperCase()
-    const email = `${matriculaNorm}@cavalaria.pm`
+    // Se o email não for passado, faz fallback para o padrão cavalaria
+    const emailFinal = email ? email.trim().toLowerCase() : `${matriculaNorm}@cavalaria.pm`
 
     // 4. Criar conta no Supabase Auth usando a chave admin
     const { data: newAuthUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
-      email,
+      email: emailFinal,
       password: senha,
       email_confirm: true, // Confirmar automaticamente sem enviar e-mail
     })

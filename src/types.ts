@@ -134,6 +134,7 @@ export interface ArmaParticular {
   data_devolucao?: string; // ISO DateTime
   status: 'guardado' | 'devolvido';
   observacoes?: string;
+  id_quartel?: string;   // Vinculação com o quartel
 }
 
 export interface PendenciaServico {
@@ -145,6 +146,7 @@ export interface PendenciaServico {
   resolucao?: string;
   data_resolucao?: string; // ISO DateTime
   matricula_resolvedor?: string;
+  id_quartel?: string;   // Vinculação com o quartel
 }
 
 

@@ -452,7 +452,15 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
     
     try {
       const hashed = await hashSHA256(rawSenha);
-      const finalQuartelId = novoPolicial.perfil === 'admin' ? null : (novoPolicial.id_quartel || quartelId);
+      let finalQuartelId = novoPolicial.perfil === 'admin' ? null : (novoPolicial.id_quartel || quartelId);
+
+      // Tentar obter o id_quartel a partir do armeiro logado caso esteja nulo
+      if (!finalQuartelId && activeArmeiroMatricula && novoPolicial.perfil !== 'admin') {
+        const armeiroLogado = usuarios.find(u => u.matricula.trim().toUpperCase() === activeArmeiroMatricula.trim().toUpperCase());
+        if (armeiroLogado && armeiroLogado.id_quartel) {
+          finalQuartelId = armeiroLogado.id_quartel;
+        }
+      }
       
       const userToInsert = { 
         ...novoPolicial, 
@@ -471,28 +479,67 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
 
       // Se o usuário cadastrado for armeiro_gestor, chama a Edge Function para criar a conta no Auth e vincular
       if (novoPolicial.perfil === 'armeiro_gestor') {
+        let slugQuartel = 'cavalaria';
+
+        // 1. Tentar ler o slug da lista local em memória
+        const quartelEmMemoria = quarteis.find(q => q.id === finalQuartelId);
+        if (quartelEmMemoria && quartelEmMemoria.slug) {
+          slugQuartel = quartelEmMemoria.slug;
+        } else {
+          // 2. Extrair do JWT do usuário logado na sessão local (sem chamadas ao banco)
+          try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const sessionEmail = session?.user?.email;
+            if (sessionEmail && sessionEmail.includes('@') && !sessionEmail.includes('@admin.pm')) {
+              const extraido = sessionEmail.split('@')[1]?.split('.')[0];
+              if (extraido) {
+                slugQuartel = extraido;
+              }
+            }
+          } catch (sessionErr) {
+            console.error('Erro ao ler e-mail da sessão para extrair slug:', sessionErr);
+          }
+
+          // 3. Select direto no banco se ainda continuar padrão
+          if (slugQuartel === 'cavalaria' && finalQuartelId) {
+            try {
+              const { data: qData } = await supabase
+                .from('quarteis')
+                .select('slug')
+                .eq('id', finalQuartelId)
+                .maybeSingle();
+              
+              if (qData && qData.slug) {
+                slugQuartel = qData.slug;
+              }
+            } catch (qErr) {
+              console.error('Erro ao buscar slug do quartel no banco de dados:', qErr);
+            }
+          }
+        }
+
+        const emailCalculado = `${novoPolicial.matricula.trim().toLowerCase()}@${slugQuartel.trim().toLowerCase()}.pm`;
+
         try {
           const { data, error: funcError } = await supabase.functions.invoke('criar-armeiro-auth', {
-            body: { matricula: novoPolicial.matricula, senha: rawSenha }
+            body: { 
+              matricula: novoPolicial.matricula, 
+              senha: rawSenha,
+              email: emailCalculado
+            }
           });
 
           if (funcError || (data && data.error)) {
             const errMsg = funcError?.message || data?.error || 'Erro desconhecido na Edge Function';
-            console.error('Erro na Edge Function ao criar Auth:', errMsg);
-            
-            // Reverter inserção na tabela usuarios para manter consistência
-            await supabase.from('usuarios').delete().eq('matricula', novoPolicial.matricula);
-            setUsuarios(prev => prev.filter(u => u.matricula !== novoPolicial.matricula));
-
-            return { success: false, error: `Erro ao criar conta de login: ${errMsg}` };
+            console.warn('Erro na Edge Function ao criar conta no Auth (prosseguindo sem Auth para auto-cadastro no primeiro login):', errMsg);
+            // NÃO revertemos a inserção na tabela usuarios. O login portal cuidará de auto-cadastrar no Auth no primeiro login.
+          } else if (data && data.auth_user_id) {
+            // Atualizar o estado local com o auth_user_id gerado
+            setUsuarios(prev => prev.map(u => u.matricula === novoPolicial.matricula ? { ...u, auth_user_id: data.auth_user_id } : u));
           }
         } catch (funcErr: any) {
-          console.error('Falha de rede ao invocar Edge Function:', funcErr);
-          // Reverter inserção
-          await supabase.from('usuarios').delete().eq('matricula', novoPolicial.matricula);
-          setUsuarios(prev => prev.filter(u => u.matricula !== novoPolicial.matricula));
-
-          return { success: false, error: `Falha na comunicação com o servidor de autenticação: ${funcErr.message}` };
+          console.warn('Falha de rede ao invocar Edge Function (prosseguindo sem Auth para auto-cadastro no primeiro login):', funcErr);
+          // NÃO revertemos a inserção na tabela usuarios. O login portal cuidará de auto-cadastrar no Auth no primeiro login.
         }
       }
 
@@ -1152,7 +1199,8 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
       ...novoItem,
       id_particular: idNew,
       data_deposito: new Date().toISOString(),
-      status: 'guardado'
+      status: 'guardado',
+      id_quartel: quartelId || undefined
     };
 
     setArmasParticulares(prev => [itemToInsert, ...prev]);
@@ -1214,7 +1262,8 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
       descricao: descricao.trim(),
       status: 'aberto',
       data_criacao: new Date().toISOString(),
-      matricula_criador: armeiroSvc
+      matricula_criador: armeiroSvc,
+      id_quartel: quartelId || undefined
     };
 
     setPendenciasServico(prev => [novaPendencia, ...prev]);
@@ -1684,20 +1733,61 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
     return { success: true };
   };
 
+  // ---- ISOLAMENTO DE DADOS MULTI-QUARTEL NO FRONTEND (DUPLA CAMADA) ----
+  // Se o quartelId estiver ativo, limitamos os dados apenas ao quartel do armeiro/painel selecionado.
+  // Admins sem quartel ativo selecionado (painel administrativo global) continuam vendo tudo.
+  const isUserAdmin = activeArmeiroMatricula?.trim().toUpperCase() === 'ADMIN';
+
+  const usuariosExibidos = (isUserAdmin && !quartelId)
+    ? usuarios
+    : usuarios.filter(u => u.perfil === 'admin' || u.id_quartel === quartelId);
+
+  const materiaisExibidos = (isUserAdmin && !quartelId)
+    ? materiais
+    : materiais.filter(m => m.id_quartel === quartelId);
+
+  const cautelasExibidas = (isUserAdmin && !quartelId)
+    ? cautelas
+    : cautelas.filter(c => c.id_quartel === quartelId);
+
+  // Vincular cautela_itens ao quartel através da própria cautela
+  const cautelaItensExibidos = (isUserAdmin && !quartelId)
+    ? cautelaItens
+    : cautelaItens.filter(item => {
+        const cautela = cautelas.find(c => c.id_cautela === item.id_cautela);
+        return !cautela || cautela.id_quartel === quartelId;
+      });
+
+  const ocorrenciasExibidas = (isUserAdmin && !quartelId)
+    ? ocorrencias
+    : ocorrencias.filter(o => o.id_quartel === quartelId);
+
+  const armasParticularesExibidas = (isUserAdmin && !quartelId)
+    ? armasParticulares
+    : armasParticulares.filter(ap => ap.id_quartel === quartelId);
+
+  const pendenciasServicoExibidas = (isUserAdmin && !quartelId)
+    ? pendenciasServico
+    : pendenciasServico.filter(ps => ps.id_quartel === quartelId);
+
+  const auditoriaLogsExibidos = (isUserAdmin && !quartelId)
+    ? auditoriaLogs
+    : auditoriaLogs.filter(al => al.id_quartel === quartelId);
+
   return {
-    usuarios,
+    usuarios: usuariosExibidos,
     setUsuarios,
-    materiais,
+    materiais: materiaisExibidos,
     setMateriais,
     categorias,
     setCategorias,
-    cautelas,
+    cautelas: cautelasExibidas,
     setCautelas,
-    cautelaItens,
+    cautelaItens: cautelaItensExibidos,
     setCautelaItens,
-    auditoriaLogs,
+    auditoriaLogs: auditoriaLogsExibidos,
     setAuditoriaLogs,
-    ocorrencias,
+    ocorrencias: ocorrenciasExibidas,
     setOcorrencias,
     modelosArmas,
     adicionarModeloArma,
@@ -1721,10 +1811,10 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
     processDevolucao,
     adicionarCategoria,
     alterarSenhaArmeiro,
-    armasParticulares,
+    armasParticulares: armasParticularesExibidas,
     adicionarArmaParticular,
     devolverArmasParticulares,
-    pendenciasServico,
+    pendenciasServico: pendenciasServicoExibidas,
     adicionarPendencia,
     resolverPendencia,
     // Multi-quartel
