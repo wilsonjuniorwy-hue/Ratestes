@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Shield, Building2, Plus, Power, LogOut, ChevronRight, Laptop, Key, Check, AlertTriangle, ShieldAlert, Trash2 } from 'lucide-react';
 import { Usuario, Quartel } from '../types';
-import { supabase } from '../supabaseClient';
+import { supabase, obterAmbienteAtual } from '../supabaseClient';
 
 interface AdminPanelViewProps {
   admin: Usuario;
@@ -164,11 +164,11 @@ export function AdminPanelView({ admin, db, onSelecionarQuartel, onLogout }: Adm
               </h1>
               <span className="text-[9px] bg-amber-950 text-amber-400 border border-amber-800/60 px-1.5 py-0.5 rounded font-black font-mono">ADMIN</span>
               <span className={`text-[9px] border px-1.5 py-0.5 rounded font-black font-mono ${
-                import.meta.env.VITE_SUPABASE_URL?.includes('rndyzoyhpmubbbuxtuso')
+                obterAmbienteAtual() === 'homologacao'
                   ? 'bg-blue-950 text-blue-400 border-blue-800/60'
                   : 'bg-red-950 text-red-400 border-red-800/60'
               }`}>
-                {import.meta.env.VITE_SUPABASE_URL?.includes('rndyzoyhpmubbbuxtuso') ? 'HOMOLOGAÇÃO' : 'PRODUÇÃO'}
+                {obterAmbienteAtual() === 'homologacao' ? 'HOMOLOGAÇÃO' : 'PRODUÇÃO'}
               </span>
             </div>
             <p className="text-[9px] text-slate-500 font-mono tracking-widest uppercase mt-0.5">

@@ -575,7 +575,7 @@ export default function App() {
           <>
             <div className="flex flex-wrap gap-4 text-[9px] font-mono text-slate-505 uppercase tracking-widest">
               <span>Session: <strong className="text-slate-400">PMDF-CO-827A</strong></span>
-              <span>SGBD: <strong className="text-slate-400">Supabase Cloud ({import.meta.env.VITE_SUPABASE_URL?.includes('rndyzoyhpmubbbuxtuso') ? 'HOMOLOGAÇÃO' : 'PRODUÇÃO'})</strong></span>
+              <span>SGBD: <strong className="text-slate-400">Supabase Cloud ({obterAmbienteAtual() === 'homologacao' ? 'HOMOLOGAÇÃO' : 'PRODUÇÃO'})</strong></span>
               <span>Quartel: <strong className="text-slate-400">{quartelAtivo?.nome || 'N/A'}</strong></span>
               <span className="flex items-center gap-1.5">
                 Latency: <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping" />
