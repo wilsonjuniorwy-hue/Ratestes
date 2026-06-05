@@ -30,7 +30,7 @@ export default function App() {
     return (sessionStorage.getItem('rota') as any) || 'login';
   });
 
-  const [tauriStatus, setTauriStatus] = useState<'checking' | 'not_tauri' | 'authorized' | 'unauthorized' | 'suspended' | 'blocked' | 'error'>('checking');
+  const [tauriStatus, setTauriStatus] = useState<'checking' | 'not_tauri' | 'authorized' | 'unauthorized' | 'suspended' | 'blocked' | 'error' | 'pending_approval'>('checking');
   const [deviceSignature, setDeviceSignature] = useState<string>('');
   const [nomeDispositivo, setNomeDispositivo] = useState<string>('');
   const [isRegistering, setIsRegistering] = useState<boolean>(false);
@@ -172,6 +172,8 @@ export default function App() {
             setTauriStatus('suspended');
           } else if (info.status === 'bloqueado') {
             setTauriStatus('blocked');
+          } else if (info.status === 'pendente') {
+            setTauriStatus('pending_approval');
           } else {
             setTauriStatus('unauthorized');
           }
@@ -201,6 +203,7 @@ export default function App() {
       if (error) throw error;
       
       alert('Solicitação enviada com sucesso! Aguarde a aprovação do Administrador no painel.');
+      setTauriStatus('pending_approval');
     } catch (err) {
       console.error('Erro ao cadastrar dispositivo:', err);
       alert('Falha ao enviar solicitação.');
@@ -232,6 +235,7 @@ export default function App() {
       checking: '🔄',
       not_tauri: '🚫',
       unauthorized: '🔒',
+      pending_approval: '⏳',
       suspended: '🛠️',
       blocked: '⚠️',
       error: '❌'
@@ -241,6 +245,7 @@ export default function App() {
       checking: 'Autenticando Dispositivo...',
       not_tauri: 'Acesso Não Autorizado',
       unauthorized: 'Homologação Pendente',
+      pending_approval: 'Aguardando Homologação',
       suspended: 'Dispositivo Suspenso',
       blocked: 'Dispositivo Bloqueado',
       error: 'Erro de Integridade'
@@ -250,13 +255,14 @@ export default function App() {
       checking: 'Verificando as chaves de segurança física da máquina no banco de dados cloud...',
       not_tauri: 'Este sistema de segurança tática (PMDF) só pode ser acessado através do aplicativo desktop homologado.',
       unauthorized: 'Esta máquina ainda não está homologada para realizar cautelas nesta armaria.',
+      pending_approval: 'Sua solicitação de homologação já foi enviada ao banco de dados e está aguardando liberação de um Administrador no painel de controle.',
       suspended: 'Este computador foi suspenso temporariamente pela administração para manutenção ou movimentação física.',
       blocked: 'Esta máquina foi bloqueada por razões de segurança ou violação de políticas de acesso.',
       error: 'Não foi possível validar a assinatura física da máquina. Verifique a conexão com o banco de dados.'
     };
 
     return (
-      <div className="fixed inset-0 bg-slate-950 flex items-center justify-center p-6 z-[9999] overflow-auto">
+      <div className="fixed inset-0 bg-slate-955 flex items-center justify-center p-6 z-[9999] overflow-auto">
         <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-xl p-8 shadow-2xl flex flex-col items-center text-center space-y-6">
           <div className="w-16 h-16 bg-blue-600/10 border border-blue-500/30 rounded-full flex items-center justify-center text-3xl shadow-[0_0_15px_rgba(59,130,246,0.15)] animate-pulse">
             {iconMap[tauriStatus] || '🔒'}
@@ -302,7 +308,7 @@ export default function App() {
             </div>
           )}
 
-          {(tauriStatus === 'unauthorized' || tauriStatus === 'suspended' || tauriStatus === 'blocked') && (
+          {(tauriStatus === 'unauthorized' || tauriStatus === 'pending_approval' || tauriStatus === 'suspended' || tauriStatus === 'blocked') && (
             <div className="w-full border-t border-slate-800/65 pt-6 space-y-4">
               <div className="space-y-1.5 text-left">
                 <label className="text-[10px] font-mono text-slate-400 uppercase tracking-widest block">Código de Bypass de Emergência (24 Horas):</label>
