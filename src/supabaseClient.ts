@@ -18,9 +18,9 @@ const CONFIGS = {
 
 export type Ambiente = 'homologacao' | 'producao';
 
-// Determinar o ambiente padrão com base no modo de compilação do Vite
-const modoVite = import.meta.env.MODE;
-const ambientePadrao: Ambiente = (modoVite === 'staging' || modoVite === 'development') ? 'homologacao' : 'producao';
+// Determinar o ambiente padrão - usamos homologacao como padrão único
+// enquanto o banco de produção ainda está sendo configurado
+const ambientePadrao: Ambiente = 'homologacao';
 
 // Obter o ambiente atual (salvo no localStorage ou usar o padrão)
 const ambienteAtual: Ambiente = (localStorage.getItem('app_ambiente') as Ambiente) || ambientePadrao;
