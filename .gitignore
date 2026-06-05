@@ -8,3 +8,8 @@ coverage/
 !.env.example
 
 .vercel
+
+# Chaves de assinatura Tauri - NUNCA commitar
+*.key
+*.key.pub
+
