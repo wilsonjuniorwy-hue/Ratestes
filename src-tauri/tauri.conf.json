@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "reserva-armamento",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "identifier": "br.gov.pmdf.reserva-armamento",
   "build": {
     "frontendDist": "../dist",
@@ -41,7 +41,7 @@
   "plugins": {
     "updater": {
       "active": true,
-      "pubkey": "RWTbi4AdeXLCeiggHwXpYeIyXQgQLbwjyfTNijRBjSRkrMp/q3gnhGk",
+      "pubkey": "UldUbi4AdeXLCeiggHwXpYeIyXQgQLbwjyfTNijRBjSRkrMp/q3gnhGkd2p5ZlROaWpSQmpTUmtyTXAvcTNnbmhHaw==",
       "endpoints": [
         "https://github.com/wilsonjuniorwy-hue/Reserva-de-armamento/releases/latest/download/latest.json"
       ]
