@@ -142,8 +142,16 @@ export default function App() {
         (window as any).__TAURI_INTERNALS__ !== undefined
       );
       
+      // Permitir acesso no navegador durante desenvolvimento ou homologação local para testes
+      const isLocalDevOrStaging = import.meta.env.DEV || import.meta.env.MODE === 'staging';
+
       if (!isTauri) {
-        setTauriStatus('not_tauri');
+        if (isLocalDevOrStaging) {
+          console.warn('[TAURI CHECK] Rodando fora do Tauri, mas liberado por estar em modo Desenvolvimento/Staging.');
+          setTauriStatus('authorized');
+        } else {
+          setTauriStatus('not_tauri');
+        }
         return;
       }
       

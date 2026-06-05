@@ -28,6 +28,19 @@ const config = CONFIGS[ambienteAtual];
 
 let deviceUuid = '';
 
+// Se estivermos rodando no navegador em modo de desenvolvimento ou homologação local,
+// usamos um UUID de teste para simular que o dispositivo está autorizado
+const isTauri = typeof window !== 'undefined' && (
+  (window as any).__TAURI__ !== undefined ||
+  (window as any).__TAURI_INTERNALS__ !== undefined
+);
+const isLocalDevOrStaging = import.meta.env.DEV || import.meta.env.MODE === 'staging';
+
+if (!isTauri && isLocalDevOrStaging) {
+  deviceUuid = 'DEVELOPMENT-TEST-DEVICE';
+  console.warn(`[SUPABASE CLIENT] Modo de teste no navegador. Simulando device UUID autorizado: ${deviceUuid}`);
+}
+
 console.log(`[SUPABASE CLIENT] Inicializando em modo [${ambienteAtual.toUpperCase()}] usando a URL: ${config.url}`);
 
 // Criar o cliente ativo
@@ -65,6 +78,13 @@ const activeClient = createClient(config.url, config.key, {
       try {
         const response = await fetch(url, { ...options, headers });
         console.log(`[SUPABASE FETCH] URL: ${url} -> Status: ${response.status} ${response.statusText}`);
+        
+        if (response.status >= 400) {
+          response.clone().text().then(body => {
+            console.error(`[SUPABASE FETCH ERROR] URL: ${url} -> Body:`, body);
+          }).catch(e => console.error('Erro ao ler corpo da resposta de erro:', e));
+        }
+        
         return response;
       } catch (err: any) {
         console.error(`[SUPABASE FETCH] URL: ${url} -> ERROR:`, err);

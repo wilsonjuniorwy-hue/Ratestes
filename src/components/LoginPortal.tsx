@@ -118,14 +118,19 @@ export default function LoginPortal({
           return;
         }
 
-        // Se o admin foi autenticado com sucesso no Auth, mas seu auth_user_id no banco ainda não está vinculado, vinculamos agora!
+        // Se o admin foi autenticado com sucesso no Auth, mas seu auth_user_id no banco ainda não está vinculado, vinculamos agora usando a RPC (SECURITY DEFINER)
         if (authData.user && user.auth_user_id !== authData.user.id) {
-          await supabase
-            .from('usuarios')
-            .update({ auth_user_id: authData.user.id })
-            .eq('matricula', matriculaNorm);
+          const { error: linkErr } = await supabase.rpc('vincular_usuario_auth', {
+            p_matricula: matriculaNorm,
+            p_auth_id: authData.user.id
+          });
           
-          user.auth_user_id = authData.user.id;
+          if (linkErr) {
+            console.error('Erro ao vincular auth_user_id do admin:', linkErr);
+          } else {
+            console.log('Vinculo de auth_user_id do admin realizado com sucesso!');
+            user.auth_user_id = authData.user.id;
+          }
         }
 
         setStep('sucesso');
@@ -209,14 +214,18 @@ export default function LoginPortal({
 
               if (!signUpError && signUpData.user) {
                 console.log('Auto-cadastro realizado com sucesso para o Armeiro:', matriculaNorm);
-                
-                // Vincular o auth_user_id no banco de dados
-                await supabase
-                  .from('usuarios')
-                  .update({ auth_user_id: signUpData.user.id })
-                  .eq('matricula', matriculaNorm);
-
-                user.auth_user_id = signUpData.user.id;
+                                // Vincular o auth_user_id no banco de dados usando RPC (SECURITY DEFINER)
+                 const { error: linkErr } = await supabase.rpc('vincular_usuario_auth', {
+                   p_matricula: matriculaNorm,
+                   p_auth_id: signUpData.user.id
+                 });
+                 
+                 if (linkErr) {
+                   console.error('Erro ao vincular auth_user_id do armeiro:', linkErr);
+                 } else {
+                   console.log('Vinculo de auth_user_id do armeiro realizado com sucesso!');
+                   user.auth_user_id = signUpData.user.id;
+                 }
 
                 sessionStorage.removeItem('logging_in');
                 setStep('sucesso');
