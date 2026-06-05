@@ -600,7 +600,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
       const armeiroSvc = activeArmeiroMatricula || usuarios.find(u => u.perfil === 'armeiro_gestor')?.matricula || 'SYS-AM';
       registrarLogAuditoria(
         armeiroSvc,
-        'cadastro_policial',
+        'cadastro_militar',
         `Perfil de usuário (Matrícula: ${matricula}) excluído do sistema (soft delete).`
       );
 

@@ -63,6 +63,7 @@ export interface Material {
   quantidade?: number; // Quantidade total em estoque
   id_arma_vinculada?: string; // ID/Código da arma vinculada
   quantidade_carregadores?: number; // Quantidade de carregadores desta arma
+  id_quartel?: string;   // UUID do quartel
 }
 
 export interface Cautela {
@@ -80,6 +81,7 @@ export interface Cautela {
   prorrogada?: boolean; // true quando o armeiro autorizou prorrogação
   data_prorrogacao?: string; // ISO DateTime do momento em que foi prorrogada
   matricula_armeiro_prorrogacao?: string; // Armeiro que autorizou a prorrogação
+  id_quartel?: string;   // UUID do quartel
 }
 
 export interface CautelaItem {
@@ -109,6 +111,7 @@ export interface AuditoriaLog {
   matricula_executor: string; // Chave Estrangeira -> Usuario(matricula)
   tipo_evento: 'login' | 'registro_cautela' | 'registro_devolucao' | 'bloqueio_militar' | 'envio_manutencao' | 'retorno_manutencao' | 'cadastro_militar';
   detalhes: string;
+  id_quartel?: string;   // UUID do quartel
 }
 
 export interface OcorrenciaRelatorio {
@@ -118,6 +121,7 @@ export interface OcorrenciaRelatorio {
   tipo: 'troca_turno' | 'avaria_material' | 'fiscalizacao' | 'outros' | 'conferencia_estoque';
   descricao: string;
   matricula_armeiro: string; // Autor do registro
+  id_quartel?: string;   // UUID do quartel
 }
 
 export interface ArmaParticular {

@@ -33,11 +33,19 @@ export default function App() {
   const db = useSupabaseDatabase(activeArmeiroMatricula, quartelAtivo?.id ?? null);
 
   const [activeSession, setActiveSession] = useState<any>(null);
+  const [authChecked, setAuthChecked] = useState(false);
 
   useEffect(() => {
+    // Check initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setActiveSession(session);
+      setAuthChecked(true);
+    });
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       console.log('DEBUG [onAuthStateChange] - Evento:', event);
       setActiveSession(session);
+      setAuthChecked(true);
     });
 
     return () => {
@@ -46,6 +54,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!authChecked) return;
+
     let active = true;
 
     async function handleSessionChange() {
@@ -69,6 +79,23 @@ export default function App() {
             setActiveArmeiroMatricula(dbUser.matricula);
             sessionStorage.setItem('activeArmeiroMatricula', dbUser.matricula);
             sessionStorage.setItem('authenticatedArmeiro', JSON.stringify(dbUser));
+
+            // Restaurar o quartelAtivo se não estiver no sessionStorage mas estiver no dbUser
+            if (dbUser.perfil === 'armeiro_gestor' && dbUser.id_quartel) {
+              const savedQuartel = sessionStorage.getItem('quartelAtivo');
+              if (!savedQuartel) {
+                const { data: qData } = await supabase
+                  .from('quarteis')
+                  .select('*')
+                  .eq('id', dbUser.id_quartel)
+                  .maybeSingle();
+
+                if (active && qData) {
+                  setQuartelAtivo(qData);
+                  sessionStorage.setItem('quartelAtivo', JSON.stringify(qData));
+                }
+              }
+            }
 
             const savedRota = sessionStorage.getItem('rota') as any;
             if (!savedRota || savedRota === 'login') {
@@ -99,7 +126,7 @@ export default function App() {
     return () => {
       active = false;
     };
-  }, [activeSession]);
+  }, [activeSession, authChecked]);
   
   // Encontrar o armeiro ativo atual no banco de dados
   const activeArmeiro = db.usuarios.find(u => u.matricula === activeArmeiroMatricula);
