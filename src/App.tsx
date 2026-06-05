@@ -11,7 +11,7 @@ import { useSupabaseDatabase } from './hooks/useSupabaseDatabase';
 import LoginPortal from './components/LoginPortal';
 import { AdminPanelView } from './components/AdminPanelView';
 import { Usuario, Quartel } from './types';
-import { supabase, configurarAssinaturaDispositivo } from './supabaseClient';
+import { supabase, configurarAssinaturaDispositivo, obterAmbienteAtual, alterarAmbiente } from './supabaseClient';
 
 export default function App() {
   const [activeArmeiroMatricula, setActiveArmeiroMatricula] = useState<string>(() => {
@@ -337,6 +337,43 @@ export default function App() {
             </button>
           )}
 
+          {/* Seletor de Ambiente para Homologação/Produção */}
+          <div className="w-full pt-4 border-t border-slate-800/60 flex flex-col items-center gap-2">
+            <span className="text-[8px] font-mono text-slate-500 uppercase tracking-widest block">
+              Ambiente de Banco de Dados:
+            </span>
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  if (obterAmbienteAtual() !== 'producao') {
+                    alterarAmbiente('producao');
+                  }
+                }}
+                className={`px-3 py-1.5 rounded text-[9px] font-mono font-bold transition-all cursor-pointer ${
+                  obterAmbienteAtual() === 'producao'
+                    ? 'bg-red-950/40 text-red-400 border border-red-900/50 shadow-[0_0_8px_rgba(239,68,68,0.15)] font-black'
+                    : 'bg-slate-950/50 text-slate-500 border border-slate-850 hover:text-slate-350 hover:border-slate-800'
+                }`}
+              >
+                PRODUÇÃO
+              </button>
+              <button
+                onClick={() => {
+                  if (obterAmbienteAtual() !== 'homologacao') {
+                    alterarAmbiente('homologacao');
+                  }
+                }}
+                className={`px-3 py-1.5 rounded text-[9px] font-mono font-bold transition-all cursor-pointer ${
+                  obterAmbienteAtual() === 'homologacao'
+                    ? 'bg-blue-950/40 text-blue-400 border border-blue-900/50 shadow-[0_0_8px_rgba(59,130,246,0.15)] font-black'
+                    : 'bg-slate-950/50 text-slate-500 border border-slate-850 hover:text-slate-350 hover:border-slate-800'
+                }`}
+              >
+                HOMOLOGAÇÃO (TESTES)
+              </button>
+            </div>
+          </div>
+
           <div className="text-[8px] font-mono text-slate-600 uppercase tracking-widest pt-2">
             DEPARTAMENTO DE LOGÍSTICA E SUPRIMENTOS - PMDF
           </div>
@@ -532,7 +569,7 @@ export default function App() {
           <>
             <div className="flex flex-wrap gap-4 text-[9px] font-mono text-slate-505 uppercase tracking-widest">
               <span>Session: <strong className="text-slate-400">PMDF-CO-827A</strong></span>
-              <span>SGBD: <strong className="text-slate-400">Supabase Cloud</strong></span>
+              <span>SGBD: <strong className="text-slate-400">Supabase Cloud ({import.meta.env.VITE_SUPABASE_URL?.includes('rndyzoyhpmubbbuxtuso') ? 'HOMOLOGAÇÃO' : 'PRODUÇÃO'})</strong></span>
               <span>Quartel: <strong className="text-slate-400">{quartelAtivo?.nome || 'N/A'}</strong></span>
               <span className="flex items-center gap-1.5">
                 Latency: <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping" />

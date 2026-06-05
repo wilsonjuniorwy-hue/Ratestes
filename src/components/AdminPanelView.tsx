@@ -26,11 +26,13 @@ export function AdminPanelView({ admin, db, onSelecionarQuartel, onLogout }: Adm
   // Dispositivos States
   const [dispositivos, setDispositivos] = useState<any[]>([]);
   const [isLoadingDispositivos, setIsLoadingDispositivos] = useState(false);
+  const [errorDispositivos, setErrorDispositivos] = useState<string | null>(null);
   const [bypassTokens, setBypassTokens] = useState<any[]>([]);
   const [generatedBypass, setGeneratedBypass] = useState<string>('');
 
   const fetchDispositivos = async () => {
     setIsLoadingDispositivos(true);
+    setErrorDispositivos(null);
     try {
       const { data: devs, error } = await supabase
         .from('dispositivos_autorizados')
@@ -38,8 +40,9 @@ export function AdminPanelView({ admin, db, onSelecionarQuartel, onLogout }: Adm
         .order('criado_em', { ascending: false });
       if (error) throw error;
       setDispositivos(devs || []);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Erro ao buscar dispositivos:', err);
+      setErrorDispositivos(err.message || 'Falha ao buscar dispositivos');
     } finally {
       setIsLoadingDispositivos(false);
     }
@@ -160,6 +163,13 @@ export function AdminPanelView({ admin, db, onSelecionarQuartel, onLogout }: Adm
                 Painel do Administrador
               </h1>
               <span className="text-[9px] bg-amber-950 text-amber-400 border border-amber-800/60 px-1.5 py-0.5 rounded font-black font-mono">ADMIN</span>
+              <span className={`text-[9px] border px-1.5 py-0.5 rounded font-black font-mono ${
+                import.meta.env.VITE_SUPABASE_URL?.includes('rndyzoyhpmubbbuxtuso')
+                  ? 'bg-blue-950 text-blue-400 border-blue-800/60'
+                  : 'bg-red-950 text-red-400 border-red-800/60'
+              }`}>
+                {import.meta.env.VITE_SUPABASE_URL?.includes('rndyzoyhpmubbbuxtuso') ? 'HOMOLOGAÇÃO' : 'PRODUÇÃO'}
+              </span>
             </div>
             <p className="text-[9px] text-slate-500 font-mono tracking-widest uppercase mt-0.5">
               Controle Global de Quarteis e Acessos
@@ -392,6 +402,12 @@ export function AdminPanelView({ admin, db, onSelecionarQuartel, onLogout }: Adm
                 </div>
                 <span className="text-[10px] font-mono text-slate-500">{dispositivos.length} registrados</span>
               </div>
+
+              {errorDispositivos && (
+                <div className="bg-red-955/30 border border-red-900/40 p-3 rounded-lg text-xs font-mono text-red-400">
+                  <strong>Erro ao buscar dispositivos:</strong> {errorDispositivos}
+                </div>
+              )}
 
               {isLoadingDispositivos ? (
                 <p className="text-xs text-slate-550 font-mono text-center py-4">Carregando dispositivos autorizados...</p>

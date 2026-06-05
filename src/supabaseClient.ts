@@ -3,23 +3,37 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const CONFIGS = {
+  homologacao: {
+    url: "https://rndyzoyhpmubbbuxtuso.supabase.co",
+    key: "sb_publishable_1PHcHXdcHye3Ent0hq4dLw_YGiRWtU7"
+  },
+  producao: {
+    url: import.meta.env.VITE_SUPABASE_URL || "https://rwnldjtevkheiwutxhgg.supabase.co",
+    key: import.meta.env.VITE_SUPABASE_ANON_KEY || "sb_publishable_CQWOt6VSUTH7jPdYJXiY2w_IjvhG1Ea"
+  }
+};
 
-if (!supabaseUrl || !supabaseAnonKey || supabaseUrl.includes('seu-projeto') || supabaseAnonKey.includes('sua_chave')) {
-  console.warn(
-    'AVISO: Credenciais do Supabase não configuradas no arquivo .env. ' +
-    'Por favor, edite o arquivo .env na raiz do projeto com as chaves corretas do seu painel Supabase.'
-  );
-}
+export type Ambiente = 'homologacao' | 'producao';
+
+// Determinar o ambiente padrão com base no modo de compilação do Vite
+const modoVite = import.meta.env.MODE;
+const ambientePadrao: Ambiente = (modoVite === 'staging' || modoVite === 'development') ? 'homologacao' : 'producao';
+
+// Obter o ambiente atual (salvo no localStorage ou usar o padrão)
+const ambienteAtual: Ambiente = (localStorage.getItem('app_ambiente') as Ambiente) || ambientePadrao;
+const config = CONFIGS[ambienteAtual];
 
 let deviceUuid = '';
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+console.log(`[SUPABASE CLIENT] Inicializando em modo [${ambienteAtual.toUpperCase()}] usando a URL: ${config.url}`);
+
+// Criar o cliente ativo
+const activeClient = createClient(config.url, config.key, {
   global: {
-    fetch: (url, options) => {
+    fetch: async (url, options) => {
       const headers: Record<string, string> = {};
       
       if (options?.headers) {
@@ -40,10 +54,41 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
         headers['x-device-uuid'] = deviceUuid;
       }
       
-      return fetch(url, { ...options, headers });
+      console.log(`[SUPABASE FETCH] URL: ${url}`);
+      console.log(`[SUPABASE FETCH] Headers:`, {
+        ...headers,
+        Authorization: headers.Authorization ? 'Bearer [HIDDEN]' : 'undefined',
+        apikey: headers.apikey ? '[PRESENT]' : 'undefined',
+        'x-device-uuid': headers['x-device-uuid'] || 'undefined'
+      });
+      
+      try {
+        const response = await fetch(url, { ...options, headers });
+        console.log(`[SUPABASE FETCH] URL: ${url} -> Status: ${response.status} ${response.statusText}`);
+        return response;
+      } catch (err: any) {
+        console.error(`[SUPABASE FETCH] URL: ${url} -> ERROR:`, err);
+        throw err;
+      }
     }
   }
 });
+
+// Proxy transparente para exportar o cliente dinâmico
+export const supabase = new Proxy({}, {
+  get(target, prop) {
+    return (activeClient as any)[prop];
+  }
+}) as SupabaseClient;
+
+export function obterAmbienteAtual(): Ambiente {
+  return ambienteAtual;
+}
+
+export function alterarAmbiente(novoAmbiente: Ambiente) {
+  localStorage.setItem('app_ambiente', novoAmbiente);
+  window.location.reload();
+}
 
 /**
  * Injeta dinamicamente a assinatura física do dispositivo nos cabeçalhos das requisições
@@ -51,6 +96,5 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
  */
 export function configurarAssinaturaDispositivo(uuid: string) {
   deviceUuid = uuid;
-  console.log('SGBD: Assinatura de hardware configurada para as requisições:', uuid);
+  console.log(`SGBD: Assinatura de hardware configurada no ambiente [${ambienteAtual.toUpperCase()}]:`, uuid);
 }
-

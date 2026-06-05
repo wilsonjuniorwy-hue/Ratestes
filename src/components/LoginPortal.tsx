@@ -7,7 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { Shield, KeyRound, ShieldAlert, CheckCircle, RefreshCw, Eye, EyeOff, Building2, ArrowLeft } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Usuario, Quartel } from '../types';
-import { supabase } from '../supabaseClient';
+import { supabase, obterAmbienteAtual, alterarAmbiente } from '../supabaseClient';
 import { comparePassword, hashSHA256 } from '../utils/crypto';
 
 interface LoginPortalProps {
@@ -605,6 +605,43 @@ export default function LoginPortal({
             </div>
           </motion.div>
         )}
+
+        {/* Seletor de Ambiente no Login */}
+        <div className="mt-6 pt-4 border-t border-slate-800/60 flex flex-col items-center gap-2 relative">
+          <span className="text-[8px] font-mono text-slate-550 uppercase tracking-widest block">
+            Banco de Dados Conectado:
+          </span>
+          <div className="flex gap-2">
+            <button
+              onClick={() => {
+                if (obterAmbienteAtual() !== 'producao') {
+                  alterarAmbiente('producao');
+                }
+              }}
+              className={`px-3 py-1 rounded-[6px] text-[8px] font-mono font-bold transition-all cursor-pointer ${
+                obterAmbienteAtual() === 'producao'
+                  ? 'bg-red-955 text-red-400 border border-red-900/40 shadow-[0_0_8px_rgba(239,68,68,0.1)]'
+                  : 'bg-slate-950/40 text-slate-550 border border-slate-850 hover:text-slate-350 hover:border-slate-800'
+              }`}
+            >
+              PRODUÇÃO
+            </button>
+            <button
+              onClick={() => {
+                if (obterAmbienteAtual() !== 'homologacao') {
+                  alterarAmbiente('homologacao');
+                }
+              }}
+              className={`px-3 py-1 rounded-[6px] text-[8px] font-mono font-bold transition-all cursor-pointer ${
+                obterAmbienteAtual() === 'homologacao'
+                  ? 'bg-blue-955 text-blue-400 border border-blue-900/40 shadow-[0_0_8px_rgba(59,130,246,0.1)]'
+                  : 'bg-slate-950/40 text-slate-550 border border-slate-850 hover:text-slate-350 hover:border-slate-800'
+              }`}
+            >
+              HOMOLOGAÇÃO
+            </button>
+          </div>
+        </div>
 
       </motion.div>
     </div>
