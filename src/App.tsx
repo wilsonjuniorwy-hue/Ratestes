@@ -11,7 +11,7 @@ import { useSupabaseDatabase } from './hooks/useSupabaseDatabase';
 import LoginPortal from './components/LoginPortal';
 import { AdminPanelView } from './components/AdminPanelView';
 import { Usuario, Quartel } from './types';
-import { supabase } from './supabaseClient';
+import { supabase, configurarAssinaturaDispositivo } from './supabaseClient';
 
 export default function App() {
   const [activeArmeiroMatricula, setActiveArmeiroMatricula] = useState<string>(() => {
@@ -30,7 +30,14 @@ export default function App() {
     return (sessionStorage.getItem('rota') as any) || 'login';
   });
 
-  const db = useSupabaseDatabase(activeArmeiroMatricula, quartelAtivo?.id ?? null);
+  const [tauriStatus, setTauriStatus] = useState<'checking' | 'not_tauri' | 'authorized' | 'unauthorized' | 'suspended' | 'blocked' | 'error'>('checking');
+  const [deviceSignature, setDeviceSignature] = useState<string>('');
+  const [nomeDispositivo, setNomeDispositivo] = useState<string>('');
+  const [isRegistering, setIsRegistering] = useState<boolean>(false);
+  const [bypassCode, setBypassCode] = useState<string>('');
+  const [bypassError, setBypassError] = useState<string>('');
+
+  const db = useSupabaseDatabase(activeArmeiroMatricula, quartelAtivo?.id ?? null, tauriStatus === 'authorized');
 
   const [activeSession, setActiveSession] = useState<any>(null);
   const [authChecked, setAuthChecked] = useState(false);
@@ -128,6 +135,216 @@ export default function App() {
     };
   }, [activeSession, authChecked]);
   
+  useEffect(() => {
+    async function checkDevice() {
+      const isTauri = typeof window !== 'undefined' && (
+        (window as any).__TAURI__ !== undefined ||
+        (window as any).__TAURI_INTERNALS__ !== undefined
+      );
+      
+      if (!isTauri) {
+        setTauriStatus('not_tauri');
+        return;
+      }
+      
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const signature = await invoke<string>('obter_assinatura_fisica');
+        setDeviceSignature(signature);
+        
+        configurarAssinaturaDispositivo(signature);
+        
+        const { data, error } = await supabase.rpc('verificar_dispositivo', { p_uuid: signature });
+        
+        if (error) {
+          console.error('Erro ao verificar dispositivo:', error);
+          setTauriStatus('error');
+          return;
+        }
+        
+        const result = data as any;
+        const info = Array.isArray(result) ? result[0] : result;
+        
+        if (info && info.existe) {
+          if (info.status === 'ativo') {
+            setTauriStatus('authorized');
+          } else if (info.status === 'suspenso') {
+            setTauriStatus('suspended');
+          } else if (info.status === 'bloqueado') {
+            setTauriStatus('blocked');
+          } else {
+            setTauriStatus('unauthorized');
+          }
+        } else {
+          setTauriStatus('unauthorized');
+        }
+      } catch (err) {
+        console.error('Erro na validação do hardware:', err);
+        setTauriStatus('error');
+      }
+    }
+    
+    checkDevice();
+  }, []);
+
+  const handleSolicitarHomologacao = async () => {
+    if (!nomeDispositivo.trim()) return;
+    setIsRegistering(true);
+    try {
+      const { error } = await supabase
+        .from('dispositivos_autorizados')
+        .insert({
+          uuid_hardware: deviceSignature,
+          nome_dispositivo: nomeDispositivo,
+          status: 'pendente'
+        });
+      if (error) throw error;
+      
+      alert('Solicitação enviada com sucesso! Aguarde a aprovação do Administrador no painel.');
+    } catch (err) {
+      console.error('Erro ao cadastrar dispositivo:', err);
+      alert('Falha ao enviar solicitação.');
+    } finally {
+      setIsRegistering(false);
+    }
+  };
+
+  const handleAplicarBypass = async () => {
+    if (!bypassCode.trim()) return;
+    try {
+      const { data, error } = await supabase.rpc('validar_codigo_bypass', { p_codigo: bypassCode });
+      if (error) throw error;
+      
+      if (data) {
+        setTauriStatus('authorized');
+        alert('Bypass de emergência ativado! Acesso liberado por 24 horas.');
+      } else {
+        setBypassError('Código inválido, já utilizado ou expirado.');
+      }
+    } catch (err) {
+      console.error('Erro ao validar bypass:', err);
+      setBypassError('Erro na conexão para validar o código.');
+    }
+  };
+
+  const renderLockScreen = () => {
+    const iconMap: Record<string, string> = {
+      checking: '🔄',
+      not_tauri: '🚫',
+      unauthorized: '🔒',
+      suspended: '🛠️',
+      blocked: '⚠️',
+      error: '❌'
+    };
+
+    const titleMap: Record<string, string> = {
+      checking: 'Autenticando Dispositivo...',
+      not_tauri: 'Acesso Não Autorizado',
+      unauthorized: 'Homologação Pendente',
+      suspended: 'Dispositivo Suspenso',
+      blocked: 'Dispositivo Bloqueado',
+      error: 'Erro de Integridade'
+    };
+
+    const descMap: Record<string, string> = {
+      checking: 'Verificando as chaves de segurança física da máquina no banco de dados cloud...',
+      not_tauri: 'Este sistema de segurança tática (PMDF) só pode ser acessado através do aplicativo desktop homologado.',
+      unauthorized: 'Esta máquina ainda não está homologada para realizar cautelas nesta armaria.',
+      suspended: 'Este computador foi suspenso temporariamente pela administração para manutenção ou movimentação física.',
+      blocked: 'Esta máquina foi bloqueada por razões de segurança ou violação de políticas de acesso.',
+      error: 'Não foi possível validar a assinatura física da máquina. Verifique a conexão com o banco de dados.'
+    };
+
+    return (
+      <div className="fixed inset-0 bg-slate-950 flex items-center justify-center p-6 z-[9999] overflow-auto">
+        <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-xl p-8 shadow-2xl flex flex-col items-center text-center space-y-6">
+          <div className="w-16 h-16 bg-blue-600/10 border border-blue-500/30 rounded-full flex items-center justify-center text-3xl shadow-[0_0_15px_rgba(59,130,246,0.15)] animate-pulse">
+            {iconMap[tauriStatus] || '🔒'}
+          </div>
+          
+          <div className="space-y-2">
+            <h2 className="text-xl font-bold font-mono text-white uppercase tracking-wider">
+              {titleMap[tauriStatus] || 'Bloqueio de Segurança'}
+            </h2>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              {descMap[tauriStatus]}
+            </p>
+          </div>
+
+          {deviceSignature && (
+            <div className="w-full bg-slate-955 border border-slate-850 p-4 rounded-lg space-y-1 text-left">
+              <span className="text-[9px] font-mono text-slate-550 uppercase tracking-wider block">Assinatura do Computador (SHA-256):</span>
+              <code className="text-[10px] font-mono text-cyan-400 break-all select-all block font-bold leading-normal">
+                {deviceSignature}
+              </code>
+            </div>
+          )}
+
+          {tauriStatus === 'unauthorized' && (
+            <div className="w-full space-y-4">
+              <div className="space-y-1.5 text-left">
+                <label className="text-[10px] font-mono text-slate-400 uppercase tracking-widest block">Identificador do Computador (Ex: Armaria Cavalaria PC-01):</label>
+                <input 
+                  type="text"
+                  value={nomeDispositivo}
+                  onChange={(e) => setNomeDispositivo(e.target.value)}
+                  placeholder="Digite um nome para identificar esta máquina"
+                  className="w-full bg-slate-955 border border-slate-800 rounded px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500 font-mono transition-colors"
+                />
+              </div>
+              <button
+                onClick={handleSolicitarHomologacao}
+                disabled={isRegistering || !nomeDispositivo.trim()}
+                className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-800 disabled:text-slate-500 text-xs font-mono font-bold text-white rounded transition-colors uppercase tracking-wider cursor-pointer font-bold"
+              >
+                {isRegistering ? 'Enviando...' : 'Solicitar Homologação'}
+              </button>
+            </div>
+          )}
+
+          {(tauriStatus === 'unauthorized' || tauriStatus === 'suspended' || tauriStatus === 'blocked') && (
+            <div className="w-full border-t border-slate-800/65 pt-6 space-y-4">
+              <div className="space-y-1.5 text-left">
+                <label className="text-[10px] font-mono text-slate-400 uppercase tracking-widest block">Código de Bypass de Emergência (24 Horas):</label>
+                <div className="flex gap-2">
+                  <input 
+                    type="text"
+                    value={bypassCode}
+                    onChange={(e) => { setBypassCode(e.target.value); setBypassError(''); }}
+                    placeholder="Digite o código gerado pelo Admin"
+                    className="flex-1 bg-slate-955 border border-slate-800 rounded px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500 font-mono transition-colors"
+                  />
+                  <button
+                    onClick={handleAplicarBypass}
+                    className="px-4 py-2 bg-amber-600 hover:bg-amber-505 text-xs font-mono font-bold text-white rounded transition-colors uppercase tracking-wider cursor-pointer"
+                  >
+                    Validar
+                  </button>
+                </div>
+                {bypassError && (
+                  <span className="text-[9px] font-mono text-red-500 block">{bypassError}</span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {tauriStatus === 'error' && (
+            <button
+              onClick={() => window.location.reload()}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-xs font-mono font-bold text-white rounded transition-colors uppercase tracking-wider cursor-pointer"
+            >
+              Recarregar Aplicação
+            </button>
+          )}
+
+          <div className="text-[8px] font-mono text-slate-600 uppercase tracking-widest pt-2">
+            DEPARTAMENTO DE LOGÍSTICA E SUPRIMENTOS - PMDF
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // Encontrar o armeiro ativo atual no banco de dados
   const activeArmeiro = db.usuarios.find(u => u.matricula === activeArmeiroMatricula);
 
@@ -143,6 +360,10 @@ export default function App() {
     sessionStorage.removeItem('quartelAtivo');
     sessionStorage.removeItem('rota');
   };
+
+  if (tauriStatus !== 'authorized') {
+    return renderLockScreen();
+  }
 
   return (
     <div className="min-h-screen bg-slate-955 text-slate-100 font-sans flex flex-col overflow-x-hidden selection:bg-blue-600 selection:text-white" id="app-root">

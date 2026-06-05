@@ -1,12 +1,10 @@
 -- ============================================================
--- MIGRATION: Sistema Multi-Quartel
--- Data: 2026-06-04
--- Execute este script inteiro no SQL Editor do Supabase
+-- SCHEMA COMPLETO DO BANCO DE DADOS: Reserva de Armamento
+-- Data: 2026-06-05
+-- Execute este script inteiro no SQL Editor do Supabase Staging/Production
 -- ============================================================
 
--- ============================================================
--- PASSO 1: CRIAR TABELA QUARTEIS
--- ============================================================
+-- 1. TABELA QUARTEIS
 CREATE TABLE IF NOT EXISTS quarteis (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   slug        TEXT UNIQUE NOT NULL,
@@ -16,83 +14,191 @@ CREATE TABLE IF NOT EXISTS quarteis (
   deletado_em TIMESTAMPTZ
 );
 
--- Seed: quartel atual (Cavalaria)
+-- Seed básico do Quartel Cavalaria
 INSERT INTO quarteis (slug, nome)
 VALUES ('cavalaria', 'Regimento de Cavalaria')
 ON CONFLICT (slug) DO NOTHING;
 
+-- 2. TABELA USUARIOS
+CREATE TABLE IF NOT EXISTS usuarios (
+  matricula                      TEXT PRIMARY KEY,
+  nome                           TEXT NOT NULL,
+  nome_de_guerra                 TEXT,
+  senha_hash                     TEXT,
+  perfil                         TEXT NOT NULL,
+  posto_graduacao                TEXT NOT NULL,
+  situacao_cautela               TEXT NOT NULL,
+  data_ultimo_teste_psicologico  DATE NOT NULL,
+  motivo_suspensao               TEXT,
+  auth_user_id                   UUID UNIQUE,
+  id_quartel                     UUID REFERENCES quarteis(id),
+  deletado_em                    TIMESTAMPTZ
+);
+
+-- 3. TABELA CATEGORIAS
+CREATE TABLE IF NOT EXISTS categorias (
+  id_categoria TEXT PRIMARY KEY,
+  nome         TEXT NOT NULL,
+  descricao    TEXT
+);
+
+-- Seed básico de categorias
+INSERT INTO categorias (id_categoria, nome, descricao) VALUES
+('CAT-ARMA-CURTA', 'Armas de Fogo Curtas', 'Pistolas e Revólveres de porte individual'),
+('CAT-ARMA-LONGA', 'Armas de Fogo Longas', 'Fuzis, Carabinas e Espingardas para emprego tático e patrulhamento'),
+('CAT-MANUTENCAO', 'Colete Balístico', 'Equipamento de Proteção Individual (EPI) resistente a projéteis'),
+('CAT-COMUNICACAO', 'Rádios & Telecomunicações', 'Terminais de rádio transmissor/receptor (HT) criptografados'),
+('CAT-MUNICAO', 'Munições', 'Munições operacionais e de treino correspondentes')
+ON CONFLICT (id_categoria) DO NOTHING;
+
+-- 4. TABELA MODELOS_ARMAS
+CREATE TABLE IF NOT EXISTS modelos_armas (
+  modelo  TEXT PRIMARY KEY,
+  calibre TEXT NOT NULL
+);
+
+-- Seed básico de modelos de armas
+INSERT INTO modelos_armas (modelo, calibre) VALUES
+('Pistola CZ - P10', '9mm'),
+('Fuzil Imbel IA2 5.56', '5.56mm'),
+('Espingarda Calibre 12', '12')
+ON CONFLICT (modelo) DO NOTHING;
+
+-- 5. TABELA MATERIAIS
+CREATE TABLE IF NOT EXISTS materiais (
+  id_material             TEXT PRIMARY KEY,
+  id_categoria            TEXT REFERENCES categorias(id_categoria),
+  modelo                  TEXT NOT NULL,
+  fabricante              TEXT NOT NULL,
+  calibre                 TEXT,
+  status_atual            TEXT NOT NULL,
+  data_aquisicao          DATE NOT NULL,
+  data_ultima_manutencao  DATE,
+  especificacoes_tecnicas TEXT,
+  controle_quantidade     BOOLEAN DEFAULT FALSE,
+  quantidade              INTEGER,
+  id_arma_vinculada       TEXT,
+  quantidade_carregadores INTEGER,
+  id_quartel              UUID REFERENCES quarteis(id),
+  deletado_em             TIMESTAMPTZ
+);
+
+-- 6. TABELA CAUTELAS
+CREATE TABLE IF NOT EXISTS cautelas (
+  id_cautela                    TEXT PRIMARY KEY,
+  matricula_policial            TEXT REFERENCES usuarios(matricula),
+  matricula_armeiro_retirada    TEXT REFERENCES usuarios(matricula),
+  data_retirada                 TIMESTAMPTZ NOT NULL,
+  previsao_devolucao            TIMESTAMPTZ NOT NULL,
+  data_devolucao_efetiva        TIMESTAMPTZ,
+  matricula_armeiro_devolucao   TEXT REFERENCES usuarios(matricula),
+  status_cautela                TEXT NOT NULL,
+  observacoes_retirada          TEXT,
+  observacoes_devolucao         TEXT,
+  prorrogada                    BOOLEAN DEFAULT FALSE,
+  data_prorrogacao              TIMESTAMPTZ,
+  matricula_armeiro_prorrogacao TEXT REFERENCES usuarios(matricula),
+  id_quartel                    UUID REFERENCES quarteis(id),
+  deletado_em                   TIMESTAMPTZ
+);
+
+-- 7. TABELA CAUTELA_ITENS
+CREATE TABLE IF NOT EXISTS cautela_itens (
+  id_cautela_item         TEXT PRIMARY KEY,
+  id_cautela              TEXT REFERENCES cautelas(id_cautela),
+  id_material             TEXT REFERENCES materiais(id_material),
+  quantidade              INTEGER NOT NULL DEFAULT 1,
+  estado_entrega          TEXT NOT NULL,
+  estado_devolucao        TEXT,
+  consumido               BOOLEAN DEFAULT FALSE,
+  quantidade_carregadores INTEGER,
+  id_quartel              UUID REFERENCES quarteis(id),
+  deletado_em             TIMESTAMPTZ
+);
+
+-- 8. TABELA MANUTENCOES
+CREATE TABLE IF NOT EXISTS manutencoes (
+  id_manutencao       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  id_material         TEXT REFERENCES materiais(id_material),
+  data_entrada        DATE NOT NULL,
+  data_saida_prevista DATE NOT NULL,
+  data_saida_efetiva  DATE,
+  descricao_problema  TEXT NOT NULL,
+  parecer_tecnico     TEXT
+);
+
+-- 9. TABELA AUDITORIA_LOGS
+CREATE TABLE IF NOT EXISTS auditoria_logs (
+  id_log             TEXT PRIMARY KEY,
+  data_hora          TIMESTAMPTZ NOT NULL,
+  matricula_executor TEXT REFERENCES usuarios(matricula),
+  tipo_evento        TEXT NOT NULL,
+  detalhes           TEXT,
+  id_quartel         UUID REFERENCES quarteis(id),
+  deletado_em        TIMESTAMPTZ
+);
+
+-- 10. TABELA OCORRENCIAS
+CREATE TABLE IF NOT EXISTS ocorrencias (
+  id_ocorrencia     TEXT PRIMARY KEY,
+  data_hora         TIMESTAMPTZ NOT NULL,
+  titulo            TEXT NOT NULL,
+  tipo              TEXT NOT NULL,
+  descricao         TEXT,
+  matricula_armeiro TEXT REFERENCES usuarios(matricula),
+  id_quartel        UUID REFERENCES quarteis(id),
+  deletado_em       TIMESTAMPTZ
+);
+
+-- 11. TABELA ARMAS_PARTICULARES
+CREATE TABLE IF NOT EXISTS armas_particulares (
+  id_particular      TEXT PRIMARY KEY,
+  matricula_policial TEXT REFERENCES usuarios(matricula),
+  tipo_item          TEXT NOT NULL,
+  modelo             TEXT NOT NULL,
+  fabricante         TEXT,
+  calibre            TEXT,
+  numero_serie       TEXT,
+  quantidade         INTEGER NOT NULL DEFAULT 1,
+  carregadores       INTEGER,
+  data_deposito      TIMESTAMPTZ NOT NULL,
+  data_devolucao     TIMESTAMPTZ,
+  status             TEXT NOT NULL,
+  observacoes        TEXT,
+  id_quartel         UUID REFERENCES quarteis(id),
+  deletado_em        TIMESTAMPTZ
+);
+
+-- 12. TABELA PENDENCIAS_SERVICO
+CREATE TABLE IF NOT EXISTS pendencias_servico (
+  id_pendencia         TEXT PRIMARY KEY,
+  descricao            TEXT NOT NULL,
+  status               TEXT NOT NULL DEFAULT 'aberto',
+  data_criacao         TIMESTAMPTZ NOT NULL,
+  matricula_criador    TEXT REFERENCES usuarios(matricula),
+  resolucao            TEXT,
+  data_resolucao       TIMESTAMPTZ,
+  matricula_resolvedor TEXT REFERENCES usuarios(matricula),
+  id_quartel           UUID REFERENCES quarteis(id),
+  deletado_em          TIMESTAMPTZ
+);
+
+-- 13. TABELA DISPOSITIVOS_AUTORIZADOS
+CREATE TABLE IF NOT EXISTS dispositivos_autorizados (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  uuid_hardware    TEXT UNIQUE NOT NULL, -- SHA-256 gerado pelo app desktop
+  nome_dispositivo TEXT,
+  id_quartel       UUID REFERENCES quarteis(id),
+  status           TEXT DEFAULT 'pendente' CHECK (status IN ('ativo', 'pendente', 'suspenso', 'bloqueado')),
+  criado_em        TIMESTAMPTZ DEFAULT now(),
+  atualizado_em    TIMESTAMPTZ DEFAULT now()
+);
+
 -- ============================================================
--- PASSO 2: ADICIONAR COLUNAS NAS TABELAS EXISTENTES
+-- SEMENTES DE DADOS: ADMIN E ARMEIRO PADRÃO
 -- ============================================================
 
-ALTER TABLE usuarios
-  ADD COLUMN IF NOT EXISTS id_quartel UUID REFERENCES quarteis(id),
-  ADD COLUMN IF NOT EXISTS deletado_em TIMESTAMPTZ;
-
-ALTER TABLE materiais
-  ADD COLUMN IF NOT EXISTS id_quartel UUID REFERENCES quarteis(id),
-  ADD COLUMN IF NOT EXISTS deletado_em TIMESTAMPTZ;
-
-ALTER TABLE cautelas
-  ADD COLUMN IF NOT EXISTS id_quartel UUID REFERENCES quarteis(id),
-  ADD COLUMN IF NOT EXISTS deletado_em TIMESTAMPTZ;
-
-ALTER TABLE cautela_itens
-  ADD COLUMN IF NOT EXISTS id_quartel UUID REFERENCES quarteis(id),
-  ADD COLUMN IF NOT EXISTS deletado_em TIMESTAMPTZ;
-
-ALTER TABLE ocorrencias
-  ADD COLUMN IF NOT EXISTS id_quartel UUID REFERENCES quarteis(id),
-  ADD COLUMN IF NOT EXISTS deletado_em TIMESTAMPTZ;
-
-ALTER TABLE auditoria_logs
-  ADD COLUMN IF NOT EXISTS id_quartel UUID REFERENCES quarteis(id),
-  ADD COLUMN IF NOT EXISTS deletado_em TIMESTAMPTZ;
-
-ALTER TABLE armas_particulares
-  ADD COLUMN IF NOT EXISTS id_quartel UUID REFERENCES quarteis(id),
-  ADD COLUMN IF NOT EXISTS deletado_em TIMESTAMPTZ;
-
-ALTER TABLE pendencias_servico
-  ADD COLUMN IF NOT EXISTS id_quartel UUID REFERENCES quarteis(id),
-  ADD COLUMN IF NOT EXISTS deletado_em TIMESTAMPTZ;
-
--- ============================================================
--- PASSO 3: MIGRAR DADOS EXISTENTES PARA O QUARTEL CAVALARIA
--- ============================================================
-DO $$
-DECLARE
-  v_quartel_id UUID;
-BEGIN
-  SELECT id INTO v_quartel_id FROM quarteis WHERE slug = 'cavalaria';
-
-  -- Migrar todos os usuarios existentes para o quartel Cavalaria
-  -- (o usuario ADMIN será criado no Passo 4 já sem id_quartel)
-  UPDATE usuarios           SET id_quartel = v_quartel_id WHERE id_quartel IS NULL;
-  UPDATE materiais          SET id_quartel = v_quartel_id WHERE id_quartel IS NULL;
-  UPDATE cautelas           SET id_quartel = v_quartel_id WHERE id_quartel IS NULL;
-  UPDATE cautela_itens      SET id_quartel = v_quartel_id WHERE id_quartel IS NULL;
-  UPDATE ocorrencias        SET id_quartel = v_quartel_id WHERE id_quartel IS NULL;
-  UPDATE auditoria_logs     SET id_quartel = v_quartel_id WHERE id_quartel IS NULL;
-  UPDATE armas_particulares SET id_quartel = v_quartel_id WHERE id_quartel IS NULL;
-  UPDATE pendencias_servico SET id_quartel = v_quartel_id WHERE id_quartel IS NULL;
-END $$;
-
--- ============================================================
--- PASSO 4: LIBERAR CAMPO PERFIL PARA ACEITAR 'admin'
--- E CRIAR USUARIO ADMIN SEPARADO
--- ============================================================
-
--- 4.1: Remover a check constraint que bloqueia o valor 'admin'
-ALTER TABLE usuarios DROP CONSTRAINT IF EXISTS usuarios_perfil_check;
-
--- 4.2: Garantir que o campo perfil é TEXT livre (sem enum restrito)
-ALTER TABLE usuarios ALTER COLUMN perfil TYPE TEXT;
-
--- 4.3: Criar o usuário admin como conta separada
---      Matrícula especial: ADMIN (não vinculada a nenhum policial real)
---      senha_hash vazia = será definida no primeiro acesso
---      auth_user_id vazio = será vinculado no primeiro login
+-- Usuário Admin Especial
 INSERT INTO usuarios (
   matricula,
   nome,
@@ -107,21 +213,45 @@ INSERT INTO usuarios (
   'ADMIN',
   'Administrador do Sistema',
   'Admin',
-  '',
+  '', -- senha cadastrada no primeiro acesso
   'admin',
   'Administrador',
   'apto',
   '2099-12-31',
-  NULL   -- Admin não pertence a nenhum quartel
+  NULL
 )
 ON CONFLICT (matricula) DO UPDATE SET
   perfil = 'admin',
   id_quartel = NULL;
 
+-- Usuário Armeiro Totem
+INSERT INTO usuarios (
+  matricula,
+  nome,
+  nome_de_guerra,
+  senha_hash,
+  perfil,
+  posto_graduacao,
+  situacao_cautela,
+  data_ultimo_teste_psicologico,
+  id_quartel
+) VALUES (
+  'ARMEIRO',
+  'Totem de Atendimento',
+  'Totem',
+  '5fac61b0fd803321c5831cd12a21649522595554c8a508bd42d4a1b4f09eab36', -- hash de 101187
+  'armeiro_gestor',
+  'Totem',
+  'apto',
+  '2026-05-31',
+  (SELECT id FROM quarteis WHERE slug = 'cavalaria' LIMIT 1)
+)
+ON CONFLICT (matricula) DO NOTHING;
 
 -- ============================================================
--- PASSO 5: FUNCOES AUXILIARES DE RLS
+-- FUNÇÕES DE SEGURANÇA E RLS (POLÍTICOS)
 -- ============================================================
+
 CREATE OR REPLACE FUNCTION get_meu_quartel()
 RETURNS UUID AS $$
 DECLARE
@@ -158,9 +288,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE;
 
--- ============================================================
--- PASSO 6: JWT CLAIMS HOOK
--- ============================================================
+
+-- JWT CLAIMS HOOK
 CREATE OR REPLACE FUNCTION public.custom_access_token_hook(event jsonb)
 RETURNS jsonb AS $$
 DECLARE
@@ -185,7 +314,53 @@ GRANT EXECUTE ON FUNCTION public.custom_access_token_hook TO supabase_auth_admin
 REVOKE EXECUTE ON FUNCTION public.custom_access_token_hook FROM authenticated, anon, public;
 
 -- ============================================================
--- PASSO 7: HABILITAR RLS E POLITICAS
+-- VERIFICAÇÃO DE DISPOSITIVOS (HARDWARE PINNING)
+-- ============================================================
+
+-- Função para ler o UUID enviado no cabeçalho
+CREATE OR REPLACE FUNCTION get_device_uuid_header() RETURNS text AS $$
+DECLARE
+  v_headers text;
+BEGIN
+  v_headers := current_setting('request.headers', true);
+  IF v_headers IS NULL OR v_headers = '' THEN
+    RETURN NULL;
+  END IF;
+  RETURN v_headers::json->>'x-device-uuid';
+EXCEPTION WHEN OTHERS THEN
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql STABLE;
+
+-- Função para checar se o dispositivo está autorizado
+CREATE OR REPLACE FUNCTION is_current_device_authorized() RETURNS boolean AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM dispositivos_autorizados
+    WHERE uuid_hardware = get_device_uuid_header() AND status = 'ativo'
+  );
+$$ LANGUAGE sql SECURITY DEFINER;
+
+-- Função SECURITY DEFINER para verificar dispositivo
+DROP FUNCTION IF EXISTS verificar_dispositivo(text);
+
+CREATE OR REPLACE FUNCTION verificar_dispositivo(p_uuid TEXT)
+RETURNS TABLE (existe BOOLEAN, status TEXT) AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    TRUE as existe,
+    dispositivos_autorizados.status
+  FROM dispositivos_autorizados
+  WHERE uuid_hardware = p_uuid;
+  
+  IF NOT FOUND THEN
+    RETURN QUERY SELECT FALSE, 'inexistente'::TEXT;
+  END IF;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ============================================================
+-- HABILITAR RLS E CONFIGURAR POLÍTICAS
 -- ============================================================
 
 -- QUARTEIS
@@ -297,7 +472,7 @@ CREATE POLICY "ocorrencias_update" ON ocorrencias FOR UPDATE USING (
   OR (get_meu_perfil() = 'armeiro_gestor' AND id_quartel = get_meu_quartel())
 );
 
--- AUDITORIA_LOGS (append-only imutavel)
+-- AUDITORIA_LOGS (append-only imutável)
 ALTER TABLE auditoria_logs ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "auditoria_select" ON auditoria_logs;
 CREATE POLICY "auditoria_select" ON auditoria_logs FOR SELECT USING (
@@ -373,7 +548,13 @@ CREATE POLICY "modelos_insert" ON modelos_armas FOR INSERT WITH CHECK (
   get_meu_perfil() IN ('admin', 'armeiro_gestor')
 );
 
--- ============================================================
--- FIM
--- ============================================================
-SELECT 'Migration multi-quartel executada com sucesso!' AS status;
+-- DISPOSITIVOS_AUTORIZADOS (Tauri device pinning)
+ALTER TABLE dispositivos_autorizados ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "dispositivos_admin_all" ON dispositivos_autorizados;
+CREATE POLICY "dispositivos_admin_all" ON dispositivos_autorizados FOR ALL USING (
+  get_meu_perfil() = 'admin'
+);
+DROP POLICY IF EXISTS "dispositivos_insert_anon" ON dispositivos_autorizados;
+CREATE POLICY "dispositivos_insert_anon" ON dispositivos_autorizados FOR INSERT WITH CHECK (
+  status = 'pendente'
+);

@@ -24,7 +24,7 @@ const defaultModelosArmas = [
   { modelo: 'Espingarda Calibre 12', calibre: '12' }
 ];
 
-export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?: string | null) {
+export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?: string | null, enabled: boolean = true) {
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [materiais, setMateriais] = useState<Material[]>([]);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
@@ -38,7 +38,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
   const [quarteis, setQuarteis] = useState<Quartel[]>([]);
 
 
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(enabled);
   const [dbError, setDbError] = useState<string | null>(null);
 
   // ---- BUSCAR DADOS DO SUPABASE AO INICIAR ----
@@ -170,6 +170,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
   };
 
   useEffect(() => {
+    if (!enabled) return;
     fetchData();
 
     let fetchTimeout: any = null;
@@ -200,7 +201,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
       if (fetchTimeout) clearTimeout(fetchTimeout);
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [enabled]);
 
   // ---- TRIGGERS DE LOG DE AUDITORIA ----
   const registrarLogAuditoria = (executor: string, tipo: AuditoriaLog['tipo_evento'], detalhes: string) => {
