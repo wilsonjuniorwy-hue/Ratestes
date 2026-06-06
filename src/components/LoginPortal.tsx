@@ -4,11 +4,13 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Shield, KeyRound, ShieldAlert, CheckCircle, RefreshCw, Eye, EyeOff, Building2, ArrowLeft } from 'lucide-react';
+import { Shield, KeyRound, ShieldAlert, CheckCircle, RefreshCw, Eye, EyeOff, Building2, ArrowLeft, Download } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Usuario, Quartel } from '../types';
 import { supabase, obterAmbienteAtual, alterarAmbiente } from '../supabaseClient';
 import { comparePassword, hashSHA256 } from '../utils/crypto';
+import { useAppUpdater } from '../hooks/useAppUpdater';
+import packageJson from '../../package.json';
 
 interface LoginPortalProps {
   onLoginSuccess: (usuario: Usuario, quartel: Quartel | null) => void;
@@ -21,6 +23,42 @@ export default function LoginPortal({
   cadastrarSenha,
   quarteis
 }: LoginPortalProps) {
+  // ---- SISTEMA DE ATUALIZAÇÃO AUTOMÁTICA ----
+  const { 
+    updateAvailable, 
+    newVersion, 
+    isDownloading, 
+    error: updaterError, 
+    checkUpdates, 
+    installUpdate 
+  } = useAppUpdater();
+
+  const [isChecking, setIsChecking] = useState(false);
+  const [checkedSuccessfully, setCheckedSuccessfully] = useState(false);
+
+  const handleCheckClick = async () => {
+    if (isChecking || isDownloading) return;
+    setIsChecking(true);
+    setCheckedSuccessfully(false);
+    try {
+      const update = await checkUpdates(false);
+      if (!update) {
+        setCheckedSuccessfully(true);
+        setTimeout(() => setCheckedSuccessfully(false), 4000);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsChecking(false);
+    }
+  };
+
+  const handleInstallClick = async () => {
+    if (window.confirm(`Deseja baixar e instalar a versão v${newVersion} agora? O aplicativo será reiniciado automaticamente após a instalação.`)) {
+      await installUpdate();
+    }
+  };
+
   // ---- FLUXO DA TELA ----
   const [step, setStep] = useState<'login' | 'primeiro_acesso' | 'sucesso'>('login');
   const [selectedQuartel, setSelectedQuartel] = useState<Quartel | null>(null);
@@ -615,6 +653,53 @@ export default function LoginPortal({
           </motion.div>
         )}
 
+        {/* FOOTER DE ATUALIZAÇÃO DO SISTEMA */}
+        <div className="border-t border-slate-850/60 mt-6 pt-4 flex flex-col items-center justify-center gap-2 text-[10px] font-mono text-slate-500 relative z-10">
+          <div className="flex items-center gap-1.5">
+            <span>Versão: <strong className="text-slate-400 font-bold">v{packageJson.version}</strong></span>
+            <span className="text-slate-700">•</span>
+            <span>Canal: <strong className="text-slate-400 font-bold">Homologação</strong></span>
+          </div>
+
+          <div className="flex items-center justify-center min-h-[16px]">
+            {isDownloading ? (
+              <span className="text-blue-450 font-bold flex items-center gap-1 animate-pulse">
+                <RefreshCw className="h-3 w-3 animate-spin text-blue-400" />
+                Baixando atualização...
+              </span>
+            ) : updateAvailable ? (
+              <button
+                type="button"
+                onClick={handleInstallClick}
+                className="text-emerald-450 hover:text-emerald-400 font-bold underline cursor-pointer uppercase text-[9px] tracking-widest flex items-center gap-1 animate-pulse"
+              >
+                <Download className="h-3 w-3" />
+                Instalar v{newVersion}
+              </button>
+            ) : isChecking ? (
+              <span className="text-slate-400 flex items-center gap-1 animate-pulse">
+                <RefreshCw className="h-3 w-3 animate-spin" />
+                Verificando...
+              </span>
+            ) : checkedSuccessfully ? (
+              <span className="text-emerald-450 font-bold">Aplicativo atualizado!</span>
+            ) : (
+              <button
+                type="button"
+                onClick={handleCheckClick}
+                className="text-slate-500 hover:text-slate-400 underline cursor-pointer font-bold uppercase text-[9px] tracking-wider flex items-center gap-1 transition-colors"
+              >
+                <RefreshCw className="h-3 w-3" />
+                Verificar Atualizações
+              </button>
+            )}
+          </div>
+          {updaterError && (
+            <p className="text-red-400 text-[8px] font-mono mt-1 text-center max-w-[280px] truncate" title={updaterError}>
+              Erro: {updaterError}
+            </p>
+          )}
+        </div>
 
       </motion.div>
     </div>

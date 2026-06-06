@@ -424,7 +424,8 @@ export default function App() {
             db.registrarLogAuditoria(
               user.matricula,
               'login',
-              `${user.perfil === 'admin' ? 'Admin' : `Armeiro ${user.posto_graduacao} ${user.nome_de_guerra || user.nome}`} realizou login com sucesso.${ quartel ? ` Quartel: ${quartel.nome}.` : ''}`
+              `${user.perfil === 'admin' ? 'Admin' : `Armeiro ${user.posto_graduacao} ${user.nome_de_guerra || user.nome}`} realizou login com sucesso.${ quartel ? ` Quartel: ${quartel.nome}.` : ''}`,
+              quartel?.id
             );
             if (user.perfil === 'admin') {
               setRota('admin_panel');

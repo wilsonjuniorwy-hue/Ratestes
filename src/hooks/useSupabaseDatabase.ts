@@ -204,7 +204,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
   }, [enabled]);
 
   // ---- TRIGGERS DE LOG DE AUDITORIA ----
-  const registrarLogAuditoria = (executor: string, tipo: AuditoriaLog['tipo_evento'], detalhes: string) => {
+  const registrarLogAuditoria = (executor: string, tipo: AuditoriaLog['tipo_evento'], detalhes: string, overrideQuartelId?: string | null) => {
     const novoLog: AuditoriaLog = {
       id_log: `LOG-${Math.floor(100000 + Math.random() * 900000)}`,
       data_hora: new Date().toISOString(),
@@ -218,7 +218,8 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
 
     // Montar o objeto de insert incluindo id_quartel se disponível
     const logToInsert: any = { ...novoLog };
-    if (quartelId) logToInsert.id_quartel = quartelId;
+    const targetQuartelId = overrideQuartelId !== undefined ? overrideQuartelId : (quartelId || null);
+    if (targetQuartelId) logToInsert.id_quartel = targetQuartelId;
 
     // Update Supabase in background
     supabase.from('auditoria_logs').insert(logToInsert).then(({ error }) => {
