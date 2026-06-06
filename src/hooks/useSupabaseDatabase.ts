@@ -201,7 +201,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
       if (fetchTimeout) clearTimeout(fetchTimeout);
       supabase.removeChannel(channel);
     };
-  }, [enabled]);
+  }, [enabled, activeArmeiroMatricula, quartelId]);
 
   // ---- TRIGGERS DE LOG DE AUDITORIA ----
   const registrarLogAuditoria = (executor: string, tipo: AuditoriaLog['tipo_evento'], detalhes: string, overrideQuartelId?: string | null) => {

@@ -702,6 +702,11 @@ export default function LoginPortal({
         </div>
 
       </motion.div>
+
+      {/* Desenvolvido por Wagner Torres */}
+      <div className="absolute bottom-4 right-6 text-right font-mono text-[8px] text-slate-500/80 uppercase tracking-widest pointer-events-none select-none no-print">
+        <span>Desenvolvido por Wagner Torres</span>
+      </div>
     </div>
   );
 }
