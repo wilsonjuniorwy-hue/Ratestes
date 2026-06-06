@@ -205,12 +205,14 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
 
   // ---- TRIGGERS DE LOG DE AUDITORIA ----
   const registrarLogAuditoria = (executor: string, tipo: AuditoriaLog['tipo_evento'], detalhes: string, overrideQuartelId?: string | null) => {
+    const targetQuartelId = overrideQuartelId !== undefined ? overrideQuartelId : (quartelId || null);
     const novoLog: AuditoriaLog = {
       id_log: `LOG-${Math.floor(100000 + Math.random() * 900000)}`,
       data_hora: new Date().toISOString(),
       matricula_executor: executor,
       tipo_evento: tipo,
-      detalhes: detalhes
+      detalhes: detalhes,
+      id_quartel: targetQuartelId || undefined
     };
 
     // Update local state instantly
@@ -218,7 +220,6 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
 
     // Montar o objeto de insert incluindo id_quartel se disponível
     const logToInsert: any = { ...novoLog };
-    const targetQuartelId = overrideQuartelId !== undefined ? overrideQuartelId : (quartelId || null);
     if (targetQuartelId) logToInsert.id_quartel = targetQuartelId;
 
     // Update Supabase in background
@@ -627,7 +628,8 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
       titulo: titulo,
       tipo: tipo,
       descricao: descricao,
-      matricula_armeiro: armeiroSvc
+      matricula_armeiro: armeiroSvc,
+      id_quartel: quartelId || undefined
     };
 
     setOcorrencias(prev => [novaOco, ...prev]);
@@ -828,7 +830,8 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
       data_retirada: new Date().toISOString(),
       previsao_devolucao: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString(),
       status_cautela: 'ativa',
-      observacoes_retirada: observacoes
+      observacoes_retirada: observacoes,
+      id_quartel: quartelId || undefined
     };
 
     // Incluir id_quartel na cautela e nos itens
