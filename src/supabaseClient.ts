@@ -20,20 +20,20 @@ export type Ambiente = 'homologacao' | 'producao';
 
 // Determinar o ambiente padrão - usamos homologacao como padrão único
 // enquanto o banco de produção ainda está sendo configurado
-const ambientePadrao: Ambiente = 'homologacao';
-
-// Obter o ambiente atual (salvo no localStorage ou usar o padrão)
-const ambienteAtual: Ambiente = (localStorage.getItem('app_ambiente') as Ambiente) || ambientePadrao;
-const config = CONFIGS[ambienteAtual];
-
-let deviceUuid = '';
-
-// Se estivermos rodando no navegador em modo de desenvolvimento ou homologação local,
-// usamos um UUID de teste para simular que o dispositivo está autorizado
+// Obter o ambiente atual de forma dinâmica e automatizada
 const isTauri = typeof window !== 'undefined' && (
   (window as any).__TAURI__ !== undefined ||
   (window as any).__TAURI_INTERNALS__ !== undefined
 );
+const isStagingMode = import.meta.env.MODE === 'staging';
+
+// Se rodando no desktop (Tauri) ou em testes locais de staging, usa homologacao.
+// Caso contrário (Vercel web), usa producao.
+const ambienteAtual: Ambiente = (isTauri || isStagingMode) ? 'homologacao' : 'producao';
+const config = CONFIGS[ambienteAtual];
+
+let deviceUuid = '';
+
 const isLocalDevOrStaging = import.meta.env.DEV || import.meta.env.MODE === 'staging';
 
 if (!isTauri && isLocalDevOrStaging) {
