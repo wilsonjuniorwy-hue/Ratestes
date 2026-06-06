@@ -1,7 +1,7 @@
 {
   "name": "react-example",
   "private": true,
-  "version": "0.2.2",
+  "version": "0.2.3",
   "type": "module",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
@@ -16,6 +16,7 @@
     "@supabase/supabase-js": "^2.106.2",
     "@tailwindcss/vite": "^4.1.14",
     "@tauri-apps/api": "^2.11.0",
+    "@tauri-apps/plugin-updater": "^2.10.1",
     "@vitejs/plugin-react": "^5.0.4",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",

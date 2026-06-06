@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Shield, Building2, Plus, Power, LogOut, ChevronRight, Laptop, Key, Check, AlertTriangle, ShieldAlert, Trash2 } from 'lucide-react';
+import { Shield, Building2, Plus, Power, LogOut, ChevronRight, Laptop, Key, Check, AlertTriangle, ShieldAlert, Trash2, RefreshCw, Download } from 'lucide-react';
 import { Usuario, Quartel } from '../types';
 import { supabase, obterAmbienteAtual } from '../supabaseClient';
+import { useAppUpdater } from '../hooks/useAppUpdater';
 
 interface AdminPanelViewProps {
   admin: Usuario;
@@ -22,6 +23,7 @@ export function AdminPanelView({ admin, db, onSelecionarQuartel, onLogout }: Adm
   const [isCreating, setIsCreating] = useState(false);
 
   const [activeTab, setActiveTab] = useState<'quarteis' | 'dispositivos'>('quarteis');
+  const { updateAvailable, newVersion, checkUpdates, installUpdate, isDownloading, error: updaterError } = useAppUpdater();
   
   // Dispositivos States
   const [dispositivos, setDispositivos] = useState<any[]>([]);
@@ -163,13 +165,7 @@ export function AdminPanelView({ admin, db, onSelecionarQuartel, onLogout }: Adm
                 Painel do Administrador
               </h1>
               <span className="text-[9px] bg-amber-950 text-amber-400 border border-amber-800/60 px-1.5 py-0.5 rounded font-black font-mono">ADMIN</span>
-              <span className={`text-[9px] border px-1.5 py-0.5 rounded font-black font-mono ${
-                obterAmbienteAtual() === 'homologacao'
-                  ? 'bg-blue-950 text-blue-400 border-blue-800/60'
-                  : 'bg-red-950 text-red-400 border-red-800/60'
-              }`}>
-                {obterAmbienteAtual() === 'homologacao' ? 'HOMOLOGAÇÃO' : 'PRODUÇÃO'}
-              </span>
+
             </div>
             <p className="text-[9px] text-slate-500 font-mono tracking-widest uppercase mt-0.5">
               Controle Global de Quarteis e Acessos
@@ -348,6 +344,48 @@ export function AdminPanelView({ admin, db, onSelecionarQuartel, onLogout }: Adm
 
         {activeTab === 'dispositivos' && (
           <div className="space-y-8">
+            {/* Atualização do Sistema */}
+            <div className="bg-slate-900/60 backdrop-blur-md border border-slate-800/80 rounded-xl p-6 shadow-lg space-y-4">
+              <div className="flex items-center gap-2 border-b border-slate-850 pb-4">
+                <RefreshCw className={`h-4.5 w-4.5 text-blue-400 ${isDownloading ? 'animate-spin' : ''}`} />
+                <h2 className="text-sm font-bold font-mono text-slate-200 uppercase tracking-widest">Atualização do Sistema</h2>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between text-xs">
+                <div className="space-y-1.5 flex-1 pr-4">
+                  <p className="text-slate-400 leading-relaxed max-w-lg">
+                    Verifique se existem atualizações pendentes para o aplicativo de controle de armamento. As atualizações corrigem falhas, melhoram a segurança física e adicionam novos recursos de forma automática.
+                  </p>
+                  {updateAvailable && (
+                    <div className="inline-flex items-center gap-1.5 bg-emerald-950/40 border border-emerald-900/40 text-emerald-400 px-2.5 py-1 rounded font-mono text-[9px] font-bold mt-1">
+                      <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping" />
+                      NOVA VERSÃO DISPONÍVEL: v{newVersion}
+                    </div>
+                  )}
+                  {updaterError && (
+                    <p className="text-red-400 font-mono text-[9px] mt-1">Erro: {updaterError}</p>
+                  )}
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  <button
+                    onClick={() => checkUpdates(true)}
+                    disabled={isDownloading}
+                    className="px-5 py-2.5 bg-slate-950 hover:bg-slate-900 text-slate-300 font-bold font-mono rounded-lg transition-colors border border-slate-800 uppercase tracking-wider cursor-pointer whitespace-nowrap"
+                  >
+                    Verificar
+                  </button>
+                  {updateAvailable && (
+                    <button
+                      onClick={installUpdate}
+                      disabled={isDownloading}
+                      className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold font-mono rounded-lg transition-colors uppercase tracking-wider cursor-pointer whitespace-nowrap flex items-center gap-1.5 glow-blue"
+                    >
+                      <Download className="h-4 w-4" />
+                      {isDownloading ? 'Instalando...' : 'Instalar v' + newVersion}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
             {/* Gerar Código de Bypass de Emergência */}
             <div className="bg-slate-900/60 backdrop-blur-md border border-slate-800/80 rounded-xl p-6 shadow-lg space-y-4">
               <div className="flex items-center gap-2 border-b border-slate-850 pb-4">

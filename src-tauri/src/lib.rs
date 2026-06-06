@@ -55,15 +55,21 @@ fn obter_assinatura_fisica() -> String {
     format!("{:x}", result)
 }
 
+#[tauri::command]
+fn reiniciar_aplicacao(app_handle: tauri::AppHandle) {
+    app_handle.restart();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
+    .plugin(tauri_plugin_updater::Builder::new().build())
     .plugin(
       tauri_plugin_log::Builder::default()
         .level(log::LevelFilter::Info)
         .build(),
     )
-    .invoke_handler(tauri::generate_handler![obter_assinatura_fisica])
+    .invoke_handler(tauri::generate_handler![obter_assinatura_fisica, reiniciar_aplicacao])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }
