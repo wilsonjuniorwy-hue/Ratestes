@@ -345,6 +345,7 @@ export default function FlowSimulator({
             armasParticulares={db.armasParticulares}
             adicionarArmaParticular={db.adicionarArmaParticular}
             devolverArmasParticulares={db.devolverArmasParticulares}
+            editarPolicial={db.editarPolicial}
           />
         </ErrorBoundary>
       )}

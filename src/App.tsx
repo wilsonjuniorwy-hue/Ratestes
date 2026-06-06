@@ -514,19 +514,19 @@ export default function App() {
             </button>
           )}
           
-          {activeArmeiroMatricula?.toUpperCase() !== 'ARMEIRO' && (
-            <>
-              <div className="h-10 w-[1px] bg-slate-800 hidden sm:block"></div>
-              
-              <div className="flex gap-2.5 items-center bg-slate-900/40 border border-slate-800/80 px-3.5 py-2 rounded-lg hidden sm:flex">
-                <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.6)] animate-pulse"></div>
-                <div className="flex flex-col">
-                  <span className="text-[8px] uppercase font-bold tracking-wider text-slate-400">Paiol Principal</span>
-                  <span className="text-[9px] font-mono text-emerald-400 font-bold uppercase">Online & Seguro</span>
-                </div>
-              </div>
-            </>
-          )}
+          <div className="h-10 w-[1px] bg-slate-800 hidden sm:block"></div>
+          
+          <div className="flex gap-2.5 items-center bg-slate-900/40 border border-slate-800/80 px-3.5 py-2 rounded-lg hidden sm:flex">
+            <div className={`w-2.5 h-2.5 rounded-full ${db.isOnline ? (db.isSyncing ? 'bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.6)]' : 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.6)]') : 'bg-rose-500 shadow-[0_0_6px_rgba(239,68,68,0.6)]'} animate-pulse`}></div>
+            <div className="flex flex-col">
+              <span className="text-[8px] uppercase font-bold tracking-wider text-slate-400">
+                {db.isOnline ? 'Paiol Principal' : 'Modo Contingência'}
+              </span>
+              <span className={`text-[9px] font-mono font-bold uppercase ${db.isOnline ? (db.isSyncing ? 'text-amber-400' : 'text-emerald-400') : 'text-rose-500'}`}>
+                {db.isOnline ? (db.isSyncing ? 'Sincronizando...' : 'Online & Seguro') : 'Offline (Local)'}
+              </span>
+            </div>
+          </div>
         </div>
       </header>
 
@@ -547,11 +547,11 @@ export default function App() {
           <>
             <div className="flex flex-wrap gap-4 text-[9px] font-mono text-slate-505 uppercase tracking-widest">
               <span>Session: <strong className="text-slate-400">PMDF-CO-827A</strong></span>
-              <span>SGBD: <strong className="text-slate-400">Supabase Cloud</strong></span>
+              <span>SGBD: <strong className="text-slate-400">{db.isOnline ? 'Supabase Cloud' : 'SQLite Cache Local'}</strong></span>
               <span>Quartel: <strong className="text-slate-400">{quartelAtivo?.nome || 'N/A'}</strong></span>
               <span className="flex items-center gap-1.5">
-                Latency: <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping" />
-                <strong className="text-emerald-400">9ms</strong>
+                Latency: <span className={`w-1.5 h-1.5 rounded-full ${db.isOnline ? 'bg-emerald-500 animate-ping' : 'bg-rose-500'}`} />
+                <strong className={db.isOnline ? 'text-emerald-400' : 'text-rose-500'}>{db.isOnline ? '9ms' : 'Offline'}</strong>
               </span>
             </div>
             <div className="text-[9px] text-slate-505 font-mono uppercase tracking-wider text-center md:text-right flex flex-col items-end gap-0.5">

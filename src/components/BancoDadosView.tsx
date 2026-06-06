@@ -28,6 +28,7 @@ interface BancoDadosViewProps {
   armasParticulares: ArmaParticular[];
   adicionarArmaParticular: (novoItem: Omit<ArmaParticular, 'id_particular' | 'data_deposito' | 'status'>) => Promise<void>;
   devolverArmasParticulares: (idsParticulares: string[], matriculaPolicial: string) => Promise<void>;
+  editarPolicial?: (matricula: string, dadosAtualizados: Partial<Usuario>) => Promise<{ success: boolean }>;
 }
 
 export function BancoDadosView({
@@ -50,7 +51,8 @@ export function BancoDadosView({
   excluirMaterialTotal,
   armasParticulares,
   adicionarArmaParticular,
-  devolverArmasParticulares
+  devolverArmasParticulares,
+  editarPolicial
 }: BancoDadosViewProps) {
   // --- ESTADOS DA ABA BANCO DE DADOS ---
   const [bancoDadosSubSection, setBancoDadosSubSection] = useState<'policiais' | 'estoque' | 'particulares'>('policiais');
@@ -408,6 +410,19 @@ export function BancoDadosView({
     setRemovalError('');
   };
 
+  const handleDesbloquearMilitarClick = async (matricula: string) => {
+    if (editarPolicial) {
+      const u = usuarios.find(usr => usr.matricula === matricula);
+      const nomeGuerra = u?.nome_de_guerra || u?.nome || matricula;
+      try {
+        await editarPolicial(matricula, { tentativas_login: 0, bloqueado_ate: null });
+        alert(`Militar ${nomeGuerra} foi desbloqueado com sucesso!`);
+      } catch (err: any) {
+        alert('Erro ao desbloquear militar: ' + err.message);
+      }
+    }
+  };
+
   // ---- HANDLERS DE ARMAS PARTICULARES ----
   const handleTotemAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -627,50 +642,71 @@ export function BancoDadosView({
                     u.matricula.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
                     (u.nome_de_guerra && u.nome_de_guerra.toLowerCase().includes(userSearchTerm.toLowerCase()))
                   )
-                  .map((user) => (
-                    <tr key={user.matricula} className="hover:bg-slate-900/25 transition-colors">
-                      <td className="p-4 font-mono font-bold text-blue-400">{user.matricula}</td>
-                      <td className="p-4">
-                        <div className="flex flex-col">
-                          <span className="font-bold text-slate-200">{user.nome_de_guerra || 'N/A'}</span>
-                          <span className="text-[10px] text-slate-500 font-mono mt-0.5">{user.nome}</span>
-                        </div>
-                      </td>
-                      <td className="p-4 font-mono text-[11px] text-slate-400">{user.posto_graduacao}</td>
-                      <td className="p-4">
-                        <select
-                          value={user.situacao_cautela}
-                          onChange={(e) => updatePorte(user.matricula, e.target.value as SituacaoMilitar)}
-                          className="bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs font-mono text-slate-200 focus:outline-none focus:border-blue-500 cursor-pointer"
-                        >
-                          <option value="apto">Apto (Ativo)</option>
-                          <option value="suspenso">Suspenso</option>
-                          <option value="restrito_servico">Restrito ao Serviço</option>
-                          <option value="pendente_devolucao">Pendente Devolução</option>
-                        </select>
-                      </td>
-                      <td className="p-4">
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => handleZerarSenhaClick(user.matricula)}
-                            className="px-3 py-1.5 bg-slate-955 hover:bg-amber-955/20 border border-slate-800 hover:border-amber-900/50 text-[10px] font-mono text-slate-400 hover:text-amber-400 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer uppercase font-bold"
+                  .map((user) => {
+                    const isLocked = user.bloqueado_ate && new Date(user.bloqueado_ate) > new Date();
+                    return (
+                      <tr key={user.matricula} className="hover:bg-slate-900/25 transition-colors">
+                        <td className="p-4 font-mono font-bold text-blue-400">{user.matricula}</td>
+                        <td className="p-4">
+                          <div className="flex flex-col">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-slate-200">{user.nome_de_guerra || 'N/A'}</span>
+                              {isLocked && (
+                                <span className="text-[8px] bg-red-950/60 text-red-400 border border-red-900/30 px-1.5 py-0.5 rounded font-black uppercase tracking-wider flex items-center gap-1" title="Bloqueado por excesso de tentativas de senha">
+                                  <Lock className="h-2 w-2" />
+                                  <span>Bloqueado</span>
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[10px] text-slate-500 font-mono mt-0.5">{user.nome}</span>
+                          </div>
+                        </td>
+                        <td className="p-4 font-mono text-[11px] text-slate-400">{user.posto_graduacao}</td>
+                        <td className="p-4">
+                          <select
+                            value={user.situacao_cautela}
+                            onChange={(e) => updatePorte(user.matricula, e.target.value as SituacaoMilitar)}
+                            className="bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs font-mono text-slate-200 focus:outline-none focus:border-blue-500 cursor-pointer"
                           >
-                            <KeyRound className="h-3.5 w-3.5" />
-                            <span>Zerar Senha</span>
-                          </button>
-                          
-                          {authenticatedPerfil === 'admin' && (
+                            <option value="apto">Apto (Ativo)</option>
+                            <option value="suspenso">Suspenso</option>
+                            <option value="restrito_servico">Restrito ao Serviço</option>
+                            <option value="pendente_devolucao">Pendente Devolução</option>
+                          </select>
+                        </td>
+                        <td className="p-4">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <button
-                              onClick={() => handleExcluirPolicialClick(user.matricula)}
-                              className="px-3 py-1.5 bg-slate-955 hover:bg-red-955/20 border border-slate-800 hover:border-red-900/50 text-[10px] font-mono text-slate-400 hover:text-red-400 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer uppercase font-bold"
+                              onClick={() => handleZerarSenhaClick(user.matricula)}
+                              className="px-3 py-1.5 bg-slate-955 hover:bg-amber-955/20 border border-slate-800 hover:border-amber-900/50 text-[10px] font-mono text-slate-400 hover:text-amber-400 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer uppercase font-bold"
                             >
-                              <span>Excluir</span>
+                              <KeyRound className="h-3.5 w-3.5" />
+                              <span>Zerar Senha</span>
                             </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+
+                            {isLocked && (
+                              <button
+                                onClick={() => handleDesbloquearMilitarClick(user.matricula)}
+                                className="px-3 py-1.5 bg-slate-955 hover:bg-emerald-955/20 border border-slate-800 hover:border-emerald-900/50 text-[10px] font-mono text-slate-400 hover:text-emerald-400 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer uppercase font-bold"
+                              >
+                                <Lock className="h-3.5 w-3.5" />
+                                <span>Desbloquear</span>
+                              </button>
+                            )}
+                            
+                            {authenticatedPerfil === 'admin' && (
+                              <button
+                                onClick={() => handleExcluirPolicialClick(user.matricula)}
+                                className="px-3 py-1.5 bg-slate-955 hover:bg-red-955/20 border border-slate-800 hover:border-red-900/50 text-[10px] font-mono text-slate-400 hover:text-red-400 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer uppercase font-bold"
+                              >
+                                <span>Excluir</span>
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 {usuarios.filter(u => u.perfil === 'policial').length === 0 && (
                   <tr>
                     <td colSpan={5} className="p-8 text-center text-slate-505 font-mono text-xs">

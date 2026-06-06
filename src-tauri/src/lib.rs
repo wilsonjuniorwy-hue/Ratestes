@@ -64,6 +64,7 @@ fn reiniciar_aplicacao(app_handle: tauri::AppHandle) {
 pub fn run() {
   tauri::Builder::default()
     .plugin(tauri_plugin_updater::Builder::new().build())
+    .plugin(tauri_plugin_sql::Builder::default().build())
     .plugin(
       tauri_plugin_log::Builder::default()
         .level(log::LevelFilter::Info)

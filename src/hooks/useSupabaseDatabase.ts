@@ -17,6 +17,7 @@ import {
   mockCautelas, mockCautelaItens, mockAuditoriaLogs, 
   mockOcorrencias 
 } from '../mockData';
+import { useOfflineDatabase } from './useOfflineDatabase';
 
 const defaultModelosArmas = [
   { modelo: 'Pistola CZ - P10', calibre: '9mm' },
@@ -25,6 +26,9 @@ const defaultModelosArmas = [
 ];
 
 export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?: string | null, enabled: boolean = true) {
+  const offlineDb = useOfflineDatabase();
+  const [isOnline, setIsOnline] = useState(typeof window !== 'undefined' ? window.navigator.onLine : true);
+
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [materiais, setMateriais] = useState<Material[]>([]);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
@@ -37,15 +41,52 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
   const [pendenciasServico, setPendenciasServico] = useState<PendenciaServico[]>([]);
   const [quarteis, setQuarteis] = useState<Quartel[]>([]);
 
-
   const [isLoading, setIsLoading] = useState(enabled);
   const [dbError, setDbError] = useState<string | null>(null);
+
+  // Monitorar status de internet
+  useEffect(() => {
+    const handleOnline = () => {
+      console.log('SGBD Conexão: Internet restabelecida.');
+      setIsOnline(true);
+    };
+    const handleOffline = () => {
+      console.log('SGBD Conexão: Internet desconectada. Modo contingência ativo.');
+      setIsOnline(false);
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   // ---- BUSCAR DADOS DO SUPABASE AO INICIAR ----
   const fetchData = async () => {
     try {
       setIsLoading(true);
       setDbError(null);
+
+      if (!isOnline) {
+        console.log('SGBD Offline: Dispositivo offline. Carregando dados do SQLite local...');
+        const [localUsers, localMaterials, localCautelas, localItems] = await Promise.all([
+          offlineDb.obterUsuariosLocal(),
+          offlineDb.obterMateriaisLocal(),
+          offlineDb.obterCautelasLocal(),
+          offlineDb.obterCautelaItensLocal()
+        ]);
+        
+        const mappedUsers = localUsers.map(u => ({ ...u, senha_hash: '' } as Usuario));
+        setUsuarios(mappedUsers);
+        setMateriais(localMaterials);
+        setCautelas(localCautelas);
+        setCautelaItens(localItems);
+        setIsLoading(false);
+        return;
+      }
+
       console.log('SGBD: Iniciando busca de dados paralela (fetchData)...');
 
       const [
@@ -61,7 +102,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
         { data: dbPendencias, error: errPendencias },
         { data: quarteisData, error: errQuarteis }
       ] = await Promise.all([
-        supabase.from('usuarios').select('matricula, nome, nome_de_guerra, perfil, posto_graduacao, situacao_cautela, data_ultimo_teste_psicologico, motivo_suspensao, id_quartel').is('deletado_em', null).then(r => { console.log('SGBD: 1. usuarios OK'); return r; }),
+        supabase.from('usuarios').select('matricula, nome, nome_de_guerra, perfil, posto_graduacao, situacao_cautela, data_ultimo_teste_psicologico, motivo_suspensao, id_quartel, tentativas_login, bloqueado_ate, senha_hash').is('deletado_em', null).then(r => { console.log('SGBD: 1. usuarios OK'); return r; }),
         supabase.from('materiais').select('*').is('deletado_em', null).then(r => { console.log('SGBD: 2. materiais OK'); return r; }),
         supabase.from('categorias').select('*').then(r => { console.log('SGBD: 3. categorias OK'); return r; }),
         supabase.from('cautelas').select('*').is('deletado_em', null).then(r => { console.log('SGBD: 4. cautelas OK'); return r; }),
@@ -161,6 +202,15 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
           }
         });
       }
+      
+      // Salvar no cache offline local
+      if (offlineDb.isDbReady) {
+        console.log('SGBD Offline: Atualizando cache local SQLite com novos dados online...');
+        offlineDb.salvarUsuariosLocal(users || []);
+        offlineDb.salvarMateriaisLocal(materials || []);
+        offlineDb.salvarCautelasLocal(cautelasData || []);
+        offlineDb.salvarCautelaItensLocal(items || []);
+      }
     } catch (error: any) {
       console.error('Erro ao buscar dados do Supabase:', error);
       setDbError(error.message || 'Erro de conexão com o Supabase.');
@@ -201,7 +251,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
       if (fetchTimeout) clearTimeout(fetchTimeout);
       supabase.removeChannel(channel);
     };
-  }, [enabled, activeArmeiroMatricula, quartelId]);
+  }, [enabled, activeArmeiroMatricula, quartelId, isOnline, offlineDb.isDbReady]);
 
   // ---- TRIGGERS DE LOG DE AUDITORIA ----
   const registrarLogAuditoria = (executor: string, tipo: AuditoriaLog['tipo_evento'], detalhes: string, overrideQuartelId?: string | null) => {
@@ -430,16 +480,32 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
   // ---- CADASTRO DE SENHA DO PRIMEIRO ACESSO ----
   const cadastrarSenha = (matricula: string, novaSenhaInput: string) => {
     hashSHA256(novaSenhaInput).then(hashed => {
-      setUsuarios(prev => prev.map(u => {
+      const usuariosAtualizados = usuarios.map(u => {
         if (u.matricula === matricula) {
           return { ...u, senha_hash: hashed };
         }
         return u;
-      }));
-
-      supabase.from('usuarios').update({ senha_hash: hashed }).eq('matricula', matricula).then(({ error }) => {
-        if (error) console.error('Erro ao salvar nova senha:', error);
       });
+      setUsuarios(usuariosAtualizados);
+
+      if (!isOnline) {
+        offlineDb.enfileirarTransacaoOffline('CADASTRAR_SENHA', { matricula, hashed });
+        if (offlineDb.isDbReady) {
+          offlineDb.obterUsuariosLocal().then(localUsers => {
+            const updated = localUsers.map(u => {
+              if (u.matricula === matricula) {
+                return { ...u, senha_hash: hashed };
+              }
+              return u;
+            });
+            offlineDb.salvarUsuariosLocal(updated);
+          });
+        }
+      } else {
+        supabase.from('usuarios').update({ senha_hash: hashed }).eq('matricula', matricula).then(({ error }) => {
+          if (error) console.error('Erro ao salvar nova senha:', error);
+        });
+      }
     });
 
     registrarLogAuditoria(
@@ -637,9 +703,13 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
     const ocoToInsert: any = { ...novaOco };
     if (quartelId) ocoToInsert.id_quartel = quartelId;
 
-    supabase.from('ocorrencias').insert(ocoToInsert).then(({ error }) => {
-      if (error) console.error('Erro ao salvar ocorrencia:', error);
-    });
+    if (!isOnline) {
+      offlineDb.enfileirarTransacaoOffline('SALVAR_OCORRENCIA', { novaOco });
+    } else {
+      supabase.from('ocorrencias').insert(ocoToInsert).then(({ error }) => {
+        if (error) console.error('Erro ao salvar ocorrencia:', error);
+      });
+    }
 
     registrarLogAuditoria(
       armeiroSvc,
@@ -655,14 +725,14 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
 
     const usuariosAtualizados = usuarios.map(u => {
       if (u.matricula === matricula) {
-        return { ...u, senha_hash: '' };
+        return { ...u, senha_hash: '', tentativas_login: 0, bloqueado_ate: null };
       }
       return u;
     });
 
     setUsuarios(usuariosAtualizados);
 
-    supabase.from('usuarios').update({ senha_hash: '' }).eq('matricula', matricula).then(({ error }) => {
+    supabase.from('usuarios').update({ senha_hash: '', tentativas_login: 0, bloqueado_ate: null }).eq('matricula', matricula).then(({ error }) => {
       if (error) console.error('Erro ao zerar senha:', error);
     });
 
@@ -880,48 +950,66 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
     setMateriais(materiaisAtualizados);
     setUsuarios(usuariosAtualizados);
 
-    // Sync to Supabase - SEQUENTIALLY to avoid Foreign Key Violations!
-    supabase.from('cautelas').insert(cautelaToInsert).then(({ error: errCautela }) => {
-      if (errCautela) {
-        console.error('Erro ao salvar nova cautela no Supabase:', errCautela);
-      } else {
-        // Adicionar id_quartel nos itens também
-        const itensToInsert = novosItensCautela.map(item => {
-          const itemData: any = { ...item };
-          if (quartelId) itemData.id_quartel = quartelId;
-          return itemData;
-        });
-        // Insert items only after the parent caution record is successfully saved
-        supabase.from('cautela_itens').insert(itensToInsert).then(({ error: errItens }) => {
-          if (errItens) {
-            console.error('Erro ao salvar itens da cautela no Supabase:', errItens);
-          } else {
-            // Safety re-fetch 2s after all writes complete to guarantee all clients are in sync
-            setTimeout(() => {
-              console.log('SGBD: Re-sincronização de segurança pós-cautela...');
-              fetchData();
-            }, 2000);
+    if (!isOnline) {
+      offlineDb.enfileirarTransacaoOffline('EFETIVAR_CAUTELA', { 
+        matriculaPolicial, 
+        cartItens, 
+        observacoes, 
+        weaponMagazines, 
+        idNewCautela, 
+        novosItensCautela, 
+        novaCautela 
+      });
+      salvarCacheLocalCompleto(
+        usuariosAtualizados,
+        materiaisAtualizados,
+        [novaCautela, ...cautelas],
+        [...cautelaItens, ...novosItensCautela]
+      );
+    } else {
+      // Sync to Supabase - SEQUENTIALLY to avoid Foreign Key Violations!
+      supabase.from('cautelas').insert(cautelaToInsert).then(({ error: errCautela }) => {
+        if (errCautela) {
+          console.error('Erro ao salvar nova cautela no Supabase:', errCautela);
+        } else {
+          // Adicionar id_quartel nos itens também
+          const itensToInsert = novosItensCautela.map(item => {
+            const itemData: any = { ...item };
+            if (quartelId) itemData.id_quartel = quartelId;
+            return itemData;
+          });
+          // Insert items only after the parent caution record is successfully saved
+          supabase.from('cautela_itens').insert(itensToInsert).then(({ error: errItens }) => {
+            if (errItens) {
+              console.error('Erro ao salvar itens da cautela no Supabase:', errItens);
+            } else {
+              // Safety re-fetch 2s after all writes complete to guarantee all clients are in sync
+              setTimeout(() => {
+                console.log('SGBD: Re-sincronização de segurança pós-cautela...');
+                fetchData();
+              }, 2000);
+            }
+          });
+        }
+      });
+
+      // Update material statuses
+      const individualMats = cartItens.filter(id => !materiais.find(m => m.id_material === id)?.controle_quantidade);
+      if (individualMats.length > 0) {
+        supabase.from('materiais').update({ status_atual: 'cautelado' }).in('id_material', individualMats).then(({ error: errMats }) => {
+          if (errMats) {
+            console.error('Erro ao atualizar status dos materiais da cautela no Supabase:', errMats);
           }
         });
       }
-    });
 
-    // Update material statuses
-    const individualMats = cartItens.filter(id => !materiais.find(m => m.id_material === id)?.controle_quantidade);
-    if (individualMats.length > 0) {
-      supabase.from('materiais').update({ status_atual: 'cautelado' }).in('id_material', individualMats).then(({ error: errMats }) => {
-        if (errMats) {
-          console.error('Erro ao atualizar status dos materiais da cautela no Supabase:', errMats);
+      // Sincronizar status do militar para pendente_devolucao no Supabase
+      supabase.from('usuarios').update({ situacao_cautela: 'pendente_devolucao' }).eq('matricula', matriculaPolicial).then(({ error: errUser }) => {
+        if (errUser) {
+          console.error('Erro ao atualizar situação do militar para pendente_devolucao:', errUser);
         }
       });
     }
-
-    // Sincronizar status do militar para pendente_devolucao no Supabase
-    supabase.from('usuarios').update({ situacao_cautela: 'pendente_devolucao' }).eq('matricula', matriculaPolicial).then(({ error: errUser }) => {
-      if (errUser) {
-        console.error('Erro ao atualizar situação do militar para pendente_devolucao:', errUser);
-      }
-    });
 
     registrarLogAuditoria(
       armeiroSvcMatricula, 
@@ -1127,48 +1215,71 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
     setUsuarios(usuariosAtualizados);
 
     // ---- SINCRONIZAR COM SUPABASE ----
-    
-    // Sincronizar Materiais
-    idsMateriaisDevolvidos.forEach(idMat => {
-      const matObj = materiaisAtualizados.find(m => m.id_material === idMat);
-      if (matObj) {
-        const fieldsToUpdate = matObj.controle_quantidade 
-          ? { quantidade: matObj.quantidade } 
-          : { status_atual: matObj.status_atual };
-          
-        supabase.from('materiais').update(fieldsToUpdate).eq('id_material', idMat).then(({ error }) => {
-          if (error) console.error(`Erro ao atualizar material ${idMat} no Supabase:`, error);
-        });
-      }
-    });
-
-    // Sincronizar CautelaItens (Deletar antigos e inserir novos para esta cautela)
-    supabase.from('cautela_itens').delete().eq('id_cautela', cautId).then(({ error }) => {
-      if (error) {
-        console.error('Erro ao remover itens antigos no Supabase:', error);
-      } else {
-        const itemsToInsert = todosItensDaCautela;
-        if (itemsToInsert.length > 0) {
-          supabase.from('cautela_itens').insert(itemsToInsert).then(({ error: errIns }) => {
-            if (errIns) console.error('Erro ao reinserir itens atualizados no Supabase:', errIns);
+    if (!isOnline) {
+      offlineDb.enfileirarTransacaoOffline('EFETIVAR_DEVOLUCAO', {
+        cautId,
+        idsMateriaisDevolvidos,
+        claimConditions,
+        observacoes,
+        prorrogar,
+        returnedQuantities,
+        consumedQuantities,
+        agora,
+        armeiroResponsavel,
+        novosCautelaItens,
+        todosDevolvidos,
+        policialResponsavel,
+        updatedCautela: updatedCautela!
+      });
+      salvarCacheLocalCompleto(
+        usuariosAtualizados,
+        materiaisAtualizados,
+        cautelasAtualizadas,
+        novosCautelaItens
+      );
+    } else {
+      // Sincronizar Materiais
+      idsMateriaisDevolvidos.forEach(idMat => {
+        const matObj = materiaisAtualizados.find(m => m.id_material === idMat);
+        if (matObj) {
+          const fieldsToUpdate = matObj.controle_quantidade 
+            ? { quantidade: matObj.quantidade } 
+            : { status_atual: matObj.status_atual };
+            
+          supabase.from('materiais').update(fieldsToUpdate).eq('id_material', idMat).then(({ error }) => {
+            if (error) console.error(`Erro ao atualizar material ${idMat} no Supabase:`, error);
           });
         }
+      });
+
+      // Sincronizar CautelaItens (Deletar antigos e inserir novos para esta cautela)
+      supabase.from('cautela_itens').delete().eq('id_cautela', cautId).then(({ error }) => {
+        if (error) {
+          console.error('Erro ao remover itens antigos no Supabase:', error);
+        } else {
+          const itemsToInsert = todosItensDaCautela;
+          if (itemsToInsert.length > 0) {
+            supabase.from('cautela_itens').insert(itemsToInsert).then(({ error: errIns }) => {
+              if (errIns) console.error('Erro ao reinserir itens atualizados no Supabase:', errIns);
+            });
+          }
+        }
+      });
+
+      // Sincronizar Cautela
+      const cautObj = cautelasAtualizadas.find(c => c.id_cautela === cautId);
+      if (cautObj) {
+        supabase.from('cautelas').update(cautObj).eq('id_cautela', cautId).then(({ error }) => {
+          if (error) console.error('Erro ao atualizar cautela no Supabase:', error);
+        });
       }
-    });
 
-    // Sincronizar Cautela
-    const cautObj = cautelasAtualizadas.find(c => c.id_cautela === cautId);
-    if (cautObj) {
-      supabase.from('cautelas').update(cautObj).eq('id_cautela', cautId).then(({ error }) => {
-        if (error) console.error('Erro ao atualizar cautela no Supabase:', error);
-      });
-    }
-
-    // Sincronizar Militar (se todos devolvidos)
-    if (todosDevolvidos) {
-      supabase.from('usuarios').update({ situacao_cautela: 'apto' }).eq('matricula', policialResponsavel).then(({ error }) => {
-        if (error) console.error('Erro ao reabilitar militar no Supabase:', error);
-      });
+      // Sincronizar Militar (se todos devolvidos)
+      if (todosDevolvidos) {
+        supabase.from('usuarios').update({ situacao_cautela: 'apto' }).eq('matricula', policialResponsavel).then(({ error }) => {
+          if (error) console.error('Erro ao reabilitar militar no Supabase:', error);
+        });
+      }
     }
 
     // Logs de consumo adicionais
@@ -1738,6 +1849,156 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
     return { success: true };
   };
 
+  // ---- AUXILIARES DE MODO OFFLINE ----
+  const salvarCacheLocalCompleto = async (
+    usersList?: Usuario[],
+    matsList?: Material[],
+    cautsList?: Cautela[],
+    itensList?: CautelaItem[]
+  ) => {
+    if (!offlineDb.isDbReady) return;
+    try {
+      if (usersList) await offlineDb.salvarUsuariosLocal(usersList);
+      if (matsList) await offlineDb.salvarMateriaisLocal(matsList);
+      if (cautsList) await offlineDb.salvarCautelasLocal(cautsList);
+      if (itensList) await offlineDb.salvarCautelaItensLocal(itensList);
+    } catch (err) {
+      console.error('Erro ao atualizar cache local SQLite:', err);
+    }
+  };
+
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const processarFilaSincronizacao = async () => {
+    if (isSyncing || !offlineDb.isDbReady || !isOnline) return;
+    
+    setIsSyncing(true);
+    console.log('SGBD Sync: Iniciando processamento da fila de sincronização...');
+    
+    try {
+      const fila = await offlineDb.obterFilaSincronizacao();
+      if (fila.length === 0) {
+        console.log('SGBD Sync: Nenhum item na fila de sincronização.');
+        setIsSyncing(false);
+        return;
+      }
+      
+      console.log(`SGBD Sync: Encontrados ${fila.length} itens para sincronizar.`);
+      
+      for (const item of fila) {
+        const payload = JSON.parse(item.payload);
+        console.log(`SGBD Sync: Processando item ${item.id} - Operação: ${item.operacao}`);
+        
+        let success = false;
+        
+        try {
+          if (item.operacao === 'EFETIVAR_CAUTELA') {
+            const { matriculaPolicial, cartItens, observacoes, weaponMagazines, idNewCautela, novosItensCautela } = payload;
+            
+            const cautelaToInsert = {
+              id_cautela: idNewCautela,
+              matricula_policial: matriculaPolicial,
+              matricula_armeiro_retirada: payload.novaCautela?.matricula_armeiro_retirada || activeArmeiroMatricula || 'SYS-AM',
+              data_retirada: payload.novaCautela?.data_retirada || new Date().toISOString(),
+              previsao_devolucao: payload.novaCautela?.previsao_devolucao || new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString(),
+              status_cautela: 'ativa',
+              observacoes_retirada: observacoes,
+              id_quartel: quartelId || undefined
+            };
+
+            const { error: errCautela } = await supabase.from('cautelas').insert(cautelaToInsert);
+            if (errCautela) throw errCautela;
+            
+            const itensToInsert = novosItensCautela.map((it: any) => {
+              const itemData = { ...it };
+              if (quartelId) itemData.id_quartel = quartelId;
+              return itemData;
+            });
+            const { error: errItens } = await supabase.from('cautela_itens').insert(itensToInsert);
+            if (errItens) throw errItens;
+            
+            const individualMats = cartItens.filter((id: string) => !materiais.find(m => m.id_material === id)?.controle_quantidade);
+            if (individualMats.length > 0) {
+              const { error: errMats } = await supabase.from('materiais').update({ status_atual: 'cautelado' }).in('id_material', individualMats);
+              if (errMats) throw errMats;
+            }
+            
+            const { error: errUser } = await supabase.from('usuarios').update({ situacao_cautela: 'pendente_devolucao' }).eq('matricula', matriculaPolicial);
+            if (errUser) throw errUser;
+            
+            success = true;
+          } 
+          else if (item.operacao === 'EFETIVAR_DEVOLUCAO') {
+            const { cautId, idsMateriaisDevolvidos, prorrogar, returnedQuantities, novosCautelaItens, todosDevolvidos, policialResponsavel, updatedCautela } = payload;
+            
+            for (const idMat of idsMateriaisDevolvidos) {
+              const matObj = materiais.find(m => m.id_material === idMat);
+              if (matObj) {
+                const fieldsToUpdate = matObj.controle_quantidade 
+                  ? { quantidade: (matObj.quantidade || 0) + (returnedQuantities?.[idMat] ?? 0) } 
+                  : { status_atual: 'disponivel' };
+                const { error: errMat } = await supabase.from('materiais').update(fieldsToUpdate).eq('id_material', idMat);
+                if (errMat) throw errMat;
+              }
+            }
+            
+            const { error: errDel } = await supabase.from('cautela_itens').delete().eq('id_cautela', cautId);
+            if (errDel) throw errDel;
+            
+            const itemsToInsert = novosCautelaItens.filter((ci: any) => ci.id_cautela === cautId);
+            if (itemsToInsert.length > 0) {
+              const { error: errIns } = await supabase.from('cautela_itens').insert(itemsToInsert);
+              if (errIns) throw errIns;
+            }
+            
+            const { error: errCaut } = await supabase.from('cautelas').update(updatedCautela).eq('id_cautela', cautId);
+            if (errCaut) throw errCaut;
+            
+            if (todosDevolvidos) {
+              const { error: errUser } = await supabase.from('usuarios').update({ situacao_cautela: 'apto' }).eq('matricula', policialResponsavel);
+              if (errUser) throw errUser;
+            }
+            
+            success = true;
+          }
+          else if (item.operacao === 'SALVAR_OCORRENCIA') {
+            const { novaOco } = payload;
+            const { error: errOco } = await supabase.from('ocorrencias').insert(novaOco);
+            if (errOco) throw errOco;
+            success = true;
+          }
+          else if (item.operacao === 'CADASTRAR_SENHA') {
+            const { matricula, hashed } = payload;
+            const { error } = await supabase.from('usuarios').update({ senha_hash: hashed }).eq('matricula', matricula);
+            if (error) throw error;
+            success = true;
+          }
+          
+          if (success) {
+            console.log(`SGBD Sync: Item ${item.id} processado com sucesso. Removendo da fila...`);
+            await offlineDb.removerTransacaoFila(item.id);
+          }
+        } catch (opError: any) {
+          console.error(`SGBD Sync: Erro ao sincronizar item ${item.id}:`, opError);
+          break;
+        }
+      }
+      
+      console.log('SGBD Sync: Sincronização offline concluída, atualizando dados locais...');
+      fetchData();
+    } catch (err) {
+      console.error('SGBD Sync: Erro geral no sync worker:', err);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isOnline && offlineDb.isDbReady) {
+      processarFilaSincronizacao();
+    }
+  }, [isOnline, offlineDb.isDbReady]);
+
   // ---- ISOLAMENTO DE DADOS MULTI-QUARTEL NO FRONTEND (DUPLA CAMADA) ----
   // Se o quartelId estiver ativo, limitamos os dados apenas ao quartel do armeiro/painel selecionado.
   // Admins sem quartel ativo selecionado (painel administrativo global) continuam vendo tudo.
@@ -1828,6 +2089,8 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
     criarQuartel,
     toggleQuartelAtivo,
     isLoading,
-    dbError
+    dbError,
+    isOnline,
+    isSyncing
   };
 }

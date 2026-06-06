@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Usuario, Material, Cautela, CautelaItem, AuditoriaLog } from '../types';
 import { supabase } from '../supabaseClient';
 import { comparePassword } from '../utils/crypto';
+import { useOfflineDatabase } from '../hooks/useOfflineDatabase';
 
 interface TotemViewProps {
   usuarios: Usuario[];
@@ -79,6 +80,7 @@ export function TotemView({
   cadastrarSenha,
   processEfetivarCautela
 }: TotemViewProps) {
+  const offlineDb = useOfflineDatabase();
   const [confirmarCautelaPin, setConfirmarCautelaPin] = React.useState('');
   const [pinError, setPinError] = React.useState('');
   const [isSearchModalOpen, setIsSearchModalOpen] = React.useState(false);
@@ -191,17 +193,43 @@ export function TotemView({
     setAuthError('');
 
     const matriculaNorm = matriculaInput.trim().toUpperCase();
+    const isOnline = window.navigator.onLine;
 
     try {
-      const { data: user, error } = await supabase
-        .from('usuarios')
-        .select('*')
-        .eq('matricula', matriculaNorm)
-        .single();
+      let user: any = null;
 
-      if (error || !user) {
-        setAuthError('Matrícula não cadastrada no SGBD militar.');
-        return;
+      if (!isOnline) {
+        console.log('SGBD Offline: Buscando militar localmente...');
+        const usersLocal = await offlineDb.obterUsuariosLocal();
+        const found = usersLocal.find(u => u.matricula === matriculaNorm);
+        if (!found) {
+          setAuthError('Matrícula não encontrada localmente no SGBD.');
+          return;
+        }
+        user = found;
+      } else {
+        const { data, error } = await supabase
+          .from('usuarios')
+          .select('*')
+          .eq('matricula', matriculaNorm)
+          .single();
+
+        if (error || !data) {
+          setAuthError('Matrícula não cadastrada no SGBD militar.');
+          return;
+        }
+        user = data;
+      }
+
+      // Verificar se o usuário está bloqueado temporariamente por excesso de tentativas
+      if (user.bloqueado_ate) {
+        const bloqueadoAteDate = new Date(user.bloqueado_ate);
+        if (bloqueadoAteDate > new Date()) {
+          const diffMs = bloqueadoAteDate.getTime() - Date.now();
+          const min = Math.ceil(diffMs / 60000);
+          setAuthError(`Acesso bloqueado por excesso de tentativas. Tente novamente em ${min} minuto(s).`);
+          return;
+        }
       }
 
       // Primeiro acesso (senha vazia)
@@ -218,8 +246,69 @@ export function TotemView({
       const { matches, needsMigration } = await comparePassword(senhaInput, user.senha_hash);
 
       if (!matches) {
-        setAuthError(`Inconsistência cadastral. Senha digitada incorreta (Use a senha cadastrada para o militar).`);
-        return;
+        if (!isOnline) {
+          // Incrementa localmente no SQLite
+          const novasTentativas = (user.tentativas_login || 0) + 1;
+          let bloqueadoAteStr = null;
+          let msgErro = `Senha incorreta. Tentativa ${novasTentativas} de 3.`;
+
+          if (novasTentativas >= 3) {
+            bloqueadoAteStr = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+            msgErro = `Acesso bloqueado por excesso de tentativas. Tente novamente em 5 minutos.`;
+          }
+
+          const usersLocal = await offlineDb.obterUsuariosLocal();
+          const updated = usersLocal.map(u => {
+            if (u.matricula === user.matricula) {
+              return { ...u, tentativas_login: novasTentativas, bloqueado_ate: bloqueadoAteStr };
+            }
+            return u;
+          });
+          await offlineDb.salvarUsuariosLocal(updated);
+
+          setAuthError(msgErro);
+          return;
+        } else {
+          // Invoca a função remota no Supabase para registrar a falha de forma segura (ignora RLS)
+          const { data: rpcRes, error: rpcErr } = await supabase.rpc('registrar_tentativa_login_falha', { 
+            p_matricula: matriculaNorm 
+          });
+
+          if (rpcErr) {
+            console.error('Erro ao registrar falha de login via RPC:', rpcErr);
+            setAuthError('Senha incorreta.');
+            return;
+          }
+
+          const resObj = typeof rpcRes === 'string' ? JSON.parse(rpcRes) : rpcRes;
+          const novasTentativas = resObj?.tentativas || 1;
+          let msgErro = `Senha incorreta. Tentativa ${novasTentativas} de 3.`;
+
+          if (novasTentativas >= 3) {
+            msgErro = `Acesso bloqueado por excesso de tentativas. Tente novamente em 5 minutos.`;
+          }
+
+          setAuthError(msgErro);
+          return;
+        }
+      }
+
+      // Se a senha estiver correta, reseta tentativas de login se havia alguma falha acumulada
+      if ((user.tentativas_login || 0) > 0 || user.bloqueado_ate) {
+        if (!isOnline) {
+          const usersLocal = await offlineDb.obterUsuariosLocal();
+          const updated = usersLocal.map(u => {
+            if (u.matricula === user.matricula) {
+              return { ...u, tentativas_login: 0, bloqueado_ate: null };
+            }
+            return u;
+          });
+          await offlineDb.salvarUsuariosLocal(updated);
+        } else {
+          supabase.rpc('resetar_tentativas_login', { p_matricula: matriculaNorm }).then(({ error: resetErr }) => {
+            if (resetErr) console.error('Erro ao resetar tentativas via RPC:', resetErr);
+          });
+        }
       }
 
       // Migrar senha legada se necessário

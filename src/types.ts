@@ -41,6 +41,8 @@ export interface Usuario {
   auth_user_id?: string;
   id_quartel?: string;   // UUID do quartel — null/undefined para admin
   deletado_em?: string;  // Soft delete (ISO DateTime)
+  tentativas_login?: number;
+  bloqueado_ate?: string | null;
 }
 
 export interface Categoria {
@@ -93,6 +95,7 @@ export interface CautelaItem {
   estado_devolucao?: CondicaoUso;
   consumido?: boolean;
   quantidade_carregadores?: number; // Quantidade de carregadores retirados com a arma
+  id_quartel?: string;             // UUID do quartel
 }
 
 export interface Manutencao {
