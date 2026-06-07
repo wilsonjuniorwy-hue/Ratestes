@@ -1970,12 +1970,24 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
             const { cautId, idsMateriaisDevolvidos, prorrogar, returnedQuantities, novosCautelaItens, todosDevolvidos, policialResponsavel, updatedCautela } = payload;
             
             for (const idMat of idsMateriaisDevolvidos) {
-              const matObj = materiais.find(m => m.id_material === idMat);
+              let matObj = materiais.find(m => m.id_material === idMat);
+              if (!matObj) {
+                console.log(`SGBD Sync: Material ${idMat} não encontrado na memória local. Buscando diretamente do SGBD...`);
+                const { data: dbMat } = await supabase.from('materiais').select('*').eq('id_material', idMat).single();
+                if (dbMat) {
+                  matObj = dbMat;
+                }
+              }
+
               if (matObj) {
                 const fieldsToUpdate = matObj.controle_quantidade 
                   ? { quantidade: (matObj.quantidade || 0) + (returnedQuantities?.[idMat] ?? 0) } 
                   : { status_atual: 'disponivel' };
                 const { error: errMat } = await supabase.from('materiais').update(fieldsToUpdate).eq('id_material', idMat);
+                if (errMat) throw errMat;
+              } else {
+                console.warn(`SGBD Sync: Material ${idMat} não localizado de forma alguma. Executando atualização padrão para 'disponivel'...`);
+                const { error: errMat } = await supabase.from('materiais').update({ status_atual: 'disponivel' }).eq('id_material', idMat);
                 if (errMat) throw errMat;
               }
             }
