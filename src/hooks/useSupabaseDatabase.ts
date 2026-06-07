@@ -2090,6 +2090,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
     toggleQuartelAtivo,
     isLoading,
     dbError,
+    offlineDbError: offlineDb.dbError,
     isOnline,
     isSyncing
   };

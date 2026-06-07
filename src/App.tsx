@@ -542,29 +542,36 @@ export default function App() {
       </main>
 
       {/* Footer Status Bar - Technical System Telemetry */}
-      <footer className="h-auto bg-slate-955 border-t border-slate-900 px-6 py-4 md:py-4 flex flex-col md:flex-row items-center justify-between shrink-0 gap-4 mt-auto">
-        {activeArmeiroMatricula?.toUpperCase() !== 'ARMEIRO' ? (
-          <>
-            <div className="flex flex-wrap gap-4 text-[9px] font-mono text-slate-505 uppercase tracking-widest">
-              <span>Session: <strong className="text-slate-400">PMDF-CO-827A</strong></span>
-              <span>SGBD: <strong className="text-slate-400">{db.isOnline ? 'Supabase Cloud' : 'SQLite Cache Local'}</strong></span>
-              <span>Quartel: <strong className="text-slate-400">{quartelAtivo?.nome || 'N/A'}</strong></span>
-              <span className="flex items-center gap-1.5">
-                Latency: <span className={`w-1.5 h-1.5 rounded-full ${db.isOnline ? 'bg-emerald-500 animate-ping' : 'bg-rose-500'}`} />
-                <strong className={db.isOnline ? 'text-emerald-400' : 'text-rose-500'}>{db.isOnline ? '9ms' : 'Offline'}</strong>
-              </span>
-            </div>
-            <div className="text-[9px] text-slate-505 font-mono uppercase tracking-wider text-center md:text-right flex flex-col items-end gap-0.5">
-              <span>© 2026 DEPARTAMENTO DE LOGÍSTICA E SUPRIMENTOS (DLS) - POLÍCIA MILITAR DO DISTRITO FEDERAL</span>
-              <span className="text-[8px] text-slate-500 font-black tracking-wider">Desenvolvido por Wagner Torres</span>
-            </div>
-          </>
-        ) : (
-          <div className="text-[9px] text-slate-505 font-mono uppercase tracking-wider text-center w-full flex flex-col items-center gap-0.5">
-            <span>© 2026 DEPARTAMENTO DE LOGÍSTICA E SUPRIMENTOS (DLS) - POLÍCIA MILITAR DO DISTRITO FEDERAL</span>
-            <span className="text-[8px] text-slate-500 font-black tracking-wider">MODO TOTEM DE AUTOATENDIMENTO BÉLICO ATIVO</span>
+      <footer className="h-auto bg-slate-955 border-t border-slate-900 px-6 py-4 md:py-4 flex flex-col items-center justify-between shrink-0 gap-4 mt-auto">
+        {db.offlineDbError && (
+          <div className="w-full text-center py-2 bg-red-950/60 border border-red-900/40 text-[10px] font-mono text-red-400 uppercase tracking-wider rounded-lg mb-2">
+            ⚠️ Erro de Sincronização SQLite Local: {db.offlineDbError} (Operando em Contingência de Memória)
           </div>
         )}
+        <div className="w-full flex flex-col md:flex-row items-center justify-between gap-4">
+          {activeArmeiroMatricula?.toUpperCase() !== 'ARMEIRO' ? (
+            <>
+              <div className="flex flex-wrap gap-4 text-[9px] font-mono text-slate-505 uppercase tracking-widest">
+                <span>Session: <strong className="text-slate-400">PMDF-CO-827A</strong></span>
+                <span>SGBD: <strong className="text-slate-400">{db.isOnline ? 'Supabase Cloud' : 'SQLite Cache Local'}</strong></span>
+                <span>Quartel: <strong className="text-slate-400">{quartelAtivo?.nome || 'N/A'}</strong></span>
+                <span className="flex items-center gap-1.5">
+                  Latency: <span className={`w-1.5 h-1.5 rounded-full ${db.isOnline ? 'bg-emerald-500 animate-ping' : 'bg-rose-500'}`} />
+                  <strong className={db.isOnline ? 'text-emerald-400' : 'text-rose-500'}>{db.isOnline ? '9ms' : 'Offline'}</strong>
+                </span>
+              </div>
+              <div className="text-[9px] text-slate-505 font-mono uppercase tracking-wider text-center md:text-right flex flex-col items-end gap-0.5">
+                <span>© 2026 DEPARTAMENTO DE LOGÍSTICA E SUPRIMENTOS (DLS) - POLÍCIA MILITAR DO DISTRITO FEDERAL</span>
+                <span className="text-[8px] text-slate-500 font-black tracking-wider">Desenvolvido por Wagner Torres</span>
+              </div>
+            </>
+          ) : (
+            <div className="text-[9px] text-slate-505 font-mono uppercase tracking-wider text-center w-full flex flex-col items-center gap-0.5">
+              <span>© 2026 DEPARTAMENTO DE LOGÍSTICA E SUPRIMENTOS (DLS) - POLÍCIA MILITAR DO DISTRITO FEDERAL</span>
+              <span className="text-[8px] text-slate-500 font-black tracking-wider">MODO TOTEM DE AUTOATENDIMENTO BÉLICO ATIVO</span>
+            </div>
+          )}
+        </div>
       </footer>
 
       </>

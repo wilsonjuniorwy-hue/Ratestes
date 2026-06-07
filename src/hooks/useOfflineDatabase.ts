@@ -6,6 +6,7 @@ const isTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNA
 export function useOfflineDatabase() {
   const [dbInstance, setDbInstance] = useState<any>(null);
   const [isDbReady, setIsDbReady] = useState(false);
+  const [dbError, setDbError] = useState<string | null>(null);
 
   // Inicializar o banco SQLite local do Tauri (ou fallback em navegador)
   useEffect(() => {
@@ -19,6 +20,7 @@ export function useOfflineDatabase() {
 
     async function initDb() {
       try {
+        setDbError(null);
         // Importação dinâmica para evitar quebras em navegadores fora do Tauri
         const Database = (await import('@tauri-apps/plugin-sql')).default;
         console.log('SGBD Offline: Inicializando SQLite local (reserva_local.db)...');
@@ -38,9 +40,26 @@ export function useOfflineDatabase() {
             situacao_cautela TEXT,
             data_ultimo_teste_psicologico TEXT,
             senha_hash TEXT,
-            id_quartel TEXT
+            id_quartel TEXT,
+            tentativas_login INTEGER DEFAULT 0,
+            bloqueado_ate TEXT DEFAULT NULL
           );
         `);
+
+        // Executar migrações caso as novas colunas ainda não existam no SQLite local
+        try {
+          await db.execute('ALTER TABLE usuarios ADD COLUMN tentativas_login INTEGER DEFAULT 0;');
+          console.log('SGBD Offline: Coluna tentativas_login adicionada à tabela usuarios.');
+        } catch (_) {
+          // A coluna já existe ou tabela não foi alterada
+        }
+
+        try {
+          await db.execute('ALTER TABLE usuarios ADD COLUMN bloqueado_ate TEXT DEFAULT NULL;');
+          console.log('SGBD Offline: Coluna bloqueado_ate adicionada à tabela usuarios.');
+        } catch (_) {
+          // A coluna já existe ou tabela não foi alterada
+        }
 
         await db.execute(`
           CREATE TABLE IF NOT EXISTS materiais (
@@ -94,8 +113,9 @@ export function useOfflineDatabase() {
 
         console.log('SGBD Offline: Banco de dados SQLite local inicializado com sucesso.');
         setIsDbReady(true);
-      } catch (err) {
+      } catch (err: any) {
         console.error('SGBD Offline: Erro ao inicializar SQLite local:', err);
+        setDbError(err?.message || String(err));
       }
     }
 
@@ -116,12 +136,20 @@ export function useOfflineDatabase() {
       for (const u of usuariosList) {
         await dbInstance.execute(
           `INSERT OR REPLACE INTO usuarios 
-          (matricula, nome, nome_de_guerra, perfil, posto_graduacao, situacao_cautela, data_ultimo_teste_psicologico, senha_hash, id_quartel) 
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          (matricula, nome, nome_de_guerra, perfil, posto_graduacao, situacao_cautela, data_ultimo_teste_psicologico, senha_hash, id_quartel, tentativas_login, bloqueado_ate) 
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
-            u.matricula, u.nome, u.nome_de_guerra || null, u.perfil, 
-            u.posto_graduacao, u.situacao_cautela, u.data_ultimo_teste_psicologico, 
-            u.senha_hash, u.id_quartel || null
+            u.matricula !== undefined ? u.matricula : null,
+            u.nome !== undefined ? u.nome : null,
+            u.nome_de_guerra !== undefined && u.nome_de_guerra !== null ? u.nome_de_guerra : null,
+            u.perfil !== undefined ? u.perfil : null,
+            u.posto_graduacao !== undefined ? u.posto_graduacao : null,
+            u.situacao_cautela !== undefined ? u.situacao_cautela : null,
+            u.data_ultimo_teste_psicologico !== undefined && u.data_ultimo_teste_psicologico !== null ? u.data_ultimo_teste_psicologico : null,
+            u.senha_hash !== undefined ? u.senha_hash : null,
+            u.id_quartel !== undefined && u.id_quartel !== null ? u.id_quartel : null,
+            u.tentativas_login !== undefined && u.tentativas_login !== null ? u.tentativas_login : 0,
+            u.bloqueado_ate !== undefined && u.bloqueado_ate !== null ? u.bloqueado_ate : null
           ]
         );
       }
@@ -146,9 +174,15 @@ export function useOfflineDatabase() {
           (id_material, id_categoria, modelo, fabricante, calibre, status_atual, quantidade, controle_quantidade, id_quartel) 
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
-            m.id_material, m.id_categoria, m.modelo, m.fabricante, 
-            m.calibre || null, m.status_atual, m.quantidade || 0, 
-            m.controle_quantidade ? 1 : 0, m.id_quartel || null
+            m.id_material !== undefined ? m.id_material : null,
+            m.id_categoria !== undefined ? m.id_categoria : null,
+            m.modelo !== undefined ? m.modelo : null,
+            m.fabricante !== undefined && m.fabricante !== null ? m.fabricante : null,
+            m.calibre !== undefined && m.calibre !== null ? m.calibre : null,
+            m.status_atual !== undefined ? m.status_atual : null,
+            m.quantidade !== undefined && m.quantidade !== null ? m.quantidade : 0,
+            m.controle_quantidade ? 1 : 0,
+            m.id_quartel !== undefined && m.id_quartel !== null ? m.id_quartel : null
           ]
         );
       }
@@ -173,9 +207,14 @@ export function useOfflineDatabase() {
           (id_cautela, matricula_policial, matricula_armeiro_retirada, data_retirada, previsao_devolucao, status_cautela, observacoes_retirada, id_quartel) 
           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
           [
-            c.id_cautela, c.matricula_policial, c.matricula_armeiro_retirada, 
-            c.data_retirada, c.previsao_devolucao, c.status_cautela, 
-            c.observacoes_retirada, c.id_quartel || null
+            c.id_cautela !== undefined ? c.id_cautela : null,
+            c.matricula_policial !== undefined ? c.matricula_policial : null,
+            c.matricula_armeiro_retirada !== undefined && c.matricula_armeiro_retirada !== null ? c.matricula_armeiro_retirada : null,
+            c.data_retirada !== undefined ? c.data_retirada : null,
+            c.previsao_devolucao !== undefined && c.previsao_devolucao !== null ? c.previsao_devolucao : null,
+            c.status_cautela !== undefined ? c.status_cautela : null,
+            c.observacoes_retirada !== undefined && c.observacoes_retirada !== null ? c.observacoes_retirada : null,
+            c.id_quartel !== undefined && c.id_quartel !== null ? c.id_quartel : null
           ]
         );
       }
@@ -200,9 +239,15 @@ export function useOfflineDatabase() {
           (id_cautela_item, id_cautela, id_material, quantidade, estado_entrega, estado_devolucao, consumido, quantidade_carregadores, id_quartel) 
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
-            item.id_cautela_item, item.id_cautela, item.id_material, item.quantidade,
-            item.estado_entrega, item.estado_devolucao || null, item.consumido ? 1 : 0,
-            item.quantidade_carregadores || 0, item.id_quartel || null
+            item.id_cautela_item !== undefined ? item.id_cautela_item : null,
+            item.id_cautela !== undefined ? item.id_cautela : null,
+            item.id_material !== undefined ? item.id_material : null,
+            item.quantidade !== undefined && item.quantidade !== null ? item.quantidade : 0,
+            item.estado_entrega !== undefined && item.estado_entrega !== null ? item.estado_entrega : null,
+            item.estado_devolucao !== undefined && item.estado_devolucao !== null ? item.estado_devolucao : null,
+            item.consumido ? 1 : 0,
+            item.quantidade_carregadores !== undefined && item.quantidade_carregadores !== null ? item.quantidade_carregadores : 0,
+            item.id_quartel !== undefined && item.id_quartel !== null ? item.id_quartel : null
           ]
         );
       }
@@ -232,7 +277,9 @@ export function useOfflineDatabase() {
         situacao_cautela: r.situacao_cautela,
         data_ultimo_teste_psicologico: r.data_ultimo_teste_psicologico,
         senha_hash: r.senha_hash,
-        id_quartel: r.id_quartel
+        id_quartel: r.id_quartel,
+        tentativas_login: r.tentativas_login !== undefined ? r.tentativas_login : 0,
+        bloqueado_ate: r.bloqueado_ate || null
       }));
     } catch (err) {
       console.error('SGBD Offline: Erro ao ler policiais do SQLite:', err);
@@ -380,6 +427,7 @@ export function useOfflineDatabase() {
 
   return {
     isDbReady,
+    dbError,
     salvarUsuariosLocal,
     salvarMateriaisLocal,
     salvarCautelasLocal,
