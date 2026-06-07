@@ -312,10 +312,14 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
     const logToInsert: any = { ...novoLog };
     if (targetQuartelId) logToInsert.id_quartel = targetQuartelId;
 
-    // Update Supabase in background
-    supabase.from('auditoria_logs').insert(logToInsert).then(({ error }) => {
-      if (error) console.error('Erro ao sincronizar auditoria_logs:', error);
-    });
+    // Update Supabase in background or enqueue offline
+    if (!isOnline) {
+      enfileirarEAtualizar('SALVAR_LOG_AUDITORIA', { logToInsert });
+    } else {
+      supabase.from('auditoria_logs').insert(logToInsert).then(({ error }) => {
+        if (error) console.error('Erro ao sincronizar auditoria_logs:', error);
+      });
+    }
   };
 
   // ---- RESETAR BANCO DE DADOS PARA ESTADO INICIAL ----
@@ -2112,6 +2116,12 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
                 console.warn('SGBD Sync: Erro ao criar armeiro no Auth durante a sincronização:', funcErr);
               }
             }
+            success = true;
+          }
+          else if (item.operacao === 'SALVAR_LOG_AUDITORIA') {
+            const { logToInsert } = payload;
+            const { error: errLog } = await supabase.from('auditoria_logs').insert(logToInsert);
+            if (errLog) throw errLog;
             success = true;
           }
           

@@ -83,6 +83,7 @@ export function BancoDadosView({
       case 'SALVAR_OCORRENCIA': return 'Registro de Ocorrência';
       case 'CADASTRAR_SENHA': return 'Alteração / Cadastro de Senha';
       case 'CADASTRAR_POLICIAL': return 'Cadastro de Policial Militar';
+      case 'SALVAR_LOG_AUDITORIA': return 'Registro de Log de Auditoria';
       default: return op;
     }
   };
@@ -105,6 +106,9 @@ export function BancoDadosView({
       }
       if (item.operacao === 'CADASTRAR_SENHA') {
         return `Matrícula: ${payload.matricula}`;
+      }
+      if (item.operacao === 'SALVAR_LOG_AUDITORIA') {
+        return `Evento: ${payload.logToInsert?.tipo_evento?.toUpperCase()} | Executor: ${payload.logToInsert?.matricula_executor}`;
       }
     } catch (_) {}
     return 'Detalhes indisponíveis.';
