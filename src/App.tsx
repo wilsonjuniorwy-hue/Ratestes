@@ -77,6 +77,7 @@ export default function App() {
             .from('usuarios')
             .select('*')
             .eq('auth_user_id', userUuid)
+            .is('deletado_em', null)
             .single();
 
           if (!active) return;

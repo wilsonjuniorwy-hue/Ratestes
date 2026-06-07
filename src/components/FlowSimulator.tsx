@@ -84,75 +84,6 @@ export default function FlowSimulator({
     }, 150);
   };
 
-  const handleExportBackup = () => {
-    try {
-      const dataStr = JSON.stringify({
-        usuarios: db.usuarios,
-        categorias: db.categorias,
-        modelos_armas: db.modelosArmas,
-        materiais: db.materiais,
-        cautelas: db.cautelas,
-        cautela_itens: db.cautelaItens,
-        armas_particulares: db.armasParticulares,
-        pendencias_servico: db.pendenciasServico,
-        ocorrencias: db.ocorrencias,
-        auditoria_logs: db.auditoriaLogs,
-      }, null, 2);
-
-      const blob = new Blob([dataStr], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      
-      const tempAnchor = document.createElement('a');
-      const dateStr = new Date().toISOString().split('T')[0];
-      tempAnchor.href = url;
-      tempAnchor.download = `backup_reserva_armamento_${dateStr}.json`;
-      document.body.appendChild(tempAnchor);
-      tempAnchor.click();
-      document.body.removeChild(tempAnchor);
-      URL.revokeObjectURL(url);
-    } catch (error: any) {
-      alert('Erro ao gerar arquivo de backup: ' + error.message);
-    }
-  };
-
-  const handleImportBackup = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    if (!window.confirm('ALERTA CRÍTICO: A restauração de backup apagará permanentemente todos os dados atuais do Supabase e os substituirá pelo arquivo selecionado. Deseja continuar?')) {
-      event.target.value = '';
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      try {
-        const text = e.target?.result;
-        if (typeof text !== 'string') {
-          throw new Error('Falha na leitura do arquivo.');
-        }
-
-        const data = JSON.parse(text);
-        
-        await db.importarBackupDatabase(data);
-        
-        // Resetar estados locais após sucesso na restauração
-        setLoggedUser(null);
-        setMatriculaInput('');
-        setSenhaInput('');
-        setCartItens([]);
-        setPolicialStep('login');
-        
-        alert('Banco de dados restaurado e sincronizado com sucesso!');
-      } catch (error: any) {
-        alert('Erro ao processar arquivo de backup: ' + error.message);
-      } finally {
-        event.target.value = '';
-      }
-    };
-    reader.readAsText(file);
-  };
-
   return (
     <div className="space-y-6" id="flow-simulator-root">
       
@@ -228,38 +159,6 @@ export default function FlowSimulator({
               </button>
             </div>
           </div>
-
-          {authenticatedPerfil === 'admin' && (
-            <div className="flex items-center gap-2.5" id="admin-backup-controls">
-              <button
-                id="btn-export-backup"
-                onClick={handleExportBackup}
-                className="text-xs font-mono text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/20 px-4 py-2.5 rounded-lg border border-emerald-900/40 font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer flex items-center gap-2"
-                title="Fazer backup completo das tabelas em arquivo JSON"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Backup do Sistema</span>
-              </button>
-              
-              <button
-                id="btn-import-backup-trigger"
-                onClick={() => document.getElementById('import-backup-file')?.click()}
-                className="text-xs font-mono text-blue-405 hover:text-blue-350 hover:bg-blue-955/40 px-4 py-2.5 rounded-lg border border-blue-800/50 font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer flex items-center gap-2"
-                title="Restaurar banco de dados a partir de arquivo de backup JSON"
-              >
-                <Upload className="w-3.5 h-3.5" />
-                <span>Restaurar Backup</span>
-              </button>
-              
-              <input
-                type="file"
-                id="import-backup-file"
-                className="hidden"
-                accept=".json"
-                onChange={handleImportBackup}
-              />
-            </div>
-          )}
         </div>
       )}
 

@@ -102,7 +102,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
         { data: dbPendencias, error: errPendencias },
         { data: quarteisData, error: errQuarteis }
       ] = await Promise.all([
-        supabase.from('usuarios').select('matricula, nome, nome_de_guerra, perfil, posto_graduacao, situacao_cautela, data_ultimo_teste_psicologico, motivo_suspensao, id_quartel, tentativas_login, bloqueado_ate, senha_hash').is('deletado_em', null).then(r => { console.log('SGBD: 1. usuarios OK'); return r; }),
+        supabase.from('usuarios').select('matricula, nome, nome_de_guerra, perfil, posto_graduacao, situacao_cautela, data_ultimo_teste_psicologico, motivo_suspensao, id_quartel, tentativas_login, bloqueado_ate, senha_hash, auth_user_id').is('deletado_em', null).then(r => { console.log('SGBD: 1. usuarios OK'); return r; }),
         supabase.from('materiais').select('*').is('deletado_em', null).then(r => { console.log('SGBD: 2. materiais OK'); return r; }),
         supabase.from('categorias').select('*').then(r => { console.log('SGBD: 3. categorias OK'); return r; }),
         supabase.from('cautelas').select('*').is('deletado_em', null).then(r => { console.log('SGBD: 4. cautelas OK'); return r; }),
@@ -377,18 +377,34 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
       }
 
       // 1. Limpar todas as tabelas em ordem reversa de chaves estrangeiras
-      await supabase.from('cautela_itens').delete().neq('id_cautela_item', '');
-      await supabase.from('cautelas').delete().neq('id_cautela', '');
-      await supabase.from('armas_particulares').delete().neq('id_particular', '');
-      await supabase.from('pendencias_servico').delete().neq('id_pendencia', '');
-      await supabase.from('materiais').delete().neq('id_material', '');
-      await supabase.from('categorias').delete().neq('id_categoria', '');
-      await supabase.from('ocorrencias').delete().neq('id_ocorrencia', '');
-      await supabase.from('auditoria_logs').delete().neq('id_log', '');
-      await supabase.from('usuarios').delete().neq('matricula', '');
-      await supabase.from('modelos_armas').delete().neq('modelo', '');
+      const cleanTable = async (tableName: string, colName: string, dummyVal: string = '') => {
+        const { error } = await supabase.from(tableName).delete().neq(colName, dummyVal);
+        if (error) throw new Error(`Falha ao limpar tabela ${tableName}: ${error.message}`);
+      };
+
+      await cleanTable('cautela_itens', 'id_cautela_item');
+      await cleanTable('cautelas', 'id_cautela');
+      await cleanTable('armas_particulares', 'id_particular', '00000000-0000-0000-0000-000000000000');
+      await cleanTable('pendencias_servico', 'id_pendencia', '00000000-0000-0000-0000-000000000000');
+      await cleanTable('materiais', 'id_material');
+      await cleanTable('categorias', 'id_categoria');
+      await cleanTable('ocorrencias', 'id_ocorrencia');
+      await cleanTable('auditoria_logs', 'id_log');
+      await cleanTable('usuarios', 'matricula');
+      await cleanTable('modelos_armas', 'modelo');
+
+      const contemQuarteis = Array.isArray(backupData.quarteis);
+      if (contemQuarteis) {
+        await cleanTable('quarteis', 'id', '00000000-0000-0000-0000-000000000000');
+      }
 
       // 2. Inserir sequencialmente respeitando as chaves estrangeiras
+
+      // Estágio 0: Quarteis (Independente)
+      if (contemQuarteis && backupData.quarteis.length > 0) {
+        const { error: errQ } = await supabase.from('quarteis').insert(backupData.quarteis);
+        if (errQ) throw new Error(`Erro ao importar quarteis: ${errQ.message}`);
+      }
 
       // Estágio 1: Tabelas Base / Independentes
       if (backupData.usuarios && backupData.usuarios.length > 0) {
@@ -1512,6 +1528,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
         .from('usuarios')
         .select('matricula')
         .eq('auth_user_id', user.id)
+        .is('deletado_em', null)
         .single();
 
       console.log('DEBUG [alterarSenhaArmeiro] - Retorno de validação no banco:', { dbUser, dbUserError });
@@ -2088,6 +2105,48 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
     ? auditoriaLogs
     : auditoriaLogs.filter(al => al.id_quartel === quartelId);
 
+  const exportarDadosCompletos = async () => {
+    const [
+      { data: quarteisData },
+      { data: usuariosData },
+      { data: categoriasData },
+      { data: modelosArmasData },
+      { data: materiaisData },
+      { data: cautelasData },
+      { data: cautelaItensData },
+      { data: armasParticularesData },
+      { data: pendenciasServicoData },
+      { data: ocorrenciasData },
+      { data: auditoriaLogsData }
+    ] = await Promise.all([
+      supabase.from('quarteis').select('*').is('deletado_em', null),
+      supabase.from('usuarios').select('*').is('deletado_em', null),
+      supabase.from('categorias').select('*'),
+      supabase.from('modelos_armas').select('*'),
+      supabase.from('materiais').select('*').is('deletado_em', null),
+      supabase.from('cautelas').select('*').is('deletado_em', null),
+      supabase.from('cautela_itens').select('*').is('deletado_em', null),
+      supabase.from('armas_particulares').select('*').is('deletado_em', null),
+      supabase.from('pendencias_servico').select('*').is('deletado_em', null),
+      supabase.from('ocorrencias').select('*').is('deletado_em', null),
+      supabase.from('auditoria_logs').select('*')
+    ]);
+
+    return {
+      quarteis: quarteisData || [],
+      usuarios: usuariosData || [],
+      categorias: categoriasData || [],
+      modelos_armas: modelosArmasData || [],
+      materiais: materiaisData || [],
+      cautelas: cautelasData || [],
+      cautela_itens: cautelaItensData || [],
+      armas_particulares: armasParticularesData || [],
+      pendencias_servico: pendenciasServicoData || [],
+      ocorrencias: ocorrenciasData || [],
+      auditoria_logs: auditoriaLogsData || [],
+    };
+  };
+
   return {
     usuarios: usuariosExibidos,
     setUsuarios,
@@ -2107,6 +2166,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
     adicionarModeloArma,
     resetDatabase,
     importarBackupDatabase,
+    exportarDadosCompletos,
     registrarLogAuditoria,
     cadastrarSenha,
     cadastrarPolicial,

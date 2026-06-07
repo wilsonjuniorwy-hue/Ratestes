@@ -212,6 +212,7 @@ export function TotemView({
           .from('usuarios')
           .select('*')
           .eq('matricula', matriculaNorm)
+          .is('deletado_em', null)
           .single();
 
         if (error || !data) {

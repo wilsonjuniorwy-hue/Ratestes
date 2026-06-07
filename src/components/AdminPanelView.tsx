@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Shield, Building2, Plus, Power, LogOut, ChevronRight, Laptop, Key, Check, AlertTriangle, ShieldAlert, Trash2, RefreshCw, Download } from 'lucide-react';
+import { Shield, Building2, Plus, Power, LogOut, ChevronRight, Laptop, Key, Check, AlertTriangle, ShieldAlert, Trash2, RefreshCw, Download, Upload } from 'lucide-react';
 import { Usuario, Quartel } from '../types';
 import { supabase, obterAmbienteAtual } from '../supabaseClient';
 import { useAppUpdater } from '../hooks/useAppUpdater';
@@ -10,6 +10,8 @@ interface AdminPanelViewProps {
     quarteis: Quartel[];
     criarQuartel: (slug: string, nome: string) => Promise<{ success: boolean; error?: string }>;
     toggleQuartelAtivo: (id: string, ativo: boolean) => Promise<{ success: boolean; error?: string }>;
+    importarBackupDatabase: (backupData: any) => Promise<{ success: boolean }>;
+    exportarDadosCompletos: () => Promise<any>;
   };
   onSelecionarQuartel: (quartel: Quartel) => void;
   onLogout: () => void;
@@ -31,6 +33,91 @@ export function AdminPanelView({ admin, db, onSelecionarQuartel, onLogout }: Adm
   const [errorDispositivos, setErrorDispositivos] = useState<string | null>(null);
   const [bypassTokens, setBypassTokens] = useState<any[]>([]);
   const [generatedBypass, setGeneratedBypass] = useState<string>('');
+
+  const handleExportBackup = async () => {
+    try {
+      const dataStr = JSON.stringify(await db.exportarDadosCompletos(), null, 2);
+
+      const isTauri = typeof window !== 'undefined' && !!(window as any).__TAURI_INTERNALS__;
+      if (isTauri) {
+        try {
+          const { invoke } = await import('@tauri-apps/api/core');
+          const result = await invoke<string>('salvar_arquivo_backup', { conteudo: dataStr });
+          alert(result);
+        } catch (tauriErr: any) {
+          if (tauriErr !== 'Operação cancelada pelo usuário.') {
+            alert('Erro ao salvar backup nativo: ' + tauriErr);
+          }
+        }
+      } else {
+        const blob = new Blob([dataStr], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        
+        const tempAnchor = document.createElement('a');
+        const dateStr = new Date().toISOString().split('T')[0];
+        tempAnchor.href = url;
+        tempAnchor.download = `backup_reserva_armamento_${dateStr}.json`;
+        document.body.appendChild(tempAnchor);
+        tempAnchor.click();
+        document.body.removeChild(tempAnchor);
+        URL.revokeObjectURL(url);
+      }
+    } catch (error: any) {
+      alert('Erro ao gerar arquivo de backup: ' + error.message);
+    }
+  };
+
+  const handleImportBackup = async (event?: React.ChangeEvent<HTMLInputElement>) => {
+    const isTauri = typeof window !== 'undefined' && !!(window as any).__TAURI_INTERNALS__;
+
+    if (!window.confirm('ALERTA CRÍTICO: A restauração de backup apagará permanentemente todos os dados atuais do Supabase e os substituirá pelo arquivo selecionado. Deseja continuar?')) {
+      if (event) event.target.value = '';
+      return;
+    }
+
+    if (isTauri) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const fileContent = await invoke<string>('abrir_arquivo_backup');
+        const data = JSON.parse(fileContent);
+        
+        await db.importarBackupDatabase(data);
+        
+        alert('Banco de dados restaurado e sincronizado com sucesso! Retornando à tela de login para atualizar os dados.');
+        onLogout();
+      } catch (tauriErr: any) {
+        if (tauriErr !== 'Operação cancelada pelo usuário.') {
+          alert('Erro ao processar arquivo de backup: ' + tauriErr);
+        }
+      }
+    } else {
+      if (!event) return;
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          const text = e.target?.result;
+          if (typeof text !== 'string') {
+            throw new Error('Falha na leitura do arquivo.');
+          }
+
+          const data = JSON.parse(text);
+          
+          await db.importarBackupDatabase(data);
+          
+          alert('Banco de dados restaurado e sincronizado com sucesso! Retornando à tela de login para atualizar os dados.');
+          onLogout();
+        } catch (error: any) {
+          alert('Erro ao processar arquivo de backup: ' + error.message);
+        } finally {
+          event.target.value = '';
+        }
+      };
+      reader.readAsText(file);
+    }
+  };
 
   const fetchDispositivos = async () => {
     setIsLoadingDispositivos(true);
@@ -173,6 +260,39 @@ export function AdminPanelView({ admin, db, onSelecionarQuartel, onLogout }: Adm
           </div>
         </div>
         <div className="flex items-center gap-4">
+          <button
+            onClick={handleExportBackup}
+            className="text-[10px] font-mono font-bold text-emerald-400 hover:text-emerald-300 hover:bg-emerald-955/20 px-3.5 py-2 border border-emerald-900/40 rounded-lg transition-all duration-200 cursor-pointer uppercase tracking-wider flex items-center gap-1.5"
+            title="Backup completo do banco de dados (JSON)"
+          >
+            <Download className="h-3.5 w-3.5" />
+            Backup Global
+          </button>
+          
+          <button
+            onClick={() => {
+              const isTauri = typeof window !== 'undefined' && !!(window as any).__TAURI_INTERNALS__;
+              if (isTauri) {
+                handleImportBackup();
+              } else {
+                document.getElementById('import-backup-file')?.click();
+              }
+            }}
+            className="text-[10px] font-mono font-bold text-blue-405 hover:text-blue-350 hover:bg-blue-955/40 px-3.5 py-2 border border-blue-800/50 rounded-lg transition-all duration-200 cursor-pointer uppercase tracking-wider flex items-center gap-1.5"
+            title="Restaurar banco de dados a partir de JSON"
+          >
+            <Upload className="h-3.5 w-3.5" />
+            Restaurar Backup
+          </button>
+          
+          <input
+            type="file"
+            id="import-backup-file"
+            className="hidden"
+            accept=".json"
+            onChange={handleImportBackup}
+          />
+
           <div className="text-[10px] font-mono text-slate-400 bg-slate-900/60 border border-slate-800 px-3 py-1.5 rounded-lg">
             <span className="text-amber-400 font-bold">{admin.nome_de_guerra || 'Admin'}</span>
             <span className="text-slate-500 ml-2">· {admin.matricula}</span>

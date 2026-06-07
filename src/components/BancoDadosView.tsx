@@ -438,6 +438,7 @@ export function BancoDadosView({
         .from('usuarios')
         .select('*')
         .eq('matricula', matNorm)
+        .is('deletado_em', null)
         .single();
 
       if (error || !dbUser) {
@@ -528,6 +529,7 @@ export function BancoDadosView({
         .from('usuarios')
         .select('*')
         .eq('matricula', selectedPolicialMatriculaDevolucao)
+        .is('deletado_em', null)
         .single();
 
       if (error || !dbUser) {

@@ -109,6 +109,7 @@ export default function LoginPortal({
         .from('usuarios')
         .select('*')
         .eq('matricula', matriculaNorm)
+        .is('deletado_em', null)
         .single();
 
 
@@ -141,6 +142,7 @@ export default function LoginPortal({
               .from('usuarios')
               .select('senha_hash')
               .eq('matricula', matriculaNorm)
+              .is('deletado_em', null)
               .single();
               
             if (dbAdmin && dbAdmin.senha_hash === hashedInput) {
@@ -287,6 +289,7 @@ export default function LoginPortal({
             .from('usuarios')
             .select('senha_hash')
             .eq('matricula', matriculaNorm)
+            .is('deletado_em', null)
             .single();
             
           if (dbUserWithHash && dbUserWithHash.senha_hash === hashedInput) {
@@ -371,6 +374,28 @@ export default function LoginPortal({
         if (authError.message.includes('rate limit') || authError.message.includes('exceeded') || authError.status === 429) {
           console.warn('Supabase Auth rate limit detectado no cadastro. Prosseguindo com ID provisório.');
           authUserId = `local-${crypto.randomUUID()}`;
+        } else if (
+          authError.message.toLowerCase().includes('already registered') || 
+          authError.message.toLowerCase().includes('already exists') ||
+          authError.status === 422
+        ) {
+          // Usuário já cadastrado no Auth. Vamos tentar logar com essa senha para verificar se ela está correta.
+          console.log('Usuário já registrado no Supabase Auth. Verificando a senha fornecida...');
+          const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+            email: emailAuth,
+            password: newPwdTrim,
+          });
+
+          if (!signInError && signInData.user) {
+            console.log('Senha confere com a conta Auth existente! Vinculando auth_user_id.');
+            authUserId = signInData.user.id;
+          } else {
+            console.warn('Senha incorreta para a conta Auth existente:', signInError?.message);
+            sessionStorage.removeItem('logging_in');
+            setAuthError('Este usuário já possui cadastro no Auth, mas a senha/PIN informada não confere com a registrada anteriormente. Digite a senha correta para vincular.');
+            setIsAuthenticating(false);
+            return;
+          }
         } else {
           sessionStorage.removeItem('logging_in');
           setAuthError(`Erro ao registrar no Auth: ${authError.message}`);
