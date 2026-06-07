@@ -1002,7 +1002,8 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
         id_material: idMat,
         quantidade: qty,
         estado_entrega: 'excelente',
-        quantidade_carregadores: magQty
+        quantidade_carregadores: magQty,
+        id_quartel: quartelId || undefined
       };
     });
 
@@ -1167,7 +1168,8 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
             quantidade: qtyConsumed,
             estado_entrega: ci.estado_entrega,
             estado_devolucao: 'avariado',
-            consumido: true
+            consumido: true,
+            id_quartel: ci.id_quartel
           });
         } else if (qtyConsumed > 0) {
           activeItemsMap.set(ci.id_cautela_item, {
@@ -1195,7 +1197,8 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
             id_material: idMat,
             quantidade: qtyToReturn,
             estado_entrega: ci.estado_entrega,
-            estado_devolucao: condition
+            estado_devolucao: condition,
+            id_quartel: ci.id_quartel
           });
         }
 
@@ -1208,7 +1211,8 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
             quantidade: qtyConsumed,
             estado_entrega: ci.estado_entrega,
             estado_devolucao: 'avariado',
-            consumido: true
+            consumido: true,
+            id_quartel: ci.id_quartel
           });
         }
       }
@@ -1337,8 +1341,15 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
         if (error) {
           console.error('Erro ao remover itens antigos no Supabase:', error);
         } else {
-          const itemsToInsert = todosItensDaCautela;
+          let itemsToInsert = todosItensDaCautela;
           if (itemsToInsert.length > 0) {
+            itemsToInsert = itemsToInsert.map((ci: any) => {
+              const copy = { ...ci };
+              if (!copy.id_quartel && quartelId) {
+                copy.id_quartel = quartelId;
+              }
+              return copy;
+            });
             supabase.from('cautela_itens').insert(itemsToInsert).then(({ error: errIns }) => {
               if (errIns) console.error('Erro ao reinserir itens atualizados no Supabase:', errIns);
             });
@@ -2038,8 +2049,15 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
             const { error: errDel } = await supabase.from('cautela_itens').delete().eq('id_cautela', cautId);
             if (errDel) throw errDel;
             
-            const itemsToInsert = novosCautelaItens.filter((ci: any) => ci.id_cautela === cautId);
+            let itemsToInsert = novosCautelaItens.filter((ci: any) => ci.id_cautela === cautId);
             if (itemsToInsert.length > 0) {
+              itemsToInsert = itemsToInsert.map((ci: any) => {
+                const copy = { ...ci };
+                if (!copy.id_quartel && quartelId) {
+                  copy.id_quartel = quartelId;
+                }
+                return copy;
+              });
               const { error: errIns } = await supabase.from('cautela_itens').insert(itemsToInsert);
               if (errIns) throw errIns;
             }
