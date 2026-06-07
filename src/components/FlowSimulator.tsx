@@ -245,6 +245,13 @@ export default function FlowSimulator({
             adicionarArmaParticular={db.adicionarArmaParticular}
             devolverArmasParticulares={db.devolverArmasParticulares}
             editarPolicial={db.editarPolicial}
+            filaSincronizacao={db.filaSincronizacao}
+            removerItemFilaSincronizacao={db.removerItemFilaSincronizacao}
+            forcarSincronizacao={db.forcarSincronizacao}
+            limparFilaSincronizacao={db.limparFilaSincronizacao}
+            syncQueueErrors={db.syncQueueErrors}
+            isOnline={db.isOnline}
+            isSyncing={db.isSyncing}
           />
         </ErrorBoundary>
       )}

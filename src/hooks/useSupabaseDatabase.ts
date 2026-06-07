@@ -41,6 +41,46 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
   const [pendenciasServico, setPendenciasServico] = useState<PendenciaServico[]>([]);
   const [quarteis, setQuarteis] = useState<Quartel[]>([]);
 
+  const [filaSincronizacao, setFilaSincronizacao] = useState<any[]>([]);
+  const [syncQueueErrors, setSyncQueueErrors] = useState<Record<number, string>>({});
+
+  const carregarFilaSincronizacao = async () => {
+    if (!offlineDb.isDbReady) return;
+    try {
+      const fila = await offlineDb.obterFilaSincronizacao();
+      setFilaSincronizacao(fila);
+    } catch (err) {
+      console.error('Erro ao carregar fila de sincronização:', err);
+    }
+  };
+
+  const enfileirarEAtualizar = async (operacao: string, payload: any) => {
+    await offlineDb.enfileirarTransacaoOffline(operacao, payload);
+    await carregarFilaSincronizacao();
+  };
+
+  const removerItemFilaSincronizacao = async (id: number) => {
+    await offlineDb.removerTransacaoFila(id);
+    setSyncQueueErrors(prev => {
+      const copy = { ...prev };
+      delete copy[id];
+      return copy;
+    });
+    await carregarFilaSincronizacao();
+  };
+
+  const limparFilaSincronizacao = async () => {
+    await offlineDb.limparFilaSincronizacao();
+    setSyncQueueErrors({});
+    await carregarFilaSincronizacao();
+  };
+
+  useEffect(() => {
+    if (offlineDb.isDbReady) {
+      carregarFilaSincronizacao();
+    }
+  }, [offlineDb.isDbReady]);
+
   const [isLoading, setIsLoading] = useState(enabled);
   const [dbError, setDbError] = useState<string | null>(null);
 
@@ -505,7 +545,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
       setUsuarios(usuariosAtualizados);
 
       if (!isOnline) {
-        offlineDb.enfileirarTransacaoOffline('CADASTRAR_SENHA', { matricula, hashed });
+        enfileirarEAtualizar('CADASTRAR_SENHA', { matricula, hashed });
         if (offlineDb.isDbReady) {
           offlineDb.obterUsuariosLocal().then(localUsers => {
             const updated = localUsers.map(u => {
@@ -553,7 +593,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
       };
 
       if (!isOnline) {
-        await offlineDb.enfileirarTransacaoOffline('CADASTRAR_POLICIAL', { 
+        await enfileirarEAtualizar('CADASTRAR_POLICIAL', { 
           userToInsert, 
           rawSenha 
         });
@@ -574,9 +614,12 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
         return { success: true };
       }
 
-      const { error: insertError } = await supabase.from('usuarios').insert(userToInsert);
+      const { error: insertError } = await supabase.from('usuarios').upsert({
+        ...userToInsert,
+        deletado_em: null
+      });
       if (insertError) {
-        console.error('Erro ao cadastrar policial/armeiro:', insertError);
+        console.error('Erro ao cadastrar/reativar policial/armeiro:', insertError);
         return { success: false, error: `Erro ao cadastrar: ${insertError.message}` };
       }
 
@@ -741,7 +784,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
     if (quartelId) ocoToInsert.id_quartel = quartelId;
 
     if (!isOnline) {
-      offlineDb.enfileirarTransacaoOffline('SALVAR_OCORRENCIA', { novaOco });
+      enfileirarEAtualizar('SALVAR_OCORRENCIA', { novaOco });
     } else {
       supabase.from('ocorrencias').insert(ocoToInsert).then(({ error }) => {
         if (error) console.error('Erro ao salvar ocorrencia:', error);
@@ -988,7 +1031,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
     setUsuarios(usuariosAtualizados);
 
     if (!isOnline) {
-      offlineDb.enfileirarTransacaoOffline('EFETIVAR_CAUTELA', { 
+      enfileirarEAtualizar('EFETIVAR_CAUTELA', { 
         matriculaPolicial, 
         cartItens, 
         observacoes, 
@@ -1253,7 +1296,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
 
     // ---- SINCRONIZAR COM SUPABASE ----
     if (!isOnline) {
-      offlineDb.enfileirarTransacaoOffline('EFETIVAR_DEVOLUCAO', {
+      enfileirarEAtualizar('EFETIVAR_DEVOLUCAO', {
         cautId,
         idsMateriaisDevolvidos,
         claimConditions,
@@ -2025,7 +2068,10 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
           }
           else if (item.operacao === 'CADASTRAR_POLICIAL') {
             const { userToInsert, rawSenha } = payload;
-            const { error: errInsert } = await supabase.from('usuarios').insert(userToInsert);
+            const { error: errInsert } = await supabase.from('usuarios').upsert({
+              ...userToInsert,
+              deletado_em: null
+            });
             if (errInsert) throw errInsert;
             
             if (userToInsert.perfil === 'armeiro_gestor' && rawSenha) {
@@ -2054,14 +2100,25 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
           if (success) {
             console.log(`SGBD Sync: Item ${item.id} processado com sucesso. Removendo da fila...`);
             await offlineDb.removerTransacaoFila(item.id);
+            setSyncQueueErrors(prev => {
+              const copy = { ...prev };
+              delete copy[item.id];
+              return copy;
+            });
           }
         } catch (opError: any) {
+          const errMsg = opError?.message || String(opError);
           console.error(`SGBD Sync: Erro ao sincronizar item ${item.id}:`, opError);
+          setSyncQueueErrors(prev => ({
+            ...prev,
+            [item.id]: errMsg
+          }));
           break;
         }
       }
       
       console.log('SGBD Sync: Sincronização offline concluída, atualizando dados locais...');
+      await carregarFilaSincronizacao();
       fetchData();
     } catch (err) {
       console.error('SGBD Sync: Erro geral no sync worker:', err);
@@ -2212,6 +2269,11 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
     dbError,
     offlineDbError: offlineDb.dbError,
     isOnline,
-    isSyncing
+    isSyncing,
+    filaSincronizacao,
+    removerItemFilaSincronizacao,
+    forcarSincronizacao: processarFilaSincronizacao,
+    limparFilaSincronizacao,
+    syncQueueErrors
   };
 }

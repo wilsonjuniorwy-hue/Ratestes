@@ -425,6 +425,20 @@ export function useOfflineDatabase() {
     }
   };
 
+  const limparFilaSincronizacao = async () => {
+    if (!isDbReady) return;
+    if (!isTauri) {
+      localStorage.removeItem('offline_fila_sincronizacao');
+      return;
+    }
+
+    try {
+      await dbInstance.execute('DELETE FROM fila_sincronizacao');
+    } catch (err) {
+      console.error('SGBD Offline: Erro ao limpar fila de sincronização:', err);
+    }
+  };
+
   return {
     isDbReady,
     dbError,
@@ -438,6 +452,7 @@ export function useOfflineDatabase() {
     obterCautelaItensLocal,
     enfileirarTransacaoOffline,
     obterFilaSincronizacao,
-    removerTransacaoFila
+    removerTransacaoFila,
+    limparFilaSincronizacao
   };
 }

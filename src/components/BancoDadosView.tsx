@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { 
-  Database, Search, KeyRound, Package, ShieldAlert, CheckCircle, AlertTriangle, Plus, Lock, X, FolderLock
+  Database, Search, KeyRound, Package, ShieldAlert, CheckCircle, AlertTriangle, Plus, Lock, X, FolderLock,
+  RefreshCw, Trash2, Eye, Play, FileText, Trash
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Usuario, Material, SituacaoMilitar, StatusMaterial, Categoria, Cautela, CautelaItem, ArmaParticular } from '../types';
@@ -29,6 +30,13 @@ interface BancoDadosViewProps {
   adicionarArmaParticular: (novoItem: Omit<ArmaParticular, 'id_particular' | 'data_deposito' | 'status'>) => Promise<void>;
   devolverArmasParticulares: (idsParticulares: string[], matriculaPolicial: string) => Promise<void>;
   editarPolicial?: (matricula: string, dadosAtualizados: Partial<Usuario>) => Promise<{ success: boolean }>;
+  filaSincronizacao?: any[];
+  removerItemFilaSincronizacao?: (id: number) => Promise<void>;
+  forcarSincronizacao?: () => Promise<void>;
+  limparFilaSincronizacao?: () => Promise<void>;
+  syncQueueErrors?: Record<number, string>;
+  isOnline?: boolean;
+  isSyncing?: boolean;
 }
 
 export function BancoDadosView({
@@ -52,12 +60,55 @@ export function BancoDadosView({
   armasParticulares,
   adicionarArmaParticular,
   devolverArmasParticulares,
-  editarPolicial
+  editarPolicial,
+  filaSincronizacao = [],
+  removerItemFilaSincronizacao,
+  forcarSincronizacao,
+  limparFilaSincronizacao,
+  syncQueueErrors = {},
+  isOnline = true,
+  isSyncing = false
 }: BancoDadosViewProps) {
   // --- ESTADOS DA ABA BANCO DE DADOS ---
-  const [bancoDadosSubSection, setBancoDadosSubSection] = useState<'policiais' | 'estoque' | 'particulares'>('policiais');
+  const [bancoDadosSubSection, setBancoDadosSubSection] = useState<'policiais' | 'estoque' | 'particulares' | 'sincronizacao'>('policiais');
   const [userSearchTerm, setUserSearchTerm] = useState('');
   const [stockSearchTerm, setStockSearchTerm] = useState('');
+
+  const [expandedPayloadId, setExpandedPayloadId] = useState<number | null>(null);
+
+  const formatOperacao = (op: string) => {
+    switch (op) {
+      case 'EFETIVAR_CAUTELA': return 'Cautela Bélica';
+      case 'EFETIVAR_DEVOLUCAO': return 'Devolução / Baixa de Cautela';
+      case 'SALVAR_OCORRENCIA': return 'Registro de Ocorrência';
+      case 'CADASTRAR_SENHA': return 'Alteração / Cadastro de Senha';
+      case 'CADASTRAR_POLICIAL': return 'Cadastro de Policial Militar';
+      default: return op;
+    }
+  };
+
+  const getPayloadSummary = (item: any) => {
+    try {
+      const payload = JSON.parse(item.payload);
+      if (item.operacao === 'EFETIVAR_CAUTELA') {
+        return `Matrícula: ${payload.matriculaPolicial} | Itens: ${payload.cartItens?.length || 0} equipamentos`;
+      }
+      if (item.operacao === 'EFETIVAR_DEVOLUCAO') {
+        const matCount = payload.idsMateriaisDevolvidos?.length || payload.idsMaterialsDevolvidos?.length || 0;
+        return `Cautela ID: ${payload.cautId?.substring(0, 8)}... | Materiais: ${matCount} itens`;
+      }
+      if (item.operacao === 'CADASTRAR_POLICIAL') {
+        return `Matrícula: ${payload.userToInsert?.matricula} | Nome: ${payload.userToInsert?.nome}`;
+      }
+      if (item.operacao === 'SALVAR_OCORRENCIA') {
+        return `Título: ${payload.novaOco?.titulo || 'Ocorrência Sem Título'}`;
+      }
+      if (item.operacao === 'CADASTRAR_SENHA') {
+        return `Matrícula: ${payload.matricula}`;
+      }
+    } catch (_) {}
+    return 'Detalhes indisponíveis.';
+  };
 
   // Estados para Novo Material
   const [newMaterialId, setNewMaterialId] = useState('');
@@ -602,6 +653,21 @@ export function BancoDadosView({
             }`}
           >
             ARMAS PARTICULARES
+          </button>
+          <button
+            onClick={() => setBancoDadosSubSection('sincronizacao')}
+            className={`px-4 py-2.5 rounded-lg text-xs font-mono font-bold transition-all duration-200 cursor-pointer relative ${
+              bancoDadosSubSection === 'sincronizacao'
+                ? 'bg-blue-600/10 text-white border border-blue-500/30 shadow-[0_0_10px_rgba(59,130,246,0.1)]'
+                : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/30'
+            }`}
+          >
+            FILA DE SINCRONIZAÇÃO
+            {filaSincronizacao.length > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 bg-rose-600 text-white text-[9px] font-sans px-1.5 py-0.5 rounded-full animate-pulse font-black shadow-[0_0_8px_rgba(225,29,72,0.6)]">
+                {filaSincronizacao.length}
+              </span>
+            )}
           </button>
         </div>
       </div>
@@ -2018,6 +2084,195 @@ export function BancoDadosView({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* CONTEÚDO: FILA DE SINCRONIZAÇÃO */}
+      {bancoDadosSubSection === 'sincronizacao' && (
+        <div className="bg-slate-900/60 backdrop-blur-md border border-slate-800/80 rounded-xl p-5 shadow-lg space-y-6 animate-fadeIn">
+          <div className="flex flex-wrap justify-between items-center gap-4 border-b border-slate-800/50 pb-4">
+            <div>
+              <h4 className="text-sm font-bold font-mono text-slate-100 uppercase tracking-wider flex items-center gap-2">
+                <RefreshCw className={`h-4.5 w-4.5 text-blue-500 ${isSyncing ? 'animate-spin' : ''}`} />
+                <span>Painel de Contingência & Sincronização</span>
+              </h4>
+              <p className="text-[11px] text-slate-400 mt-1 font-sans">
+                Gerencie e libere transações offline retidas no SQLite local devido a instabilidades de rede ou conflitos de políticas.
+              </p>
+            </div>
+
+            <div className="flex gap-2.5 font-mono">
+              <button
+                onClick={async () => {
+                  if (forcarSincronizacao) {
+                    await forcarSincronizacao();
+                  }
+                }}
+                disabled={!isOnline || isSyncing || filaSincronizacao.length === 0}
+                className={`px-3.5 py-2 rounded-lg text-[10px] font-bold uppercase transition-all duration-200 cursor-pointer flex items-center gap-2 border ${
+                  !isOnline || isSyncing || filaSincronizacao.length === 0
+                    ? 'bg-slate-950 border-slate-850 text-slate-600 cursor-not-allowed opacity-40'
+                    : 'bg-blue-600/10 text-blue-400 border-blue-500/30 hover:bg-blue-600/20 glow-blue'
+                }`}
+              >
+                <Play className="h-3.5 w-3.5" />
+                <span>Sincronizar Fila</span>
+              </button>
+              <button
+                onClick={async () => {
+                  if (window.confirm('ATENÇÃO: Isso apagará permanentemente TODAS as transações offline pendentes no dispositivo local. Os dados não serão salvos no Supabase. Deseja prosseguir?')) {
+                    if (limparFilaSincronizacao) {
+                      await limparFilaSincronizacao();
+                    }
+                  }
+                }}
+                disabled={filaSincronizacao.length === 0}
+                className={`px-3.5 py-2 rounded-lg text-[10px] font-bold uppercase transition-all duration-200 cursor-pointer flex items-center gap-2 border ${
+                  filaSincronizacao.length === 0
+                    ? 'bg-slate-950 border-slate-850 text-slate-600 cursor-not-allowed opacity-40'
+                    : 'bg-rose-600/10 text-rose-400 border-rose-500/30 hover:bg-rose-600/20'
+                }`}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                <span>Limpar Fila</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Grid de Informações Rápidas */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="bg-slate-950/40 border border-slate-850 p-4 rounded-xl flex flex-col justify-between">
+              <span className="text-[9px] uppercase font-bold tracking-wider text-slate-500 font-mono">Status da Conexão</span>
+              <div className="flex items-center gap-2 mt-2">
+                <span className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`}></span>
+                <span className="text-xs font-mono font-bold uppercase text-slate-200">
+                  {isOnline ? 'Conectado (Online)' : 'Instável / Offline'}
+                </span>
+              </div>
+            </div>
+
+            <div className="bg-slate-950/40 border border-slate-850 p-4 rounded-xl flex flex-col justify-between">
+              <span className="text-[9px] uppercase font-bold tracking-wider text-slate-500 font-mono">Transações na Fila</span>
+              <span className="text-xl font-bold font-mono text-slate-100 mt-2">
+                {filaSincronizacao.length} <span className="text-xs font-normal text-slate-500">itens</span>
+              </span>
+            </div>
+
+            <div className="bg-slate-950/40 border border-slate-850 p-4 rounded-xl flex flex-col justify-between">
+              <span className="text-[9px] uppercase font-bold tracking-wider text-slate-500 font-mono">Processamento</span>
+              <span className="text-xs font-mono font-bold uppercase text-slate-200 mt-2">
+                {isSyncing ? (
+                  <span className="text-amber-400 flex items-center gap-1.5">
+                    <RefreshCw className="h-3.5 w-3.5 animate-spin" /> Sincronizando...
+                  </span>
+                ) : (
+                  <span className="text-slate-400">Aguardando gatilho</span>
+                )}
+              </span>
+            </div>
+          </div>
+
+          {filaSincronizacao.length === 0 ? (
+            <div className="text-center py-10 bg-slate-950/20 border border-dashed border-slate-850 rounded-xl space-y-2">
+              <CheckCircle className="h-8 w-8 text-emerald-500/60 mx-auto" />
+              <h5 className="text-xs font-bold font-mono text-slate-300 uppercase">Fila de Sincronização Limpa</h5>
+              <p className="text-[10px] text-slate-500 max-w-sm mx-auto font-sans">
+                Não há transações offline retidas no SQLite local. Todo o estoque e militares estão sincronizados com a nuvem.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex justify-between items-center text-[10px] uppercase font-bold text-slate-400 tracking-wider px-2 font-mono">
+                <span>Operações em Fila (Ordem Cronológica)</span>
+                <span>Ações</span>
+              </div>
+
+              <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
+                {filaSincronizacao.map((item) => {
+                  const errorMsg = syncQueueErrors[item.id];
+                  const isExpanded = expandedPayloadId === item.id;
+                  return (
+                    <div 
+                      key={item.id} 
+                      className={`bg-slate-950/50 border rounded-xl transition-all duration-200 ${
+                        errorMsg ? 'border-red-900/40 hover:border-red-900/60' : 'border-slate-850 hover:border-slate-800'
+                      }`}
+                    >
+                      <div className="p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                        <div className="space-y-1.5 flex-1 w-full min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-[8px] font-mono bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800 font-bold text-slate-400">
+                              #{item.id}
+                            </span>
+                            <span className={`text-[9px] font-mono px-2 py-0.5 rounded-full font-bold uppercase ${
+                              item.operacao.includes('DEVOLUCAO') 
+                                ? 'bg-amber-400/10 text-amber-400 border border-amber-500/20' 
+                                : item.operacao.includes('CAUTELA')
+                                ? 'bg-blue-400/10 text-blue-400 border border-blue-500/20'
+                                : 'bg-emerald-400/10 text-emerald-400 border border-emerald-500/20'
+                            }`}>
+                              {formatOperacao(item.operacao)}
+                            </span>
+                            {errorMsg && (
+                              <span className="text-[8px] font-mono bg-rose-600 text-white px-2 py-0.5 rounded-full font-black animate-pulse flex items-center gap-1">
+                                <AlertTriangle className="h-3 w-3" /> BLOQUEADO / ERRO
+                              </span>
+                            )}
+                            <span className="text-[9px] font-mono text-slate-500">
+                              {new Date(item.timestamp).toLocaleString('pt-BR')}
+                            </span>
+                          </div>
+
+                          <p className="text-xs font-mono font-bold text-slate-300 truncate">
+                            {getPayloadSummary(item)}
+                          </p>
+
+                          {errorMsg && (
+                            <div className="text-[10px] font-mono text-rose-450 bg-red-955/20 border border-red-900/30 p-2 rounded-lg mt-1 flex items-start gap-1.5">
+                              <ShieldAlert className="h-3.5 w-3.5 text-rose-500 shrink-0 mt-0.5" />
+                              <span className="break-all"><strong>Erro de SGBD:</strong> {errorMsg}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex gap-2 font-mono shrink-0 w-full sm:w-auto justify-end">
+                          <button
+                            onClick={() => setExpandedPayloadId(isExpanded ? null : item.id)}
+                            className="p-2 border border-slate-800 hover:border-slate-700 bg-slate-900/40 text-slate-400 hover:text-slate-200 rounded-lg transition-colors cursor-pointer"
+                            title="Ver Payload JSON"
+                          >
+                            <FileText className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={async () => {
+                              if (window.confirm('Deseja realmente ignorar/descartar esta transação? Ela será removida da fila e NUNCA será sincronizada com o Supabase.')) {
+                                if (removerItemFilaSincronizacao) {
+                                  await removerItemFilaSincronizacao(item.id);
+                                }
+                              }
+                            }}
+                            className="p-2 border border-rose-900/30 hover:border-rose-900/50 bg-rose-955/10 text-rose-400 hover:text-rose-350 rounded-lg transition-colors cursor-pointer"
+                            title="Descartar Item"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {isExpanded && (
+                        <div className="px-4 pb-4 border-t border-slate-850/50 pt-3 bg-slate-950/40">
+                          <span className="text-[9px] uppercase font-bold tracking-wider text-slate-500 font-mono block mb-1.5 font-bold">JSON do Payload</span>
+                          <pre className="text-[10px] font-mono text-blue-400 bg-slate-950 border border-slate-900 p-3 rounded-lg overflow-x-auto max-h-[150px]">
+                            {JSON.stringify(JSON.parse(item.payload), null, 2)}
+                          </pre>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
