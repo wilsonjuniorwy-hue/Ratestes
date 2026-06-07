@@ -530,13 +530,34 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
           finalQuartelId = armeiroLogado.id_quartel;
         }
       }
-      
       const userToInsert = { 
         ...novoPolicial, 
         senha_hash: hashed,
         id_quartel: finalQuartelId
       };
-      
+
+      if (!isOnline) {
+        await offlineDb.enfileirarTransacaoOffline('CADASTRAR_POLICIAL', { 
+          userToInsert, 
+          rawSenha 
+        });
+
+        if (offlineDb.isDbReady) {
+          const localUsers = await offlineDb.obterUsuariosLocal();
+          await offlineDb.salvarUsuariosLocal([...localUsers, userToInsert]);
+        }
+
+        setUsuarios(prev => [...prev, { ...novoPolicial, id_quartel: finalQuartelId, senha_hash: '' }]);
+
+        registrarLogAuditoria(
+          activeArmeiroMatricula || 'SYS-AM',
+          'cadastro_militar',
+          `Novo ${novoPolicial.perfil === 'armeiro_gestor' ? 'armeiro' : 'policial'} militar cadastrado (Modo Offline): ${novoPolicial.posto_graduacao} ${novoPolicial.nome} (Matrícula: ${novoPolicial.matricula}).`
+        );
+
+        return { success: true };
+      }
+
       const { error: insertError } = await supabase.from('usuarios').insert(userToInsert);
       if (insertError) {
         console.error('Erro ao cadastrar policial/armeiro:', insertError);
@@ -1971,6 +1992,33 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
             const { matricula, hashed } = payload;
             const { error } = await supabase.from('usuarios').update({ senha_hash: hashed }).eq('matricula', matricula);
             if (error) throw error;
+            success = true;
+          }
+          else if (item.operacao === 'CADASTRAR_POLICIAL') {
+            const { userToInsert, rawSenha } = payload;
+            const { error: errInsert } = await supabase.from('usuarios').insert(userToInsert);
+            if (errInsert) throw errInsert;
+            
+            if (userToInsert.perfil === 'armeiro_gestor' && rawSenha) {
+              try {
+                let slugQuartel = 'cavalaria';
+                const quartelEmMemoria = quarteis.find(q => q.id === userToInsert.id_quartel);
+                if (quartelEmMemoria && quartelEmMemoria.slug) {
+                  slugQuartel = quartelEmMemoria.slug;
+                }
+                const emailCalculado = `${userToInsert.matricula.trim().toLowerCase()}@${slugQuartel.trim().toLowerCase()}.pm`;
+                
+                await supabase.functions.invoke('criar-armeiro-auth', {
+                  body: { 
+                    matricula: userToInsert.matricula, 
+                    senha: rawSenha,
+                    email: emailCalculado
+                  }
+                });
+              } catch (funcErr) {
+                console.warn('SGBD Sync: Erro ao criar armeiro no Auth durante a sincronização:', funcErr);
+              }
+            }
             success = true;
           }
           

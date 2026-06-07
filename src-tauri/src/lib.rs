@@ -75,3 +75,4 @@ pub fn run() {
     .expect("error while running tauri application");
 }
 
+// Força recompilação para atualizar permissões de capacidades (v0.2.13)
