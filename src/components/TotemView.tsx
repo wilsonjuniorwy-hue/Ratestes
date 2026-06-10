@@ -7,7 +7,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { Usuario, Material, Cautela, CautelaItem, AuditoriaLog } from '../types';
 import { supabase } from '../supabaseClient';
-import { comparePassword } from '../utils/crypto';
+import { comparePassword, hashSHA256 } from '../utils/crypto';
 import { useOfflineDatabase } from '../hooks/useOfflineDatabase';
 
 interface TotemViewProps {
@@ -233,94 +233,10 @@ export function TotemView({
         }
       }
 
-      // Primeiro acesso (senha vazia)
-      if (user.senha_hash === '' || !user.senha_hash) {
-        setLoggedUser(user);
-        setPolicialStep('cadastro_senha');
-        setNovaSenhaInput('');
-        setConfirmarSenhaInput('');
-        setCadastroSenhaError('');
-        return;
-      }
-
-      // Validar senha de forma segura com hash
-      const { matches, needsMigration } = await comparePassword(senhaInput, user.senha_hash);
-
-      if (!matches) {
-        if (!isOnline) {
-          // Incrementa localmente no SQLite
-          const novasTentativas = (user.tentativas_login || 0) + 1;
-          let bloqueadoAteStr = null;
-          let msgErro = `Senha incorreta. Tentativa ${novasTentativas} de 3.`;
-
-          if (novasTentativas >= 3) {
-            bloqueadoAteStr = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-            msgErro = `Acesso bloqueado por excesso de tentativas. Tente novamente em 5 minutos.`;
-          }
-
-          const usersLocal = await offlineDb.obterUsuariosLocal();
-          const updated = usersLocal.map(u => {
-            if (u.matricula === user.matricula) {
-              return { ...u, tentativas_login: novasTentativas, bloqueado_ate: bloqueadoAteStr };
-            }
-            return u;
-          });
-          await offlineDb.salvarUsuariosLocal(updated);
-
-          setAuthError(msgErro);
-          return;
-        } else {
-          // Invoca a função remota no Supabase para registrar a falha de forma segura (ignora RLS)
-          const { data: rpcRes, error: rpcErr } = await supabase.rpc('registrar_tentativa_login_falha', { 
-            p_matricula: matriculaNorm 
-          });
-
-          if (rpcErr) {
-            console.error('Erro ao registrar falha de login via RPC:', rpcErr);
-            setAuthError('Senha incorreta.');
-            return;
-          }
-
-          const resObj = typeof rpcRes === 'string' ? JSON.parse(rpcRes) : rpcRes;
-          const novasTentativas = resObj?.tentativas || 1;
-          let msgErro = `Senha incorreta. Tentativa ${novasTentativas} de 3.`;
-
-          if (novasTentativas >= 3) {
-            msgErro = `Acesso bloqueado por excesso de tentativas. Tente novamente em 5 minutos.`;
-          }
-
-          setAuthError(msgErro);
-          return;
-        }
-      }
-
-      // Se a senha estiver correta, reseta tentativas de login se havia alguma falha acumulada
-      if ((user.tentativas_login || 0) > 0 || user.bloqueado_ate) {
-        if (!isOnline) {
-          const usersLocal = await offlineDb.obterUsuariosLocal();
-          const updated = usersLocal.map(u => {
-            if (u.matricula === user.matricula) {
-              return { ...u, tentativas_login: 0, bloqueado_ate: null };
-            }
-            return u;
-          });
-          await offlineDb.salvarUsuariosLocal(updated);
-        } else {
-          supabase.rpc('resetar_tentativas_login', { p_matricula: matriculaNorm }).then(({ error: resetErr }) => {
-            if (resetErr) console.error('Erro ao resetar tentativas via RPC:', resetErr);
-          });
-        }
-      }
-
-      // Migrar senha legada se necessário
-      if (needsMigration) {
-        cadastrarSenha(user.matricula, senhaInput);
-      }
-
-      // Sucesso no login
+      // Sucesso no login (acesso direto, sem validação de senha neste momento)
       setLoggedUser(user);
       setPolicialStep('aptidao');
-      registrarLogAuditoria(user.matricula, 'login', `Militar logged in via autoatendimento no portal. Status atual: ${user.situacao_cautela.toUpperCase()}.`);
+      registrarLogAuditoria(user.matricula, 'login', `Militar logado via matrícula no autoatendimento. Status atual: ${user.situacao_cautela.toUpperCase()}.`);
     } catch (err) {
       console.error('Erro de login no Totem:', err);
       setAuthError('Falha de conexão com o SGBD militar.');
@@ -328,7 +244,7 @@ export function TotemView({
   };
 
   // ---- CADASTRO DE SENHA DO PRIMEIRO ACESSO ----
-  const handleCadastrarSenha = (e: React.FormEvent) => {
+  const handleCadastrarSenha = async (e: React.FormEvent) => {
     e.preventDefault();
     setCadastroSenhaError('');
 
@@ -346,9 +262,15 @@ export function TotemView({
 
     cadastrarSenha(loggedUser.matricula, novaSenhaInput);
 
-    const updatedUser = { ...loggedUser, senha_hash: novaSenhaInput };
+    const hashed = await hashSHA256(novaSenhaInput);
+    const updatedUser = { ...loggedUser, senha_hash: hashed };
     setLoggedUser(updatedUser);
-    setPolicialStep('aptidao');
+    
+    if (cartItens.length > 0) {
+      setPolicialStep('assinatura');
+    } else {
+      setPolicialStep('aptidao');
+    }
   };
 
   // ---- VERIFICAÇÃO DE APTIDÃO ----
@@ -463,7 +385,7 @@ export function TotemView({
           
           <div className="space-y-1.5">
             {[
-              { id: 'login', num: '1', title: 'Identificação', desc: 'Matrícula e senha' },
+              { id: 'login', num: '1', title: 'Identificação', desc: 'Apenas Matrícula' },
               { id: 'aptidao', num: '2', title: 'Aptidão Clínica', desc: 'Controle de barreiras' },
               { id: 'carrinho', num: '3', title: 'Dotação de Carga', desc: 'Seleção de materiais' },
               { id: 'assinatura', num: '4', title: 'Confirmação', desc: 'Termo e assinatura' },
@@ -574,22 +496,6 @@ export function TotemView({
                     />
                   </div>
 
-                  <div className="space-y-1.5">
-                    <div className="flex justify-between items-center">
-                      <label className="text-[10px] font-mono font-bold text-slate-450 uppercase tracking-wide">Senha Individual:</label>
-                      <span className="text-[9px] text-slate-500 font-mono">Acesso rápido: 1 ou padrão: 123456</span>
-                    </div>
-                    <input
-                      type="password"
-                      id="input-senha"
-                      placeholder="••••••••"
-                      required
-                      value={senhaInput}
-                      onChange={(e) => setSenhaInput(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 focus:border-blue-500 p-3 text-xs font-mono text-slate-200 focus:outline-none rounded-lg transition-all focus:ring-1 focus:ring-blue-500/20"
-                    />
-                  </div>
-
                   {authError && (
                     <div className="bg-red-955/30 border border-red-900/40 p-3.5 rounded-lg text-xs text-red-400 font-mono leading-normal flex items-start gap-2.5 glow-red">
                       <ShieldAlert className="h-4.5 w-4.5 shrink-0 mt-0.5 text-red-500" />
@@ -602,7 +508,7 @@ export function TotemView({
                     id="btn-submit-login"
                     className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold font-mono py-3.5 px-4 rounded-lg text-xs transition-all shadow-md flex items-center justify-center gap-2 uppercase tracking-wider cursor-pointer glow-blue"
                   >
-                    <span>Autenticar Operador</span>
+                    <span>Identificar Militar</span>
                     <ArrowRight className="h-4.5 w-4.5" />
                   </button>
                 </form>
@@ -671,14 +577,14 @@ export function TotemView({
                     id="btn-submit-cadastro-senha"
                     className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold font-mono py-3.5 px-4 rounded-lg text-xs transition-all shadow-md flex items-center justify-center gap-2 uppercase tracking-wider cursor-pointer glow-blue"
                   >
-                    <span>Cadastrar e Autenticar</span>
+                    <span>Cadastrar e Prosseguir</span>
                     <ArrowRight className="h-4.5 w-4.5" />
                   </button>
 
                   <button
                     type="button"
-                    onClick={handleLogoutPolicial}
-                    className="w-full bg-transparent hover:bg-slate-950/50 text-slate-400 hover:text-slate-200 border border-transparent hover:border-slate-800 font-mono py-2 rounded-lg text-xs transition-all uppercase tracking-wider cursor-pointer"
+                    onClick={() => setPolicialStep('carrinho')}
+                    className="w-full bg-transparent hover:bg-slate-955/50 text-slate-400 hover:text-slate-200 border border-transparent hover:border-slate-800 font-mono py-2 rounded-lg text-xs transition-all uppercase tracking-wider cursor-pointer"
                   >
                     Cancelar
                   </button>
@@ -733,7 +639,7 @@ export function TotemView({
                               ? 'bg-emerald-950/40 text-emerald-400 border-emerald-900/30' 
                               : loggedUser.situacao_cautela === 'restrito_servico'
                               ? 'bg-amber-950/40 text-amber-400 border-amber-900/30'
-                              : 'bg-red-950/40 text-red-400 border-red-900/30'
+                              : 'bg-red-955/40 text-red-400 border-red-900/30'
                           }`}>
                             {loggedUser.situacao_cautela === 'restrito_servico' ? 'RESTRITO AO SERVIÇO' : loggedUser.situacao_cautela.toUpperCase()}
                           </span>
@@ -767,7 +673,7 @@ export function TotemView({
                         )}
                       </div>
                     ) : (
-                      <div className="bg-red-950/20 border border-red-900/40 p-4 rounded-lg flex items-start gap-3 glow-red">
+                      <div className="bg-red-955/20 border border-red-900/40 p-4 rounded-lg flex items-start gap-3 glow-red">
                         <AlertOctagon className="h-5.5 w-5.5 text-red-500 shrink-0 mt-0.5" />
                         <div className="space-y-2 flex-1">
                           <h4 className="text-xs font-bold text-red-300 font-mono uppercase block">BLOQUEIO CRÍTICO DISPARADO</h4>
@@ -963,13 +869,19 @@ export function TotemView({
                       className="bg-slate-950 hover:bg-slate-900 text-cyan-400 hover:text-cyan-300 font-bold font-mono py-2.5 px-4 rounded-lg text-xs flex items-center gap-1.5 border border-slate-800 hover:border-cyan-900/50 transition-all uppercase tracking-wider cursor-pointer shadow-md"
                     >
                       <Search className="h-4 w-4" />
-                      <span>Busca Rápida & Assinatura</span>
+                      <span>Busca Rápida</span>
                     </button>
                     
                     <button
                       id="btn-go-to-sign"
                       disabled={cartItens.length === 0}
-                      onClick={() => setPolicialStep('assinatura')}
+                      onClick={() => {
+                        if (!loggedUser?.senha_hash || loggedUser.senha_hash === '') {
+                          setPolicialStep('cadastro_senha');
+                        } else {
+                          setPolicialStep('assinatura');
+                        }
+                      }}
                       className={`font-bold font-mono py-2.5 px-4 rounded-lg text-xs flex items-center gap-1.5 transition-all uppercase tracking-wider ${
                         cartItens.length > 0
                           ? 'bg-blue-600 hover:bg-blue-500 text-white cursor-pointer shadow-md glow-blue'
@@ -1408,40 +1320,59 @@ export function TotemView({
                   </div>
 
                   {/* Campo de Senha (PIN) e Confirmação */}
-                  <div className="space-y-3 bg-slate-950/60 p-3.5 border border-slate-850 rounded-xl mt-auto">
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-mono font-bold text-slate-450 uppercase tracking-wider block">Assinatura Eletrônica (Sua Senha):</label>
-                      <input
-                        type="password"
-                        maxLength={6}
-                        placeholder="••••••"
-                        value={confirmarCautelaPin}
-                        onChange={(e) => setConfirmarCautelaPin(e.target.value.replace(/\D/g, ''))}
-                        className="w-full bg-slate-955 border border-slate-800 focus:border-cyan-550 p-2.5 text-xs font-mono text-slate-200 focus:outline-none tracking-widest text-center rounded-lg transition-all focus:ring-1 focus:ring-cyan-500/20 text-lg"
-                      />
+                  {!loggedUser?.senha_hash || loggedUser.senha_hash === '' ? (
+                    <div className="space-y-3 bg-slate-950/60 p-3.5 border border-slate-850 rounded-xl mt-auto text-center">
+                      <p className="text-[11px] text-slate-400 font-sans">
+                        Você ainda não possui uma senha de assinatura eletrônica cadastrada.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsSearchModalOpen(false);
+                          setPolicialStep('cadastro_senha');
+                        }}
+                        className="w-full bg-cyan-600 hover:bg-cyan-550 text-white font-bold font-mono py-3 rounded-lg text-xs flex items-center justify-center gap-1.5 transition-all uppercase tracking-wider cursor-pointer font-black"
+                      >
+                        <KeyRound className="h-4 w-4 text-cyan-200" />
+                        <span>Cadastrar Senha</span>
+                      </button>
                     </div>
-
-                    {pinError && (
-                      <div className="bg-red-955/30 border border-red-900/40 p-2.5 rounded-lg text-[10px] text-red-400 font-mono leading-normal flex items-start gap-2">
-                        <ShieldAlert className="h-4 w-4 shrink-0 mt-0.5 text-red-500" />
-                        <span>{pinError}</span>
+                  ) : (
+                    <div className="space-y-3 bg-slate-950/60 p-3.5 border border-slate-850 rounded-xl mt-auto">
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-mono font-bold text-slate-450 uppercase tracking-wider block">Assinatura Eletrônica (Sua Senha):</label>
+                        <input
+                          type="password"
+                          maxLength={6}
+                          placeholder="••••••"
+                          value={confirmarCautelaPin}
+                          onChange={(e) => setConfirmarCautelaPin(e.target.value.replace(/\D/g, ''))}
+                          className="w-full bg-slate-955 border border-slate-800 focus:border-cyan-550 p-2.5 text-xs font-mono text-slate-200 focus:outline-none tracking-widest text-center rounded-lg transition-all focus:ring-1 focus:ring-cyan-500/20 text-lg"
+                        />
                       </div>
-                    )}
 
-                    <button
-                      type="button"
-                      onClick={handleEfetivarCautela}
-                      disabled={cartItens.length === 0}
-                      className={`w-full font-bold font-mono py-3 rounded-lg text-xs flex items-center justify-center gap-1.5 transition-all uppercase tracking-wider ${
-                        cartItens.length > 0
-                          ? 'bg-cyan-600 hover:bg-cyan-550 text-white cursor-pointer shadow-md glow-cyan font-black'
-                          : 'bg-slate-955 border border-slate-850 text-slate-650 cursor-not-allowed'
-                      }`}
-                    >
-                      <FileCheck2 className="h-4 w-4" />
-                      <span>Confirmar & Cautelar</span>
-                    </button>
-                  </div>
+                      {pinError && (
+                        <div className="bg-red-955/30 border border-red-900/40 p-2.5 rounded-lg text-[10px] text-red-400 font-mono leading-normal flex items-start gap-2">
+                          <ShieldAlert className="h-4 w-4 shrink-0 mt-0.5 text-red-500" />
+                          <span>{pinError}</span>
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={handleEfetivarCautela}
+                        disabled={cartItens.length === 0}
+                        className={`w-full font-bold font-mono py-3 rounded-lg text-xs flex items-center justify-center gap-1.5 transition-all uppercase tracking-wider ${
+                          cartItens.length > 0
+                            ? 'bg-cyan-600 hover:bg-cyan-550 text-white cursor-pointer shadow-md glow-cyan font-black'
+                            : 'bg-slate-955 border border-slate-850 text-slate-650 cursor-not-allowed'
+                        }`}
+                      >
+                        <FileCheck2 className="h-4 w-4" />
+                        <span>Confirmar & Cautelar</span>
+                      </button>
+                    </div>
+                  )}
 
                 </div>
 
