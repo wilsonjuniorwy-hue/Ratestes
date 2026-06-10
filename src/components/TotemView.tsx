@@ -765,13 +765,22 @@ export function TotemView({
                               }`}>
                                 {mat.id_categoria.replace('CAT-', '')}
                               </span>
-                              <span className="text-[9px] text-slate-505 font-mono font-bold">
-                                {mat.controle_quantidade ? `Item Coletivo (Disp: ${disponivelQty})` : `SN: ${mat.id_material}`}
-                              </span>
+                              {mat.controle_quantidade && (
+                                <span className="text-[9px] text-slate-505 font-mono font-bold">
+                                  {`Item Coletivo (Disp: ${disponivelQty})`}
+                                </span>
+                              )}
                             </div>
-                            <h4 className="text-xs font-black uppercase text-slate-100">{mat.modelo}</h4>
+                            <h4 className="text-base font-black uppercase text-slate-100 flex items-center gap-2">
+                              <span>{mat.modelo}</span>
+                              <span className="inline-flex items-center justify-center bg-slate-950 border border-slate-800 text-slate-200 px-2 py-0.5 rounded font-mono text-xs font-bold tracking-normal shrink-0">
+                                {mat.id_material}
+                              </span>
+                            </h4>
                             <p className="text-[9px] text-slate-505 font-mono">
-                              {mat.controle_quantidade ? `Fabricante: ${mat.fabricante}` : (mat.calibre !== 'N/A' && mat.calibre ? `Calibre: ${mat.calibre}` : 'Material de Proteção')}
+                              {mat.controle_quantidade 
+                                ? (mat.fabricante && mat.fabricante !== 'N/A' ? `Fabricante: ${mat.fabricante}` : 'Item Coletivo/Lote') 
+                                : (mat.calibre !== 'N/A' && mat.calibre ? `Calibre: ${mat.calibre}` : 'Material de Proteção')}
                             </p>
                           </div>
 
@@ -1206,16 +1215,23 @@ export function TotemView({
                                 <div className="flex items-center gap-1.5">
                                   <span className={`text-[8px] px-2 py-0.5 rounded font-black font-mono border ${
                                     mat.id_categoria === 'CAT-ARMA-CURTA' || mat.id_categoria === 'CAT-ARMA-LONGA'
-                                      ? 'bg-cyan-950/50 text-cyan-400 border-cyan-900/30'
+                                      ? 'bg-cyan-955/50 text-cyan-400 border-cyan-900/30'
                                       : 'bg-slate-900 text-slate-400 border-slate-800'
                                   }`}>
                                     {mat.id_categoria.replace('CAT-', '')}
                                   </span>
-                                  <span className="text-[9px] text-slate-500 font-mono font-bold">
-                                    {mat.controle_quantidade ? `Item Coletivo (Disp: ${disponivelQty})` : `Código: ${mat.id_material}`}
-                                  </span>
+                                  {mat.controle_quantidade && (
+                                    <span className="text-[9px] text-slate-500 font-mono font-bold">
+                                      {`Item Coletivo (Disp: ${disponivelQty})`}
+                                    </span>
+                                  )}
                                 </div>
-                                <h4 className="text-xs font-black uppercase text-slate-100">{mat.modelo}</h4>
+                                <h4 className="text-base font-black uppercase text-slate-100 flex items-center gap-2">
+                                  <span>{mat.modelo}</span>
+                                  <span className="inline-flex items-center justify-center bg-slate-950 border border-slate-800 text-slate-200 px-2 py-0.5 rounded font-mono text-xs font-bold tracking-normal shrink-0">
+                                    {mat.id_material}
+                                  </span>
+                                </h4>
                                 <p className="text-[9px] text-slate-500 font-mono">{mat.calibre !== 'N/A' && mat.calibre ? `Calibre: ${mat.calibre}` : 'Material de Proteção'}</p>
                               </div>
 

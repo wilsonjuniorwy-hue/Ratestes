@@ -348,11 +348,11 @@ export function BancoDadosView({
     } else {
       idNorm = newMaterialId.trim().toUpperCase();
       modNorm = newMaterialModelo.trim();
-      fabNorm = newMaterialFabricante.trim();
+      fabNorm = 'N/A';
       specNorm = newMaterialSpecs.trim();
       isQty = newMaterialQuantidade > 1;
 
-      if (!idNorm || !modNorm || !fabNorm || !newMaterialCategoria) {
+      if (!idNorm || !modNorm || !newMaterialCategoria) {
         setMaterialError('Preencha todos os campos obrigatórios (*).');
         return;
       }
@@ -907,7 +907,7 @@ export function BancoDadosView({
                     </div>
 
                     <div className="space-y-1">
-                      <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wide block">Modelo *:</label>
+                      <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wide block">Selecione o Modelo/Nome da Arma *:</label>
                       <select
                         required
                         value={selectedWeaponModel}
@@ -974,18 +974,6 @@ export function BancoDadosView({
                     )}
 
                     <div className="space-y-1">
-                      <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wide block">Fabricante *:</label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="EX: Taurus"
-                        value={newMaterialFabricante}
-                        onChange={(e) => setNewMaterialFabricante(e.target.value)}
-                        className="w-full bg-slate-955 border border-slate-800 focus:border-blue-500 p-2.5 text-xs text-slate-200 focus:outline-none rounded-lg focus:ring-1 focus:ring-blue-500/20"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
                       <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wide block">Calibre *:</label>
                       <input
                         type="text"
@@ -1048,25 +1036,13 @@ export function BancoDadosView({
                     </div>
 
                     <div className="space-y-1">
-                      <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wide block">Modelo *:</label>
+                      <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wide block">Nome para Visualização *:</label>
                       <input
                         type="text"
                         required
                         placeholder="EX: Colete Kevlar Nivel III"
                         value={newMaterialModelo}
                         onChange={(e) => setNewMaterialModelo(e.target.value)}
-                        className="w-full bg-slate-955 border border-slate-800 focus:border-blue-500 p-2.5 text-xs text-slate-200 focus:outline-none rounded-lg focus:ring-1 focus:ring-blue-500/20"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wide block">Fabricante *:</label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="EX: Inbra Terrestre"
-                        value={newMaterialFabricante}
-                        onChange={(e) => setNewMaterialFabricante(e.target.value)}
                         className="w-full bg-slate-955 border border-slate-800 focus:border-blue-500 p-2.5 text-xs text-slate-200 focus:outline-none rounded-lg focus:ring-1 focus:ring-blue-500/20"
                       />
                     </div>
@@ -1129,12 +1105,12 @@ export function BancoDadosView({
                 <div className="relative max-w-sm w-full">
                   <input
                     type="text"
-                    placeholder="Filtrar estoque por modelo, fabricante ou serial..."
+                    placeholder="Filtrar estoque por nome, serial ou especificações..."
                     value={stockSearchTerm}
                     onChange={(e) => setStockSearchTerm(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-lg py-2.5 pl-9 pr-3 text-xs font-mono text-slate-200 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20"
+                    className="w-full bg-slate-955 border border-slate-800 rounded-lg py-2.5 pl-9 pr-3 text-xs font-mono text-slate-202 focus:outline-none focus:border-blue-505 focus:ring-1 focus:ring-blue-505/20"
                   />
-                  <Search className="absolute left-3 top-3.5 h-3.5 w-3.5 text-slate-555" />
+                  <Search className="absolute left-3 top-3.5 h-3.5 w-3.5 text-slate-550" />
                 </div>
                 <div className="text-[10px] font-mono text-slate-455 uppercase font-bold tracking-wider">
                   Itens Totais: <span className="text-white font-black">{materiais.length}</span>
@@ -1146,7 +1122,7 @@ export function BancoDadosView({
                   <thead className="bg-[#0b1329]/65 border border-slate-850 text-slate-455 font-mono text-[9px] uppercase tracking-wider sticky top-0 z-10">
                     <tr>
                       <th className="p-4">Código / Categoria</th>
-                      <th className="p-4">Modelo / Fabricante</th>
+                      <th className="p-4">Nome de Visualização</th>
                       <th className="p-4">Status no Paiol</th>
                       <th className="p-4">Ação</th>
                     </tr>
@@ -1181,7 +1157,10 @@ export function BancoDadosView({
                             <td className="p-4">
                               <div className="flex flex-col">
                                 <span className="font-bold text-slate-205 uppercase">{mat.modelo}</span>
-                                <span className="text-[10px] text-slate-550 font-mono mt-0.5">{mat.fabricante} {mat.calibre !== 'N/A' && mat.calibre ? `[Calibre: ${mat.calibre}]` : ''}</span>
+                                <span className="text-[10px] text-slate-550 font-mono mt-0.5">
+                                  {mat.fabricante && mat.fabricante !== 'N/A' ? `${mat.fabricante} ` : ''}
+                                  {mat.calibre !== 'N/A' && mat.calibre ? `[Calibre: ${mat.calibre}]` : ''}
+                                </span>
                                 {mat.quantidade_carregadores !== undefined && (
                                   <span className="text-[9px] text-amber-450 font-mono font-bold uppercase tracking-wider mt-1 block bg-amber-950/20 px-1.5 py-0.5 rounded border border-amber-900/20 w-fit">
                                     Carregadores: {mat.quantidade_carregadores}
