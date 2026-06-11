@@ -57,9 +57,10 @@ export default function FlowSimulator({
   const [authError, setAuthError] = useState('');
 
   // Estados para Impressão de Relatórios
-  const [printMode, setPrintMode] = useState<'cautelas' | 'logs' | 'ocorrencia' | null>(null);
+  const [printMode, setPrintMode] = useState<'cautelas' | 'logs' | 'ocorrencia' | 'relatorio' | null>(null);
   const [printLogDate, setPrintLogDate] = useState('');
   const [selectedOcorrenciaPrint, setSelectedOcorrenciaPrint] = useState<OcorrenciaRelatorio | null>(null);
+  const [printReportData, setPrintReportData] = useState<any>(null);
 
   // ---- IMPRESSÃO DE RELATÓRIOS ----
   const handlePrintCautelas = () => {
@@ -79,6 +80,14 @@ export default function FlowSimulator({
   const handlePrintOcorrencia = (oco: OcorrenciaRelatorio) => {
     setSelectedOcorrenciaPrint(oco);
     setPrintMode('ocorrencia');
+    setTimeout(() => {
+      window.print();
+    }, 150);
+  };
+
+  const handlePrintRelatorio = (reportData: any) => {
+    setPrintReportData(reportData);
+    setPrintMode('relatorio');
     setTimeout(() => {
       window.print();
     }, 150);
@@ -267,6 +276,11 @@ export default function FlowSimulator({
             pendenciasServico={db.pendenciasServico}
             adicionarPendencia={db.adicionarPendencia}
             resolverPendencia={db.resolverPendencia}
+            usuarios={db.usuarios}
+            cautelas={db.cautelas}
+            cautelaItens={db.cautelaItens}
+            armasParticulares={db.armasParticulares}
+            handlePrintRelatorio={handlePrintRelatorio}
           />
         </ErrorBoundary>
       )}
@@ -329,7 +343,10 @@ export default function FlowSimulator({
           #print-area-ocorrencia {
             display: ${printMode === 'ocorrencia' ? 'block' : 'none'} !important;
           }
-          #print-area-cautelas, #print-area-logs, #print-area-ocorrencia {
+          #print-area-relatorio {
+            display: ${printMode === 'relatorio' ? 'block' : 'none'} !important;
+          }
+          #print-area-cautelas, #print-area-logs, #print-area-ocorrencia, #print-area-relatorio {
             width: 100% !important;
             margin: 0 !important;
             padding: 15px !important;
@@ -370,7 +387,7 @@ export default function FlowSimulator({
           }
         }
         @media screen {
-          #print-area-cautelas, #print-area-logs, #print-area-ocorrencia {
+          #print-area-cautelas, #print-area-logs, #print-area-ocorrencia, #print-area-relatorio {
             display: none !important;
           }
         }
@@ -529,6 +546,203 @@ export default function FlowSimulator({
                 Visto do Comandante do Policiamento / Guarda
                 <br />
                 <span style={{ fontSize: '8pt', color: '#555' }}>Matrícula: ______________</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ÁREA DE IMPRESSÃO - RELATÓRIOS DO LIVRO DE OCORRÊNCIAS */}
+      {printReportData && (
+        <div id="print-area-relatorio" style={{ fontFamily: 'Arial, sans-serif' }}>
+          <h2 style={{ textAlign: 'center', textTransform: 'uppercase', borderBottom: '2px solid #000', paddingBottom: '8px', marginBottom: '20px' }}>
+            {printReportData.title}
+          </h2>
+          <div className="print-meta" style={{ textAlign: 'center', fontSize: '9pt', fontStyle: 'italic', marginBottom: '20px' }}>
+            {printReportData.meta}
+          </div>
+
+          {printReportData.type === 'periodico' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              {/* Tabela de Materiais Movimentados */}
+              {printReportData.data.movimentacoes && printReportData.data.movimentacoes.length > 0 && (
+                <div style={{ marginBottom: '25px' }}>
+                  <h3 style={{ fontSize: '11pt', fontWeight: 'bold', borderBottom: '1px solid #000', paddingBottom: '3px', marginBottom: '10px', textTransform: 'uppercase' }}>
+                    Materiais Pagos e Recebidos no Período
+                  </h3>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th style={{ width: '15%' }}>Matrícula</th>
+                        <th style={{ width: '25%' }}>Policial</th>
+                        <th style={{ width: '35%' }}>Materiais Pagos</th>
+                        <th style={{ width: '12.5%' }}>Cautela</th>
+                        <th style={{ width: '12.5%' }}>Devolução</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {printReportData.data.movimentacoes.map((mov: any, index: number) => (
+                        <tr key={index}>
+                          <td>{mov.matricula}</td>
+                          <td>{mov.nome_de_guerra || mov.nome}</td>
+                          <td>{mov.materiais}</td>
+                          <td>{mov.hora_cautela}</td>
+                          <td>{mov.hora_devolucao}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Tabela de Pendências de Devolução do Período */}
+              {printReportData.data.pendentes && printReportData.data.pendentes.length > 0 && (
+                <div style={{ marginBottom: '25px' }}>
+                  <h3 style={{ fontSize: '11pt', fontWeight: 'bold', borderBottom: '1px solid #000', paddingBottom: '3px', marginBottom: '10px', textTransform: 'uppercase' }}>
+                    Materiais Pendentes de Devolução (Retirados no Período e Não Entregues)
+                  </h3>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th style={{ width: '15%' }}>Matrícula</th>
+                        <th style={{ width: '25%' }}>Policial</th>
+                        <th style={{ width: '45%' }}>Materiais</th>
+                        <th style={{ width: '15%' }}>Previsão Devolução</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {printReportData.data.pendentes.map((pend: any, index: number) => (
+                        <tr key={index}>
+                          <td>{pend.matricula}</td>
+                          <td>{pend.nome_de_guerra || pend.nome}</td>
+                          <td>{pend.materiais}</td>
+                          <td>{pend.previsao}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Tabela de Armas Particulares Movimentadas */}
+              {printReportData.data.armasParticularesMov && printReportData.data.armasParticularesMov.length > 0 && (
+                <div style={{ marginBottom: '25px' }}>
+                  <h3 style={{ fontSize: '11pt', fontWeight: 'bold', borderBottom: '1px solid #000', paddingBottom: '3px', marginBottom: '10px', textTransform: 'uppercase' }}>
+                    Armas Particulares - Entradas e Saídas do Quartel
+                  </h3>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th style={{ width: '15%' }}>Matrícula</th>
+                        <th style={{ width: '20%' }}>Policial</th>
+                        <th style={{ width: '25%' }}>Modelo / Série</th>
+                        <th style={{ width: '15%' }}>Tipo Movimentação</th>
+                        <th style={{ width: '15%' }}>Data/Hora</th>
+                        <th style={{ width: '10%' }}>Obs.</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {printReportData.data.armasParticularesMov.map((mov: any, index: number) => (
+                        <tr key={index}>
+                          <td>{mov.matricula}</td>
+                          <td>{mov.nome_de_guerra || mov.nome}</td>
+                          <td>{mov.modelo_serie}</td>
+                          <td style={{ fontWeight: 'bold' }}>{mov.tipo_mov}</td>
+                          <td>{mov.data_hora}</td>
+                          <td>{mov.obs}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {printReportData.type === 'estoque' && (
+            <div>
+              <h3 style={{ fontSize: '11pt', fontWeight: 'bold', borderBottom: '1px solid #000', paddingBottom: '3px', marginBottom: '15px', textTransform: 'uppercase' }}>
+                Inventário Físico da Reserva de Armamento
+              </h3>
+              <table>
+                <thead>
+                  <tr>
+                    <th style={{ width: '30%' }}>Modelo / Fabricante</th>
+                    <th style={{ width: '25%' }}>Resumo de Estoque</th>
+                    <th style={{ width: '45%' }}>Detalhamento de Custódia (Itens Fora)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {printReportData.data.itens.map((item: any, index: number) => (
+                    <tr key={index}>
+                      <td style={{ fontWeight: 'bold' }}>{item.modelo} <span style={{ fontSize: '7pt', fontWeight: 'normal', color: '#666' }}>({item.fabricante})</span></td>
+                      <td>
+                        {item.total} un. ({item.disponivel} reserva, {item.fora} rua)
+                      </td>
+                      <td>
+                        {item.custodiantes && item.custodiantes.length > 0 ? (
+                          <ul style={{ margin: 0, paddingLeft: '15px', listStyleType: 'square', fontSize: '7.5pt' }}>
+                            {item.custodiantes.map((cust: any, cIdx: number) => (
+                              <li key={cIdx}>
+                                {cust.qtd} un. {cust.serie ? `(SN: ${cust.serie})` : ''} com {cust.nome} ({cust.matricula}) desde {cust.desde}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <span style={{ fontStyle: 'italic', color: '#666' }}>Todos os itens na reserva.</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {printReportData.type === 'particulares' && (
+            <div>
+              <h3 style={{ fontSize: '11pt', fontWeight: 'bold', borderBottom: '1px solid #000', paddingBottom: '3px', marginBottom: '15px', textTransform: 'uppercase' }}>
+                Armas Particulares sob Custódia do Quartel
+              </h3>
+              <table>
+                <thead>
+                  <tr>
+                    <th style={{ width: '15%' }}>Matrícula</th>
+                    <th style={{ width: '25%' }}>Proprietário</th>
+                    <th style={{ width: '35%' }}>Armamento / Acessórios</th>
+                    <th style={{ width: '15%' }}>Data Depósito</th>
+                    <th style={{ width: '10%' }}>Obs</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {printReportData.data.armas.map((arma: any, index: number) => (
+                    <tr key={index}>
+                      <td>{arma.matricula}</td>
+                      <td>{arma.nome}</td>
+                      <td>{arma.modelo} {arma.fabricante ? `[${arma.fabricante}]` : ''} {arma.calibre ? `(Cal. ${arma.calibre})` : ''} {arma.numero_serie ? `[SN: ${arma.numero_serie}]` : ''}</td>
+                      <td>{arma.data_deposito}</td>
+                      <td>{arma.obs}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Rodapé de Assinaturas */}
+          <div style={{ display: 'flex', justifyContent: 'space-around', marginTop: '60px', pageBreakInside: 'avoid' }}>
+            <div style={{ textAlign: 'center', width: '40%' }}>
+              <div style={{ borderTop: '1.5px solid #000', paddingTop: '5px', fontSize: '9pt' }}>
+                Armeiro Responsável pela Extração
+                <br />
+                <span style={{ fontSize: '8pt', color: '#555' }}>Assinatura / Visto</span>
+              </div>
+            </div>
+            <div style={{ textAlign: 'center', width: '40%' }}>
+              <div style={{ borderTop: '1.5px solid #000', paddingTop: '5px', fontSize: '9pt' }}>
+                Oficial de Dia / Comandante da Guarda
+                <br />
+                <span style={{ fontSize: '8pt', color: '#555' }}>Assinatura / Visto</span>
               </div>
             </div>
           </div>
