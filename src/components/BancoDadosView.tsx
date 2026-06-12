@@ -733,7 +733,25 @@ export function BancoDadosView({
                             <span className="text-[10px] text-slate-500 font-mono mt-0.5">{user.nome}</span>
                           </div>
                         </td>
-                        <td className="p-4 font-mono text-[11px] text-slate-400">{user.posto_graduacao}</td>
+                        <td className="p-4">
+                          <select
+                            value={user.posto_graduacao}
+                            onChange={async (e) => {
+                              if (editarPolicial) {
+                                try {
+                                  await editarPolicial(user.matricula, { posto_graduacao: e.target.value });
+                                } catch (err: any) {
+                                  alert('Erro ao atualizar posto/graduação: ' + err.message);
+                                }
+                              }
+                            }}
+                            className="bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs font-mono text-slate-200 focus:outline-none focus:border-blue-500 cursor-pointer"
+                          >
+                            {['Soldado', 'Cabo', 'Sargento', 'Subtenente', 'Tenente', 'Capitão', 'Major', 'Tenente-Coronel', 'Coronel'].map(p => (
+                              <option key={p} value={p}>{p}</option>
+                            ))}
+                          </select>
+                        </td>
                         <td className="p-4">
                           <select
                             value={user.situacao_cautela}

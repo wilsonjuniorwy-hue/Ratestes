@@ -20,6 +20,148 @@ import { BancoDadosView } from './BancoDadosView';
 import { OcorrenciasView } from './OcorrenciasView';
 import { ArmeiroProfileView } from './ArmeiroProfileView';
 
+const parseHandoverDescription = (desc: string) => {
+  const lines = desc.split('\n');
+  let title = '';
+  let subText = '';
+  let oficialCPU = '';
+  let adjuntoCPU = '';
+  let armeiroDia = '';
+  const stockItems: Array<{
+    material: string;
+    carregadores: string;
+    total: string;
+    disponivel: string;
+    cautelado: string;
+    manutencao: string;
+  }> = [];
+  let pendenciasText = '';
+  let passagemText = '';
+  let dateLine = '';
+  let confText = '';
+
+  let currentSection = '';
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+
+    if (i === 0) {
+      title = line;
+      continue;
+    }
+
+    if (line.startsWith('Assumi o serviço em substituição')) {
+      subText = line;
+      continue;
+    }
+
+    if (line === 'SERVIÇO DIÁRIO') {
+      currentSection = 'SERVIÇO_DIARIO';
+      continue;
+    }
+
+    if (line === 'MATERIAL CARGA') {
+      currentSection = 'MATERIAL_CARGA';
+      continue;
+    }
+
+    if (line === 'SITUAÇÃO DAS ALTERAÇÕES E PENDÊNCIAS DO SERVIÇO') {
+      currentSection = 'PENDENCIAS';
+      continue;
+    }
+
+    if (line === 'CONFERÊNCIA FÍSICA E QUANTITATIVA') {
+      currentSection = 'CONFERENCIA';
+      continue;
+    }
+
+    if (line === 'PASSAGEM DE SERVIÇO') {
+      currentSection = 'PASSAGEM';
+      continue;
+    }
+
+    if (currentSection === 'SERVIÇO_DIARIO') {
+      if (line.startsWith('Oficial CPU:')) oficialCPU = line.replace('Oficial CPU:', '').trim();
+      else if (line.startsWith('Adjunto ao CPU:')) adjuntoCPU = line.replace('Adjunto ao CPU:', '').trim();
+      else if (line.startsWith('Armeiro de dia:')) armeiroDia = line.replace('Armeiro de dia:', '').trim();
+    } else if (currentSection === 'MATERIAL_CARGA') {
+      if (line.startsWith('-')) {
+        const content = line.substring(1).trim();
+        const namePart = content.split(':')[0] || '';
+        const rest = content.substring(namePart.length + 1).trim();
+        
+        let carregadores = '0';
+        let total = '1';
+        let disponivel = '1';
+        let cautelado = '0';
+        let manutencao = '0';
+
+        if (rest.includes('(Disponível:')) {
+          const totalPart = rest.split('(Disponível:')[0].trim();
+          const detailPart = rest.split('(Disponível:')[1].replace(')', '').trim();
+
+          const totalMatch = totalPart.match(/^(\d+)\s*un/);
+          if (totalMatch) total = totalMatch[1];
+
+          const carrMatch = totalPart.match(/\+\s*(\d+)\s*carregadores/);
+          if (carrMatch) carregadores = carrMatch[1];
+
+          const cautMatch = detailPart.match(/Cautelado:\s*(\d+)/);
+          if (cautMatch) cautelado = cautMatch[1];
+
+          const manutMatch = detailPart.match(/Manutenção:\s*(\d+)/);
+          if (manutMatch) manutencao = manutMatch[1];
+
+          const dispMatch = detailPart.match(/Disponível:\s*(\d+)/);
+          if (dispMatch) disponivel = dispMatch[1];
+        } else {
+          const totalMatch = rest.match(/^(\d+)\s*un/);
+          if (totalMatch) total = totalMatch[1];
+
+          const dispMatch = rest.match(/(\d+)\s*un\.\s*disp\./);
+          if (dispMatch) disponivel = dispMatch[1];
+          
+          const cautMatch = rest.match(/(\d+)\s*un\.\s*em\s*campo/);
+          if (cautMatch) cautelado = cautMatch[1];
+        }
+
+        stockItems.push({
+          material: namePart.trim(),
+          carregadores,
+          total,
+          disponivel,
+          cautelado,
+          manutencao
+        });
+      }
+    } else if (currentSection === 'PENDENCIAS') {
+      pendenciasText += (pendenciasText ? '\n' : '') + line;
+    } else if (currentSection === 'CONFERENCIA') {
+      confText += (confText ? '\n' : '') + line;
+    } else if (currentSection === 'PASSAGEM') {
+      if (line.startsWith('Riacho Fundo I')) {
+        dateLine = line;
+      } else {
+        passagemText += (passagemText ? '\n' : '') + line;
+      }
+    }
+  }
+
+  return {
+    title,
+    subText,
+    oficialCPU,
+    adjuntoCPU,
+    armeiroDia,
+    stockItems,
+    pendenciasText,
+    passagemText,
+    dateLine,
+    confText
+  };
+};
+
 interface FlowSimulatorProps {
   db: ReturnType<typeof useSupabaseDatabase>;
   activeArmeiroMatricula: string;
@@ -281,6 +423,7 @@ export default function FlowSimulator({
             cautelaItens={db.cautelaItens}
             armasParticulares={db.armasParticulares}
             handlePrintRelatorio={handlePrintRelatorio}
+            categorias={db.categorias}
           />
         </ErrorBoundary>
       )}
@@ -351,6 +494,12 @@ export default function FlowSimulator({
             margin: 0 !important;
             padding: 15px !important;
           }
+          #print-area-cautelas *, #print-area-logs *, #print-area-ocorrencia *, #print-area-relatorio * {
+            color: #000000 !important;
+            opacity: 1 !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
           table {
             width: 100% !important;
             border-collapse: collapse !important;
@@ -362,7 +511,7 @@ export default function FlowSimulator({
             padding: 6px 8px !important;
             text-align: left !important;
             font-size: 8pt !important;
-            color: #000 !important;
+            color: #000000 !important;
             line-height: 1.2 !important;
           }
           th {
@@ -382,7 +531,7 @@ export default function FlowSimulator({
             margin-bottom: 15px !important;
             font-size: 8pt !important;
             text-align: center !important;
-            color: #333 !important;
+            color: #000000 !important;
             font-style: italic !important;
           }
         }
@@ -526,29 +675,117 @@ export default function FlowSimulator({
             </tbody>
           </table>
 
-          <div style={{ border: '1px solid #000', padding: '15px', minHeight: '200px', fontSize: '10pt', lineHeight: '1.6', marginBottom: '40px', whiteSpace: 'pre-wrap' }}>
-            <div style={{ fontWeight: 'bold', borderBottom: '1px solid #ddd', paddingBottom: '5px', marginBottom: '10px', textTransform: 'uppercase', fontSize: '9pt' }}>
-              Descrição dos Fatos:
-            </div>
-            {selectedOcorrenciaPrint.descricao}
-          </div>
+          {selectedOcorrenciaPrint.tipo === 'troca_turno' ? (() => {
+            const parsed = parseHandoverDescription(selectedOcorrenciaPrint.descricao);
+            return (
+              <div style={{ fontSize: '10pt', lineHeight: '1.6', marginBottom: '40px' }}>
+                <h3 style={{ fontSize: '11pt', fontWeight: 'bold', borderBottom: '1px solid #000', paddingBottom: '5px', marginBottom: '15px', textTransform: 'uppercase', textAlign: 'center' }}>
+                  {parsed.title}
+                </h3>
+                
+                <p style={{ marginBottom: '15px', textIndent: '2em' }}>{parsed.subText}</p>
+                
+                <h4 style={{ fontWeight: 'bold', borderBottom: '1px solid #000', paddingBottom: '3px', marginTop: '20px', marginBottom: '10px', textTransform: 'uppercase', fontSize: '9pt' }}>
+                  SERVIÇO DIÁRIO
+                </h4>
+                <div style={{ marginBottom: '15px', paddingLeft: '10px' }}>
+                  <div><strong>Oficial CPU:</strong> {parsed.oficialCPU}</div>
+                  <div><strong>Adjunto ao CPU:</strong> {parsed.adjuntoCPU}</div>
+                  <div><strong>Armeiro de dia:</strong> {parsed.armeiroDia}</div>
+                </div>
 
-          <div style={{ display: 'flex', justifyContent: 'space-around', marginTop: '60px' }}>
-            <div style={{ textAlign: 'center', width: '40%' }}>
-              <div style={{ borderTop: '1.5px solid #000', paddingTop: '5px', fontSize: '9pt' }}>
-                Assinatura do Armeiro Relator
-                <br />
-                <span style={{ fontSize: '8pt', color: '#555' }}>Matrícula: {selectedOcorrenciaPrint.matricula_armeiro}</span>
+                <h4 style={{ fontWeight: 'bold', borderBottom: '1px solid #000', paddingBottom: '3px', marginTop: '20px', marginBottom: '10px', textTransform: 'uppercase', fontSize: '9pt' }}>
+                  MATERIAL CARGA
+                </h4>
+                <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '15px' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ border: '1px solid #000', padding: '5px 8px', fontSize: '8pt', backgroundColor: '#f2f2f2', fontWeight: 'bold', width: '45%' }}>Material (Modelo/Fabricante)</th>
+                      <th style={{ border: '1px solid #000', padding: '5px 8px', fontSize: '8pt', backgroundColor: '#f2f2f2', fontWeight: 'bold', textAlign: 'center' }}>Qtd Total</th>
+                      <th style={{ border: '1px solid #000', padding: '5px 8px', fontSize: '8pt', backgroundColor: '#f2f2f2', fontWeight: 'bold', textAlign: 'center' }}>Disponível</th>
+                      <th style={{ border: '1px solid #000', padding: '5px 8px', fontSize: '8pt', backgroundColor: '#f2f2f2', fontWeight: 'bold', textAlign: 'center' }}>Cautelado (Rua)</th>
+                      <th style={{ border: '1px solid #000', padding: '5px 8px', fontSize: '8pt', backgroundColor: '#f2f2f2', fontWeight: 'bold', textAlign: 'center' }}>Manutenção</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {parsed.stockItems.map((item, idx) => {
+                      const showCarregadores = parseInt(item.carregadores) > 0;
+                      const displayName = showCarregadores 
+                        ? `${item.material} (+ ${item.carregadores} carregadores)` 
+                        : item.material;
+                      return (
+                        <tr key={idx}>
+                          <td style={{ border: '1px solid #000', padding: '5px 8px', fontSize: '8pt' }}>{displayName}</td>
+                          <td style={{ border: '1px solid #000', padding: '5px 8px', fontSize: '8pt', textAlign: 'center', fontWeight: 'bold' }}>{item.total}</td>
+                          <td style={{ border: '1px solid #000', padding: '5px 8px', fontSize: '8pt', textAlign: 'center', color: '#000000' }}>{item.disponivel}</td>
+                          <td style={{ border: '1px solid #000', padding: '5px 8px', fontSize: '8pt', textAlign: 'center', color: '#000000' }}>{item.cautelado}</td>
+                          <td style={{ border: '1px solid #000', padding: '5px 8px', fontSize: '8pt', textAlign: 'center', color: '#000000' }}>{item.manutencao}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+
+                {parsed.pendenciasText && (
+                  <>
+                    <h4 style={{ fontWeight: 'bold', borderBottom: '1px solid #000', paddingBottom: '3px', marginTop: '20px', marginBottom: '10px', textTransform: 'uppercase', fontSize: '9pt' }}>
+                      SITUAÇÃO DAS ALTERAÇÕES E PENDÊNCIAS DO SERVIÇO
+                    </h4>
+                    <div style={{ paddingLeft: '10px', marginBottom: '15px', whiteSpace: 'pre-wrap' }}>{parsed.pendenciasText}</div>
+                  </>
+                )}
+
+                {parsed.confText && (
+                  <>
+                    <h4 style={{ fontWeight: 'bold', borderBottom: '1px solid #000', paddingBottom: '3px', marginTop: '20px', marginBottom: '10px', textTransform: 'uppercase', fontSize: '9pt' }}>
+                      CONFERÊNCIA FÍSICA E QUANTITATIVA
+                    </h4>
+                    <div style={{ paddingLeft: '10px', marginBottom: '15px', fontStyle: 'italic' }}>{parsed.confText}</div>
+                  </>
+                )}
+
+                <h4 style={{ fontWeight: 'bold', borderBottom: '1px solid #000', paddingBottom: '3px', marginTop: '25px', marginBottom: '10px', textTransform: 'uppercase', fontSize: '9pt', textAlign: 'center' }}>
+                  PASSAGEM DE SERVIÇO
+                </h4>
+                <p style={{ marginBottom: '15px', textIndent: '2em' }}>{parsed.passagemText}</p>
+
+                {parsed.dateLine && (
+                  <div style={{ textAlign: 'right', marginTop: '20px', fontStyle: 'italic', fontWeight: 'bold' }}>
+                    {parsed.dateLine}
+                  </div>
+                )}
               </div>
-            </div>
-            <div style={{ textAlign: 'center', width: '40%' }}>
-              <div style={{ borderTop: '1.5px solid #000', paddingTop: '5px', fontSize: '9pt' }}>
-                Visto do Comandante do Policiamento / Guarda
-                <br />
-                <span style={{ fontSize: '8pt', color: '#555' }}>Matrícula: ______________</span>
+            );
+          })() : (
+            <div style={{ border: '1px solid #000', padding: '15px', minHeight: '200px', fontSize: '10pt', lineHeight: '1.6', marginBottom: '40px', whiteSpace: 'pre-wrap' }}>
+              <div style={{ fontWeight: 'bold', borderBottom: '1px solid #ddd', paddingBottom: '5px', marginBottom: '10px', textTransform: 'uppercase', fontSize: '9pt' }}>
+                Descrição dos Fatos:
               </div>
+              {selectedOcorrenciaPrint.descricao}
             </div>
-          </div>
+          )}
+
+          {(() => {
+            const armeiroMat = selectedOcorrenciaPrint.matricula_armeiro || '';
+            const cleanMat = armeiroMat.toUpperCase().startsWith('A') ? armeiroMat.substring(1) : armeiroMat;
+            const armeiroUser = db.usuarios.find((u: any) => {
+              const uMat = u.matricula.toUpperCase().startsWith('A') ? u.matricula.substring(1) : u.matricula;
+              return uMat === cleanMat;
+            });
+            const armeiroNomeCompleto = armeiroUser ? `${armeiroUser.posto_graduacao} ${armeiroUser.nome}` : 'Armeiro Relator';
+            
+            return (
+              <div style={{ display: 'flex', justifyContent: 'center', marginTop: '60px', pageBreakInside: 'avoid' }}>
+                <div style={{ textAlign: 'center', width: '50%' }}>
+                  <div style={{ borderTop: '1.5px solid #000', paddingTop: '5px', fontSize: '9pt' }}>
+                    {armeiroNomeCompleto}
+                    <br />
+                    Matrícula: {cleanMat}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -667,30 +904,27 @@ export default function FlowSimulator({
               <table>
                 <thead>
                   <tr>
-                    <th style={{ width: '30%' }}>Modelo / Fabricante</th>
-                    <th style={{ width: '25%' }}>Resumo de Estoque</th>
-                    <th style={{ width: '45%' }}>Detalhamento de Custódia (Itens Fora)</th>
+                    <th style={{ width: '15%' }}>Série / Patr.</th>
+                    <th style={{ width: '15%' }}>Categoria</th>
+                    <th style={{ width: '20%' }}>Modelo</th>
+                    <th style={{ width: '15%' }}>Fabricante</th>
+                    <th style={{ width: '10%' }}>Calibre</th>
+                    <th style={{ width: '10%' }}>Status</th>
+                    <th style={{ width: '15%' }}>Responsável</th>
                   </tr>
                 </thead>
                 <tbody>
                   {printReportData.data.itens.map((item: any, index: number) => (
                     <tr key={index}>
-                      <td style={{ fontWeight: 'bold' }}>{item.modelo} <span style={{ fontSize: '7pt', fontWeight: 'normal', color: '#666' }}>({item.fabricante})</span></td>
+                      <td style={{ fontWeight: 'bold' }}>{item.id_material}</td>
+                      <td>{item.categoria}</td>
+                      <td>{item.modelo}</td>
+                      <td>{item.fabricante}</td>
+                      <td>{item.calibre}</td>
+                      <td style={{ textTransform: 'uppercase' }}>{item.status_atual}</td>
                       <td>
-                        {item.total} un. ({item.disponivel} reserva, {item.fora} rua)
-                      </td>
-                      <td>
-                        {item.custodiantes && item.custodiantes.length > 0 ? (
-                          <ul style={{ margin: 0, paddingLeft: '15px', listStyleType: 'square', fontSize: '7.5pt' }}>
-                            {item.custodiantes.map((cust: any, cIdx: number) => (
-                              <li key={cIdx}>
-                                {cust.qtd} un. {cust.serie ? `(SN: ${cust.serie})` : ''} com {cust.nome} ({cust.matricula}) desde {cust.desde}
-                              </li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <span style={{ fontStyle: 'italic', color: '#666' }}>Todos os itens na reserva.</span>
-                        )}
+                        {item.responsavel}
+                        {item.desde && <span style={{ display: 'block', fontSize: '7pt', marginTop: '2px' }}>({item.desde})</span>}
                       </td>
                     </tr>
                   ))}
@@ -730,22 +964,27 @@ export default function FlowSimulator({
           )}
 
           {/* Rodapé de Assinaturas */}
-          <div style={{ display: 'flex', justifyContent: 'space-around', marginTop: '60px', pageBreakInside: 'avoid' }}>
-            <div style={{ textAlign: 'center', width: '40%' }}>
-              <div style={{ borderTop: '1.5px solid #000', paddingTop: '5px', fontSize: '9pt' }}>
-                Armeiro Responsável pela Extração
-                <br />
-                <span style={{ fontSize: '8pt', color: '#555' }}>Assinatura / Visto</span>
+          {(() => {
+            const armeiroMat = activeArmeiroMatricula || '';
+            const cleanMat = armeiroMat.toUpperCase().startsWith('A') ? armeiroMat.substring(1) : armeiroMat;
+            const armeiroUser = db.usuarios.find((u: any) => {
+              const uMat = u.matricula.toUpperCase().startsWith('A') ? u.matricula.substring(1) : u.matricula;
+              return uMat === cleanMat;
+            });
+            const armeiroNomeCompleto = armeiroUser ? `${armeiroUser.posto_graduacao} ${armeiroUser.nome}` : 'Armeiro Responsável';
+            
+            return (
+              <div style={{ display: 'flex', justifyContent: 'center', marginTop: '60px', pageBreakInside: 'avoid' }}>
+                <div style={{ textAlign: 'center', width: '50%' }}>
+                  <div style={{ borderTop: '1.5px solid #000', paddingTop: '5px', fontSize: '9pt' }}>
+                    {armeiroNomeCompleto}
+                    <br />
+                    Matrícula: {cleanMat}
+                  </div>
+                </div>
               </div>
-            </div>
-            <div style={{ textAlign: 'center', width: '40%' }}>
-              <div style={{ borderTop: '1.5px solid #000', paddingTop: '5px', fontSize: '9pt' }}>
-                Oficial de Dia / Comandante da Guarda
-                <br />
-                <span style={{ fontSize: '8pt', color: '#555' }}>Assinatura / Visto</span>
-              </div>
-            </div>
-          </div>
+            );
+          })()}
         </div>
       )}
 

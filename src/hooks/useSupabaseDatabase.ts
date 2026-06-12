@@ -769,7 +769,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
     titulo: string, 
     tipo: 'troca_turno' | 'avaria_material' | 'fiscalizacao' | 'outros' | 'conferencia_estoque', 
     descricao: string
-  ) => {
+  ): OcorrenciaRelatorio => {
     const armeiroSvc = activeArmeiroMatricula || usuarios.find(u => u.perfil === 'armeiro_gestor')?.matricula || 'SYS-AM';
 
     const novaOco: OcorrenciaRelatorio = {
@@ -800,6 +800,8 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
       'bloqueio_militar',
       `Novo relatório registrado no Livro de Ocorrências: "${titulo}" (Tipo: ${tipo.toUpperCase()}, ID: ${novaOco.id_ocorrencia}).`
     );
+
+    return novaOco;
   };
 
   // ---- ZERAR SENHA DE MILITAR ----
