@@ -5,7 +5,7 @@ import {
   Search, X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Usuario, Material, Cautela, CautelaItem, AuditoriaLog } from '../types';
+import { Usuario, Material, Cautela, CautelaItem, AuditoriaLog, SituacaoMilitar } from '../types';
 import { supabase } from '../supabaseClient';
 import { comparePassword, hashSHA256 } from '../utils/crypto';
 import { useOfflineDatabase } from '../hooks/useOfflineDatabase';
@@ -47,6 +47,7 @@ interface TotemViewProps {
     observacoes: string,
     weaponMagazines?: Record<string, number>
   ) => Cautela | null;
+  cadastrarPolicial: (novoPolicial: Usuario) => Promise<{ success: boolean; error?: string }>;
 }
 
 export function TotemView({
@@ -78,13 +79,22 @@ export function TotemView({
   setAuthError,
   registrarLogAuditoria,
   cadastrarSenha,
-  processEfetivarCautela
+  processEfetivarCautela,
+  cadastrarPolicial
 }: TotemViewProps) {
   const offlineDb = useOfflineDatabase();
   const [confirmarCautelaPin, setConfirmarCautelaPin] = React.useState('');
   const [pinError, setPinError] = React.useState('');
   const [isSearchModalOpen, setIsSearchModalOpen] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState('');
+
+  // Estados locais para Cadastro de Novo Policial pelo Totem
+  const [isCadastroModalOpen, setIsCadastroModalOpen] = React.useState(false);
+  const [newNome, setNewNome] = React.useState('');
+  const [newNomeDeGuerra, setNewNomeDeGuerra] = React.useState('');
+  const [newPosto, setNewPosto] = React.useState('Soldado');
+  const [newSituacao, setNewSituacao] = React.useState<SituacaoMilitar>('apto');
+  const [cadastroError, setCadastroError] = React.useState('');
 
   const [isAccessoryModalOpen, setIsAccessoryModalOpen] = React.useState(false);
   const [selectedAccessoryWeapon, setSelectedAccessoryWeapon] = React.useState<Material | null>(null);
@@ -243,6 +253,65 @@ export function TotemView({
     }
   };
 
+  // ---- CADASTRO DE NOVO POLICIAL PELO TOTEM (MATRÍCULA NÃO CADASTRADA) ----
+  const handleCadastrarNovoUsuarioSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCadastroError('');
+
+    const matriculaNorm = matriculaInput.trim().toUpperCase();
+    if (!matriculaNorm) {
+      setCadastroError('Matrícula de pesquisa ausente.');
+      return;
+    }
+
+    if (!newNome.trim()) {
+      setCadastroError('O Nome Completo é obrigatório.');
+      return;
+    }
+
+    if (!newNomeDeGuerra.trim()) {
+      setCadastroError('O Nome de Guerra é obrigatório.');
+      return;
+    }
+
+    const novoPolicial: Usuario = {
+      matricula: matriculaNorm,
+      nome: newNome.trim(),
+      nome_de_guerra: newNomeDeGuerra.trim(),
+      senha_hash: '', // Senha vazia para que ele crie o PIN de 4 dígitos na assinatura
+      perfil: 'policial',
+      posto_graduacao: newPosto,
+      situacao_cautela: newSituacao,
+      data_ultimo_teste_psicologico: new Date().toISOString().split('T')[0], // Padrão hoje (não verificado no Totem)
+    };
+
+    try {
+      const result = await cadastrarPolicial(novoPolicial);
+      if (result && !result.success) {
+        setCadastroError(result.error || 'Erro ao realizar o cadastro do militar.');
+      } else {
+        // Sucesso no cadastro: Limpa os campos do modal, fecha o modal e faz login automático do policial
+        setNewNome('');
+        setNewNomeDeGuerra('');
+        setNewPosto('Soldado');
+        setNewSituacao('apto');
+        setIsCadastroModalOpen(false);
+        setAuthError(''); // Limpa o erro de login anterior
+        
+        // Login automático
+        setLoggedUser(novoPolicial);
+        setPolicialStep('aptidao');
+        registrarLogAuditoria(
+          novoPolicial.matricula, 
+          'login', 
+          `Militar auto-cadastrado e logado via Totem. Status atual: ${novoPolicial.situacao_cautela.toUpperCase()}.`
+        );
+      }
+    } catch (err: any) {
+      setCadastroError(err.message || 'Falha de conexão ao cadastrar militar.');
+    }
+  };
+
   // ---- CADASTRO DE SENHA DO PRIMEIRO ACESSO ----
   const handleCadastrarSenha = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -279,15 +348,6 @@ export function TotemView({
 
     const motivos: string[] = [];
     const restrito = loggedUser.situacao_cautela === 'restrito_servico';
-    
-    const dataAtual = new Date();
-    const dataTeste = new Date(loggedUser.data_ultimo_teste_psicologico);
-    const diffTime = Math.abs(dataAtual.getTime() - dataTeste.getTime());
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
-    if (diffDays > 365) {
-      motivos.push(`[Avaliação Expirada] Exame psicotécnico anual de porte de arma vencido há ${diffDays - 365} dias (Último teste: ${loggedUser.data_ultimo_teste_psicologico}).`);
-    }
 
     if (loggedUser.situacao_cautela === 'suspenso') {
       motivos.push(`[Suspensão Ativa] Militar suspenso administrativo. Motivo: ${loggedUser.motivo_suspensao || 'Impedimento preventivo em corregedoria.'}`);
@@ -497,9 +557,28 @@ export function TotemView({
                   </div>
 
                   {authError && (
-                    <div className="bg-red-955/30 border border-red-900/40 p-3.5 rounded-lg text-xs text-red-400 font-mono leading-normal flex items-start gap-2.5 glow-red">
-                      <ShieldAlert className="h-4.5 w-4.5 shrink-0 mt-0.5 text-red-500" />
-                      <span>{authError}</span>
+                    <div className="bg-red-955/30 border border-red-900/40 p-3.5 rounded-lg text-xs text-red-400 font-mono leading-normal flex flex-col gap-2.5 glow-red">
+                      <div className="flex items-start gap-2.5">
+                        <ShieldAlert className="h-4.5 w-4.5 shrink-0 mt-0.5 text-red-500" />
+                        <span>{authError}</span>
+                      </div>
+                      {(authError.toLowerCase().includes('cadastrada') || authError.toLowerCase().includes('encontrada')) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewNome('');
+                            setNewNomeDeGuerra('');
+                            setNewPosto('Soldado');
+                            setNewSituacao('apto');
+                            setCadastroError('');
+                            setIsCadastroModalOpen(true);
+                          }}
+                          className="mt-1 self-start px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/40 border border-blue-500/35 text-[10px] font-bold text-blue-400 hover:text-blue-300 rounded transition-all cursor-pointer flex items-center gap-1 uppercase"
+                        >
+                          <User className="h-3 w-3" />
+                          <span>Cadastrar Novo Policial</span>
+                        </button>
+                      )}
                     </div>
                   )}
 
@@ -1500,6 +1579,145 @@ export function TotemView({
                   Confirmar Carga
                 </button>
               </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal de Cadastro de Novo Policial pelo Totem */}
+      <AnimatePresence>
+        {isCadastroModalOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-955/85 backdrop-blur-md"
+            id="modal-cadastro-policial-totem"
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden flex flex-col shadow-2xl relative text-left"
+            >
+              {/* Header */}
+              <div className="p-5 border-b border-slate-800 flex justify-between items-center bg-slate-950/40">
+                <div className="flex items-center gap-3">
+                  <div className="bg-blue-500/10 p-2.5 rounded-lg border border-blue-500/20 text-blue-400">
+                    <User className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-bold text-white uppercase tracking-widest font-mono">Cadastrar Novo Policial Militar</h3>
+                    <p className="text-[10px] text-slate-450 font-sans">Insira os dados do militar para liberação de acesso imediato.</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsCadastroModalOpen(false)}
+                  className="p-1.5 rounded-lg border border-slate-800 text-slate-455 hover:text-white hover:bg-slate-800/50 transition-colors cursor-pointer"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Form */}
+              <form onSubmit={handleCadastrarNovoUsuarioSubmit}>
+                {/* Corpo */}
+                <div className="p-6 space-y-4">
+                  
+                  {/* Matrícula (ReadOnly/Disabled) */}
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-mono font-bold text-slate-450 uppercase tracking-wide block">Matrícula (RG Funcional):</label>
+                    <input
+                      type="text"
+                      disabled
+                      value={matriculaInput.trim().toUpperCase()}
+                      className="w-full bg-slate-950/60 border border-slate-850 p-2.5 text-xs font-mono text-slate-500 rounded-lg cursor-not-allowed uppercase"
+                    />
+                  </div>
+
+                  {/* Nome Completo */}
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-mono font-bold text-slate-450 uppercase tracking-wide block">Nome Completo:</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="EX: JEAN-CLAUDE VAN DAMME"
+                      value={newNome}
+                      onChange={(e) => setNewNome(e.target.value)}
+                      className="w-full bg-slate-955 border border-slate-800 focus:border-blue-500 p-2.5 text-xs text-slate-200 focus:outline-none rounded-lg focus:ring-1 focus:ring-blue-500/20"
+                    />
+                  </div>
+
+                  {/* Nome de Guerra */}
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-mono font-bold text-slate-450 uppercase tracking-wide block">Nome de Guerra:</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="EX: VAN DAMME"
+                      value={newNomeDeGuerra}
+                      onChange={(e) => setNewNomeDeGuerra(e.target.value)}
+                      className="w-full bg-slate-955 border border-slate-800 focus:border-blue-500 p-2.5 text-xs text-slate-200 focus:outline-none rounded-lg focus:ring-1 focus:ring-blue-500/20"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    {/* Posto / Graduação */}
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wide block">Posto / Graduação:</label>
+                      <select
+                        value={newPosto}
+                        onChange={(e) => setNewPosto(e.target.value)}
+                        className="w-full bg-slate-955 border border-slate-800 focus:border-blue-500 p-2.5 text-xs text-slate-200 focus:outline-none rounded-lg cursor-pointer"
+                      >
+                        {['Soldado', 'Cabo', 'Sargento', 'Subtenente', 'Tenente', 'Capitão', 'Major', 'Tenente-Coronel', 'Coronel'].map(p => (
+                          <option key={p} value={p}>{p}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Situação do Porte / Cautela */}
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wide block">Situação do Porte / Cautela:</label>
+                      <select
+                        value={newSituacao}
+                        onChange={(e) => setNewSituacao(e.target.value as SituacaoMilitar)}
+                        className="w-full bg-slate-955 border border-slate-800 focus:border-blue-500 p-2.5 text-xs text-slate-200 focus:outline-none rounded-lg cursor-pointer"
+                      >
+                        <option value="apto">Ativo (Apto)</option>
+                        <option value="suspenso">Suspenso</option>
+                        <option value="restrito_servico">Restrito ao Serviço</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {cadastroError && (
+                    <div className="bg-red-955/30 border border-red-900/40 p-3 rounded-lg text-xs text-red-400 font-mono flex items-start gap-2 animate-pulse glow-red">
+                      <ShieldAlert className="h-4 w-4 shrink-0 mt-0.5 text-red-500" />
+                      <span>{cadastroError}</span>
+                    </div>
+                  )}
+
+                </div>
+
+                {/* Ações */}
+                <div className="p-5 border-t border-slate-800 bg-slate-950/20 flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsCadastroModalOpen(false)}
+                    className="flex-1 bg-transparent hover:bg-slate-955/50 text-slate-400 hover:text-slate-200 border border-slate-800 font-mono py-2.5 rounded-lg text-xs transition-all uppercase tracking-wider cursor-pointer text-center"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold font-mono py-2.5 rounded-lg text-xs transition-all shadow-md uppercase tracking-wider cursor-pointer text-center glow-blue"
+                  >
+                    Salvar e Entrar
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </motion.div>
         )}

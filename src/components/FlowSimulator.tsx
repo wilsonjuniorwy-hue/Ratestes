@@ -347,6 +347,7 @@ export default function FlowSimulator({
             registrarLogAuditoria={db.registrarLogAuditoria}
             cadastrarSenha={db.cadastrarSenha}
             processEfetivarCautela={db.processEfetivarCautela}
+            cadastrarPolicial={db.cadastrarPolicial}
           />
         </ErrorBoundary>
       )}
