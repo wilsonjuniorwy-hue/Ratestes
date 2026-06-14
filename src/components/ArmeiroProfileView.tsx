@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { 
-  User, KeyRound, UserPlus, ShieldAlert, CheckCircle, UserCheck, Shield
+  User, KeyRound, UserPlus, ShieldAlert, CheckCircle, UserCheck, Shield,
+  Upload, Trash2, FileImage, RefreshCw
 } from 'lucide-react';
 import { Usuario } from '../types';
 
@@ -57,6 +58,110 @@ export function ArmeiroProfileView({
   
   const [actionError, setActionError] = useState('');
   const [actionSuccess, setActionSuccess] = useState('');
+
+  // Estados locais para assinatura digitalizada
+  const [sigError, setSigError] = useState('');
+  const [sigSuccess, setSigSuccess] = useState('');
+  const [isCompressing, setIsCompressing] = useState(false);
+
+  const handleSignatureUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setSigError('');
+    setSigSuccess('');
+
+    if (file.size > 5 * 1024 * 1024) {
+      setSigError("A imagem selecionada é muito grande. Escolha uma imagem de até 5MB.");
+      return;
+    }
+
+    setIsCompressing(true);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        // Redimensionar mantendo proporção com limites 300x120
+        const MAX_WIDTH = 300;
+        const MAX_HEIGHT = 120;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height = Math.round((height * MAX_WIDTH) / width);
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width = Math.round((width * MAX_HEIGHT) / height);
+            height = MAX_HEIGHT;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          // Preencher fundo com branco (evita preto se imagem tiver transparência)
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillRect(0, 0, width, height);
+
+          // Desenhar imagem no canvas
+          ctx.drawImage(img, 0, 0, width, height);
+
+          // Comprimir para JPEG 0.7
+          const base64Compressed = canvas.toDataURL('image/jpeg', 0.7);
+          
+          if (activeArmeiro) {
+            editarPolicial(activeArmeiro.matricula, { assinatura_foto: base64Compressed })
+              .then(() => {
+                setSigSuccess("Sua assinatura digitalizada foi salva com sucesso!");
+                setIsCompressing(false);
+              })
+              .catch((err) => {
+                setSigError("Erro ao salvar assinatura no banco de dados.");
+                setIsCompressing(false);
+                console.error(err);
+              });
+          } else {
+            setSigError("Nenhum armeiro ativo identificado.");
+            setIsCompressing(false);
+          }
+        } else {
+          setSigError("Erro ao criar contexto gráfico.");
+          setIsCompressing(false);
+        }
+      };
+      img.onerror = () => {
+        setSigError("Erro ao processar imagem. Escolha outro arquivo de imagem válido.");
+        setIsCompressing(false);
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveSignature = async () => {
+    if (!activeArmeiro) return;
+    
+    setSigError('');
+    setSigSuccess('');
+
+    if (!window.confirm("Tem certeza de que deseja apagar permanentemente a sua assinatura digitalizada? Isso reverterá a impressão para apenas nome de forma textual.")) {
+      return;
+    }
+
+    try {
+      await editarPolicial(activeArmeiro.matricula, { assinatura_foto: null });
+      setSigSuccess("Assinatura digitalizada removida com sucesso.");
+    } catch (err) {
+      setSigError("Erro ao remover a assinatura do banco de dados.");
+      console.error(err);
+    }
+  };
 
   const startEditing = (u: Usuario) => {
     setEditingMatricula(u.matricula);
@@ -264,6 +369,98 @@ export function ArmeiroProfileView({
                   <span>Guerra: <strong className="text-slate-300">{activeArmeiro?.nome_de_guerra}</strong></span>
                 </div>
               </div>
+            </div>
+          </div>
+
+          {/* Assinatura Digitalizada do Armeiro */}
+          <div className="bg-slate-900/60 backdrop-blur-md border border-slate-800/80 rounded-xl p-5 shadow-lg space-y-4" id="arm-assinatura-card">
+            <div className="border-b border-slate-850 pb-3 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FileImage className="h-4.5 w-4.5 text-blue-500" />
+                <h3 className="text-xs font-bold font-mono text-slate-200 uppercase tracking-widest">Assinatura Digitalizada para Relatórios (PDF)</h3>
+              </div>
+              {activeArmeiro?.assinatura_foto && (
+                <span className="text-[8px] bg-blue-950/50 text-blue-400 border border-blue-900/50 px-2 py-0.5 rounded font-black uppercase">
+                  Anexada
+                </span>
+              )}
+            </div>
+
+            <div className="space-y-4">
+              {activeArmeiro?.assinatura_foto ? (
+                <div className="space-y-3">
+                  <div className="bg-white border border-slate-200 rounded-lg p-4 flex items-center justify-center min-h-[100px] shadow-inner">
+                    <img 
+                      src={activeArmeiro.assinatura_foto} 
+                      alt="Assinatura manuscrita" 
+                      className="max-h-20 max-w-full object-contain"
+                    />
+                  </div>
+                  <p className="text-[10px] text-slate-400 text-center font-sans">
+                    Esta assinatura será exibida automaticamente sobre o seu nome nos relatórios e livros de ocorrência gerados em PDF.
+                  </p>
+                  <div className="flex gap-3 pt-1">
+                    <label className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-205 font-bold font-mono py-2 rounded-lg text-[10px] transition-all uppercase tracking-wider cursor-pointer text-center flex items-center justify-center gap-1.5 border border-slate-700">
+                      <RefreshCw className="h-3.5 w-3.5" />
+                      <span>Substituir</span>
+                      <input 
+                        type="file" 
+                        accept="image/*" 
+                        onChange={handleSignatureUpload} 
+                        className="hidden" 
+                        disabled={isCompressing}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleRemoveSignature}
+                      className="flex-1 bg-red-950/40 hover:bg-red-950/60 text-red-400 font-bold font-mono py-2 rounded-lg text-[10px] transition-all uppercase tracking-wider cursor-pointer flex items-center justify-center gap-1.5 border border-red-900/30"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      <span>Remover</span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <label className="border-2 border-dashed border-slate-800 hover:border-blue-500/50 bg-slate-950/40 rounded-lg p-6 flex flex-col items-center justify-center gap-2 cursor-pointer transition-colors group min-h-[120px]">
+                    <Upload className="h-7 w-7 text-slate-500 group-hover:text-blue-400 transition-colors" />
+                    <span className="text-[11px] font-bold text-slate-300 group-hover:text-blue-300 transition-colors">Carregar Imagem de Assinatura</span>
+                    <span className="text-[9px] text-slate-500 font-mono text-center">Fundo branco ou transparente (PNG, JPG) • Max 5MB</span>
+                    <input 
+                      type="file" 
+                      accept="image/*" 
+                      onChange={handleSignatureUpload} 
+                      className="hidden"
+                      disabled={isCompressing}
+                    />
+                  </label>
+                  <p className="text-[10px] text-slate-500 font-sans text-justify">
+                    Dica: Assine em um papel branco bem iluminado, tire uma foto nítida e faça o upload. O sistema cortará e otimizará a imagem automaticamente para o banco de dados.
+                  </p>
+                </div>
+              )}
+
+              {isCompressing && (
+                <div className="bg-blue-950/30 border border-blue-900/40 p-2.5 rounded-lg text-[10px] text-blue-400 font-mono flex items-center justify-center gap-2">
+                  <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                  <span>Compactando e salvando imagem...</span>
+                </div>
+              )}
+
+              {sigError && (
+                <div className="bg-red-955/30 border border-red-900/40 p-2.5 rounded-lg text-[10px] text-red-400 font-mono flex items-start gap-2">
+                  <ShieldAlert className="h-4 w-4 shrink-0 text-red-500" />
+                  <span>{sigError}</span>
+                </div>
+              )}
+
+              {sigSuccess && (
+                <div className="bg-emerald-950/30 border border-emerald-900/40 p-2.5 rounded-lg text-[10px] text-emerald-450 font-mono flex items-start gap-2">
+                  <CheckCircle className="h-4 w-4 shrink-0 text-emerald-500" />
+                  <span>{sigSuccess}</span>
+                </div>
+              )}
             </div>
           </div>
 

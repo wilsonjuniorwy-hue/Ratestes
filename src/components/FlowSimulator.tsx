@@ -776,7 +776,16 @@ export default function FlowSimulator({
             const armeiroNomeCompleto = armeiroUser ? `${armeiroUser.posto_graduacao} ${armeiroUser.nome}` : 'Armeiro Relator';
             
             return (
-              <div style={{ display: 'flex', justifyContent: 'center', marginTop: '60px', pageBreakInside: 'avoid' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: '60px', pageBreakInside: 'avoid' }}>
+                {armeiroUser?.assinatura_foto && (
+                  <div style={{ marginBottom: '4px' }}>
+                    <img 
+                      src={armeiroUser.assinatura_foto} 
+                      alt="Assinatura" 
+                      style={{ maxHeight: '60px', width: 'auto', display: 'block' }} 
+                    />
+                  </div>
+                )}
                 <div style={{ textAlign: 'center', width: '50%' }}>
                   <div style={{ borderTop: '1.5px solid #000', paddingTop: '5px', fontSize: '9pt' }}>
                     {armeiroNomeCompleto}
@@ -975,7 +984,16 @@ export default function FlowSimulator({
             const armeiroNomeCompleto = armeiroUser ? `${armeiroUser.posto_graduacao} ${armeiroUser.nome}` : 'Armeiro Responsável';
             
             return (
-              <div style={{ display: 'flex', justifyContent: 'center', marginTop: '60px', pageBreakInside: 'avoid' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: '60px', pageBreakInside: 'avoid' }}>
+                {armeiroUser?.assinatura_foto && (
+                  <div style={{ marginBottom: '4px' }}>
+                    <img 
+                      src={armeiroUser.assinatura_foto} 
+                      alt="Assinatura" 
+                      style={{ maxHeight: '60px', width: 'auto', display: 'block' }} 
+                    />
+                  </div>
+                )}
                 <div style={{ textAlign: 'center', width: '50%' }}>
                   <div style={{ borderTop: '1.5px solid #000', paddingTop: '5px', fontSize: '9pt' }}>
                     {armeiroNomeCompleto}

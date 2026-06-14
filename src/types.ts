@@ -43,6 +43,7 @@ export interface Usuario {
   deletado_em?: string;  // Soft delete (ISO DateTime)
   tentativas_login?: number;
   bloqueado_ate?: string | null;
+  assinatura_foto?: string | null;
 }
 
 export interface Categoria {

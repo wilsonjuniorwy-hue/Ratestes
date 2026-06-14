@@ -42,7 +42,8 @@ export function useOfflineDatabase() {
             senha_hash TEXT,
             id_quartel TEXT,
             tentativas_login INTEGER DEFAULT 0,
-            bloqueado_ate TEXT DEFAULT NULL
+            bloqueado_ate TEXT DEFAULT NULL,
+            assinatura_foto TEXT DEFAULT NULL
           );
         `);
 
@@ -57,6 +58,13 @@ export function useOfflineDatabase() {
         try {
           await db.execute('ALTER TABLE usuarios ADD COLUMN bloqueado_ate TEXT DEFAULT NULL;');
           console.log('SGBD Offline: Coluna bloqueado_ate adicionada à tabela usuarios.');
+        } catch (_) {
+          // A coluna já existe ou tabela não foi alterada
+        }
+
+        try {
+          await db.execute('ALTER TABLE usuarios ADD COLUMN assinatura_foto TEXT DEFAULT NULL;');
+          console.log('SGBD Offline: Coluna assinatura_foto adicionada à tabela usuarios.');
         } catch (_) {
           // A coluna já existe ou tabela não foi alterada
         }
@@ -136,8 +144,8 @@ export function useOfflineDatabase() {
       for (const u of usuariosList) {
         await dbInstance.execute(
           `INSERT OR REPLACE INTO usuarios 
-          (matricula, nome, nome_de_guerra, perfil, posto_graduacao, situacao_cautela, data_ultimo_teste_psicologico, senha_hash, id_quartel, tentativas_login, bloqueado_ate) 
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          (matricula, nome, nome_de_guerra, perfil, posto_graduacao, situacao_cautela, data_ultimo_teste_psicologico, senha_hash, id_quartel, tentativas_login, bloqueado_ate, assinatura_foto) 
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             u.matricula !== undefined ? u.matricula : null,
             u.nome !== undefined ? u.nome : null,
@@ -149,7 +157,8 @@ export function useOfflineDatabase() {
             u.senha_hash !== undefined ? u.senha_hash : null,
             u.id_quartel !== undefined && u.id_quartel !== null ? u.id_quartel : null,
             u.tentativas_login !== undefined && u.tentativas_login !== null ? u.tentativas_login : 0,
-            u.bloqueado_ate !== undefined && u.bloqueado_ate !== null ? u.bloqueado_ate : null
+            u.bloqueado_ate !== undefined && u.bloqueado_ate !== null ? u.bloqueado_ate : null,
+            u.assinatura_foto !== undefined && u.assinatura_foto !== null ? u.assinatura_foto : null
           ]
         );
       }
@@ -279,7 +288,8 @@ export function useOfflineDatabase() {
         senha_hash: r.senha_hash,
         id_quartel: r.id_quartel,
         tentativas_login: r.tentativas_login !== undefined ? r.tentativas_login : 0,
-        bloqueado_ate: r.bloqueado_ate || null
+        bloqueado_ate: r.bloqueado_ate || null,
+        assinatura_foto: r.assinatura_foto || null
       }));
     } catch (err) {
       console.error('SGBD Offline: Erro ao ler policiais do SQLite:', err);

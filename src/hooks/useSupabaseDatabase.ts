@@ -142,7 +142,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
         { data: dbPendencias, error: errPendencias },
         { data: quarteisData, error: errQuarteis }
       ] = await Promise.all([
-        supabase.from('usuarios').select('matricula, nome, nome_de_guerra, perfil, posto_graduacao, situacao_cautela, data_ultimo_teste_psicologico, motivo_suspensao, id_quartel, tentativas_login, bloqueado_ate, senha_hash, auth_user_id').is('deletado_em', null).then(r => { console.log('SGBD: 1. usuarios OK'); return r; }),
+        supabase.from('usuarios').select('matricula, nome, nome_de_guerra, perfil, posto_graduacao, situacao_cautela, data_ultimo_teste_psicologico, motivo_suspensao, id_quartel, tentativas_login, bloqueado_ate, senha_hash, auth_user_id, assinatura_foto').is('deletado_em', null).then(r => { console.log('SGBD: 1. usuarios OK'); return r; }),
         supabase.from('materiais').select('*').is('deletado_em', null).then(r => { console.log('SGBD: 2. materiais OK'); return r; }),
         supabase.from('categorias').select('*').then(r => { console.log('SGBD: 3. categorias OK'); return r; }),
         supabase.from('cautelas').select('*').is('deletado_em', null).then(r => { console.log('SGBD: 4. cautelas OK'); return r; }),

@@ -32,7 +32,8 @@ CREATE TABLE IF NOT EXISTS usuarios (
   motivo_suspensao               TEXT,
   auth_user_id                   UUID UNIQUE,
   id_quartel                     UUID REFERENCES quarteis(id),
-  deletado_em                    TIMESTAMPTZ
+  deletado_em                    TIMESTAMPTZ,
+  assinatura_foto                TEXT
 );
 
 -- 3. TABELA CATEGORIAS

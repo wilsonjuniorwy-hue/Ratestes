@@ -87,6 +87,7 @@ export function TotemView({
   const [pinError, setPinError] = React.useState('');
   const [isSearchModalOpen, setIsSearchModalOpen] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState('');
+  const [forcePermitirMaisItens, setForcePermitirMaisItens] = React.useState(false);
 
   // Estados locais para Cadastro de Novo Policial pelo Totem
   const [isCadastroModalOpen, setIsCadastroModalOpen] = React.useState(false);
@@ -353,7 +354,7 @@ export function TotemView({
       motivos.push(`[Suspensão Ativa] Militar suspenso administrativo. Motivo: ${loggedUser.motivo_suspensao || 'Impedimento preventivo em corregedoria.'}`);
     }
 
-    if (loggedUser.situacao_cautela === 'pendente_devolucao') {
+    if (loggedUser.situacao_cautela === 'pendente_devolucao' && !forcePermitirMaisItens) {
       motivos.push(`[Pendências de Reserva] O militar possui atraso de material bélico ultrapassado. Retirada bloqueada.`);
     }
 
@@ -429,6 +430,7 @@ export function TotemView({
     setPinError('');
     setIsSearchModalOpen(false);
     setSearchQuery('');
+    setForcePermitirMaisItens(false);
     setPolicialStep('login');
   };
 
@@ -765,6 +767,25 @@ export function TotemView({
                               </li>
                             ))}
                           </ul>
+                          {loggedUser?.situacao_cautela === 'pendente_devolucao' && (
+                            <div className="pt-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setForcePermitirMaisItens(true);
+                                  registrarLogAuditoria(
+                                    loggedUser.matricula,
+                                    'registro_cautela',
+                                    `Militar acionou bypass no Totem para retirar mais materiais (cautela pendente/esquecimento).`
+                                  );
+                                }}
+                                className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold font-mono py-2.5 px-4 rounded-lg text-[10px] uppercase tracking-wider transition-all cursor-pointer shadow-md glow-blue flex items-center justify-center gap-1.5"
+                              >
+                                <Package className="h-3.5 w-3.5" />
+                                <span>Esqueci de acautelar itens / Retirar mais materiais</span>
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
                     )}
