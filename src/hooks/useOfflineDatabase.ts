@@ -69,6 +69,13 @@ export function useOfflineDatabase() {
           // A coluna já existe ou tabela não foi alterada
         }
 
+        try {
+          await db.execute('ALTER TABLE materiais ADD COLUMN data_validade TEXT;');
+          console.log('SGBD Offline: Coluna data_validade adicionada à tabela materiais.');
+        } catch (_) {
+          // A coluna já existe ou tabela não foi alterada
+        }
+
         await db.execute(`
           CREATE TABLE IF NOT EXISTS materiais (
             id_material TEXT PRIMARY KEY,
@@ -79,7 +86,8 @@ export function useOfflineDatabase() {
             status_atual TEXT,
             quantidade INTEGER,
             controle_quantidade INTEGER,
-            id_quartel TEXT
+            id_quartel TEXT,
+            data_validade TEXT
           );
         `);
 
@@ -180,8 +188,8 @@ export function useOfflineDatabase() {
       for (const m of materiaisList) {
         await dbInstance.execute(
           `INSERT OR REPLACE INTO materiais 
-          (id_material, id_categoria, modelo, fabricante, calibre, status_atual, quantidade, controle_quantidade, id_quartel) 
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          (id_material, id_categoria, modelo, fabricante, calibre, status_atual, quantidade, controle_quantidade, id_quartel, data_validade) 
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             m.id_material !== undefined ? m.id_material : null,
             m.id_categoria !== undefined ? m.id_categoria : null,
@@ -191,7 +199,8 @@ export function useOfflineDatabase() {
             m.status_atual !== undefined ? m.status_atual : null,
             m.quantidade !== undefined && m.quantidade !== null ? m.quantidade : 0,
             m.controle_quantidade ? 1 : 0,
-            m.id_quartel !== undefined && m.id_quartel !== null ? m.id_quartel : null
+            m.id_quartel !== undefined && m.id_quartel !== null ? m.id_quartel : null,
+            m.data_validade !== undefined && m.data_validade !== null ? m.data_validade : null
           ]
         );
       }
@@ -315,7 +324,8 @@ export function useOfflineDatabase() {
         status_atual: r.status_atual,
         quantidade: r.quantidade,
         controle_quantidade: r.controle_quantidade === 1,
-        id_quartel: r.id_quartel
+        id_quartel: r.id_quartel,
+        data_validade: r.data_validade
       }));
     } catch (err) {
       console.error('SGBD Offline: Erro ao ler materiais do SQLite:', err);

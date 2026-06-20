@@ -145,7 +145,8 @@ export const mockCategorias: Categoria[] = [
   { id_categoria: 'CAT-ARMA-LONGA', nome: 'Armas de Fogo Longas', descricao: 'Fuzis, Carabinas e Espingardas para emprego tático e patrulhamento' },
   { id_categoria: 'CAT-MANUTENCAO', nome: 'Colete Balístico', descricao: 'Equipamento de Proteção Individual (EPI) resistente a projéteis' },
   { id_categoria: 'CAT-COMUNICACAO', nome: 'Rádios & Telecomunicações', descricao: 'Terminais de rádio transmissor/receptor (HT) criptografados' },
-  { id_categoria: 'CAT-MUNICAO', nome: 'Munições', descricao: 'Munições operacionais e de treino correspondentes' }
+  { id_categoria: 'CAT-MUNICAO', nome: 'Munições', descricao: 'Munições operacionais e de treino correspondentes' },
+  { id_categoria: 'CAT-GAS-LACRIMOGENIO', nome: 'Gás Lacrimogênio', descricao: 'Agentes químicos lacrimogênios para controle de distúrbios e dispersão' }
 ];
 
 export const mockMateriais: Material[] = [
@@ -203,6 +204,7 @@ export const mockMateriais: Material[] = [
     status_atual: 'disponivel',
     data_aquisicao: '2025-06-01',
     especificacoes_tecnicas: 'Colete tático de proteção IIIA contra disparos de revólveres .44 Magnum e submetralhadoras 9mm.',
+    data_validade: '2029-06-01'
   },
   {
     id_material: 'COL-NV3-872',
@@ -213,6 +215,7 @@ export const mockMateriais: Material[] = [
     status_atual: 'cautelado',
     data_aquisicao: '2025-06-01',
     especificacoes_tecnicas: 'Colete tático de proteção IIIA contra disparos de revólveres .44 Magnum.',
+    data_validade: '2025-06-01' // Vencido
   },
   {
     id_material: 'HT-HAM-552',
@@ -257,6 +260,28 @@ export const mockMateriais: Material[] = [
     especificacoes_tecnicas: 'Munição de fuzil calibre 5.56x45mm NATO, CBC.',
     controle_quantidade: true,
     quantidade: 300
+  },
+  {
+    id_material: 'GAS-LAC-001',
+    id_categoria: 'CAT-GAS-LACRIMOGENIO',
+    modelo: 'Gás Lacrimogênio - Spray',
+    fabricante: 'Condor',
+    calibre: 'N/A',
+    status_atual: 'disponivel',
+    data_aquisicao: '2025-02-15',
+    especificacoes_tecnicas: 'Spray de gás lacrimogênio para controle de distúrbios civis.',
+    data_validade: '2029-02-15'
+  },
+  {
+    id_material: 'GAS-LAC-002',
+    id_categoria: 'CAT-GAS-LACRIMOGENIO',
+    modelo: 'Gás Lacrimogênio - GL Max',
+    fabricante: 'Condor',
+    calibre: 'N/A',
+    status_atual: 'disponivel',
+    data_aquisicao: '2023-01-10',
+    especificacoes_tecnicas: 'Granada de gás lacrimogênio de emissão contínua GL-300 Max.',
+    data_validade: '2025-01-10' // Vencido
   }
 ];
 

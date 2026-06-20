@@ -328,7 +328,8 @@ export function useMockDatabase() {
     matriculaPolicial: string, 
     cartItens: string[], 
     observacoes: string,
-    weaponMagazines?: Record<string, number>
+    weaponMagazines?: Record<string, number>,
+    isPermanent?: boolean
   ) => {
     const user = usuarios.find(u => u.matricula === matriculaPolicial);
     if (!user) return null;
@@ -341,8 +342,10 @@ export function useMockDatabase() {
       matricula_policial: matriculaPolicial,
       matricula_armeiro_retirada: armeiroSvc.matricula,
       data_retirada: new Date().toISOString(),
-      previsao_devolucao: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString(),
-      status_cautela: 'ativa',
+      previsao_devolucao: isPermanent
+        ? new Date(Date.now() + 10 * 365 * 24 * 60 * 60 * 1000).toISOString()
+        : new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString(),
+      status_cautela: isPermanent ? 'permanente' : 'ativa',
       observacoes_retirada: observacoes
     };
 

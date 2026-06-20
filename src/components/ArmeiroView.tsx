@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   LayoutDashboard, UserPlus, ClipboardList, Search, History, FileCheck2, 
-  Clock, ShieldAlert, CheckCircle, Printer, X, Timer
+  Clock, ShieldAlert, CheckCircle, Printer, X, Timer, Briefcase, ChevronDown, ChevronUp, ExternalLink
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Usuario, Material, Cautela, CautelaItem, AuditoriaLog, SituacaoMilitar, CondicaoUso } from '../types';
@@ -29,6 +29,7 @@ interface ArmeiroViewProps {
   activeArmeiroMatricula?: string;
   authenticatedPerfil?: string;
   excluirCautelaTotal?: (idCautela: string) => Promise<{ success: boolean }>;
+  onOpenPermanentTotem?: () => void;
 }
 
 export function ArmeiroView({
@@ -45,12 +46,21 @@ export function ArmeiroView({
   setPrintLogDate,
   activeArmeiroMatricula,
   authenticatedPerfil,
-  excluirCautelaTotal
+  excluirCautelaTotal,
+  onOpenPermanentTotem
 }: ArmeiroViewProps) {
   // ---- FLUXO ARMEIRO: ESTADOS LOCAIS ----
-  const [armeiroSubTab, setArmeiroSubTab] = useState<'dashboard' | 'cadastro_usuarios' | 'consulta_historico' | 'auditoria' | 'logs'>('dashboard');
+  const [armeiroSubTab, setArmeiroSubTab] = useState<'dashboard' | 'cadastro_usuarios' | 'consulta_historico' | 'auditoria' | 'logs' | 'cautelas_permanentes'>('dashboard');
   const [searchMaterialTerm, setSearchMaterialTerm] = useState('');
   const [selectedAuditMaterial, setSelectedAuditMaterial] = useState<Material | null>(null);
+  const [expandedPermanentPms, setExpandedPermanentPms] = useState<Record<string, boolean>>({});
+
+  const togglePermanentPmExpand = (matricula: string) => {
+    setExpandedPermanentPms(prev => ({
+      ...prev,
+      [matricula]: !prev[matricula]
+    }));
+  };
 
   // Estados para Cadastro de Policiais
   const [newMatricula, setNewMatricula] = useState('');
@@ -201,7 +211,8 @@ export function ArmeiroView({
           { id: 'cadastro_usuarios', icon: UserPlus, label: 'Cadastrar PM' },
           { id: 'consulta_historico', icon: ClipboardList, label: 'Histórico & Busca' },
           { id: 'auditoria', icon: Search, label: 'Dossiê Itens' },
-          { id: 'logs', icon: History, label: 'Trilha Logs' }
+          { id: 'logs', icon: History, label: 'Trilha Logs' },
+          { id: 'cautelas_permanentes', icon: Briefcase, label: 'Carga Permanente' }
         ].map(tab => {
           const Icon = tab.icon;
           const isActive = armeiroSubTab === tab.id;
@@ -968,6 +979,182 @@ export function ArmeiroView({
           </div>
         </div>
       )}
+
+      {/* SUBTAB F: CAUTELAS PERMANENTES */}
+      {armeiroSubTab === 'cautelas_permanentes' && (
+        <div className="space-y-6" id="arm-permanent-cautelas-view">
+          {/* Banner Informativo e Ação */}
+          <div className="bg-slate-900/60 backdrop-blur-md border border-slate-800/80 rounded-xl p-5 shadow-lg flex flex-wrap items-center justify-between gap-4">
+            <div className="space-y-1">
+              <h3 className="text-xs font-bold font-mono text-slate-200 uppercase tracking-widest flex items-center gap-2">
+                <Briefcase className="h-4.5 w-4.5 text-blue-505" />
+                <span>Gestão de Cargas Bélicas Pessoais (Cautelas Permanentes)</span>
+              </h3>
+              <p className="text-xs text-slate-455 mt-0.5 animate-none">
+                Consulte e gerencie os itens sob posse definitiva de militares da unidade. Cargas marcadas como permanentes não possuem limite diário de devolução.
+              </p>
+            </div>
+            
+            {onOpenPermanentTotem && (
+              <button
+                type="button"
+                onClick={onOpenPermanentTotem}
+                className="bg-blue-600 hover:bg-blue-550 text-white border border-blue-500/30 text-xs font-mono font-bold px-4 py-2.5 rounded-lg flex items-center gap-2 transition-colors cursor-pointer shadow-md glow-blue uppercase tracking-wider"
+              >
+                <ExternalLink className="h-4 w-4 shrink-0" />
+                <span>Abrir Totem para Cautela Permanente</span>
+              </button>
+            )}
+          </div>
+
+          {/* Listagem agrupada por Militar */}
+          <div className="space-y-4">
+            {(() => {
+              const permanentCautelas = cautelas.filter(c => c.status_cautela === 'permanente');
+              const permanentGroups = Array.from(new Set(permanentCautelas.map(c => c.matricula_policial)))
+                .map(matricula => {
+                  const pm = usuarios.find(u => u.matricula === matricula);
+                  const pmCautelas = permanentCautelas.filter(c => c.matricula_policial === matricula);
+                  const pmItems = pmCautelas.flatMap(c => {
+                    const items = cautelaItens.filter(ci => ci.id_cautela === c.id_cautela && !ci.estado_devolucao);
+                    return items.map(item => ({
+                      ...item,
+                      cautela: c
+                    }));
+                  });
+
+                  return {
+                    pm,
+                    matricula,
+                    cautelas: pmCautelas,
+                    items: pmItems
+                  };
+                })
+                .filter(group => group.items.length > 0);
+
+              if (permanentGroups.length === 0) {
+                return (
+                  <div className="bg-slate-900/60 backdrop-blur-md border border-slate-800/80 rounded-xl p-12 text-center text-slate-500 font-mono text-xs flex flex-col items-center justify-center min-h-[250px]">
+                    <Briefcase className="h-8 w-8 text-slate-800 mb-3" />
+                    <p className="max-w-xs leading-relaxed">Nenhum policial militar possui carga permanente ativa registrada no sistema no momento.</p>
+                  </div>
+                );
+              }
+
+              return permanentGroups.map(group => {
+                const isExpanded = expandedPermanentPms[group.matricula] !== false;
+                
+                return (
+                  <div 
+                    key={group.matricula}
+                    className="bg-slate-900/40 border border-slate-850 rounded-xl overflow-hidden transition-all duration-200"
+                  >
+                    {/* Header do Grupo */}
+                    <div 
+                      onClick={() => togglePermanentPmExpand(group.matricula)}
+                      className="p-4 bg-slate-950/50 flex justify-between items-center cursor-pointer hover:bg-slate-950/80 transition-colors border-b border-slate-850/30"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-blue-955/20 border border-blue-900/30 flex items-center justify-center text-blue-450 font-mono font-bold text-xs uppercase">
+                          {group.pm?.nome_de_guerra?.slice(0, 2) || 'PM'}
+                        </div>
+                        <div>
+                          <h4 className="text-xs font-bold text-slate-200 font-sans uppercase">
+                            {group.pm ? `${group.pm.posto_graduacao} ${group.pm.nome}` : `Policial (${group.matricula})`}
+                          </h4>
+                          <p className="text-[10px] text-slate-500 font-mono mt-0.5">
+                            Matrícula: {group.matricula} {group.pm?.nome_de_guerra ? `| Guerra: ${group.pm.nome_de_guerra}` : ''}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <span className="text-[10px] font-mono font-bold bg-blue-950/50 border border-blue-900/30 text-blue-450 px-2 py-0.5 rounded-full">
+                          {group.items.length} {group.items.length === 1 ? 'item acautelado' : 'itens acautelados'}
+                        </span>
+                        {isExpanded ? (
+                          <ChevronUp className="h-4 w-4 text-slate-450" />
+                        ) : (
+                          <ChevronDown className="h-4 w-4 text-slate-455" />
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Tabela de Itens (se expandido) */}
+                    {isExpanded && (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-xs text-slate-350 font-sans border-collapse">
+                          <thead className="bg-[#0b1329]/50 border-b border-slate-850 text-slate-455 font-mono text-[9px] uppercase tracking-wider">
+                            <tr>
+                              <th className="p-3">Código/RFID</th>
+                              <th className="p-3">Categoria</th>
+                              <th className="p-3">Item / Modelo</th>
+                              <th className="p-3 text-center">Quantidade</th>
+                              <th className="p-3">Data Carga</th>
+                              <th className="p-3 text-center">Ações</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-850/50 font-sans text-xs">
+                            {group.items.map(item => {
+                              const mat = materiais.find(m => m.id_material === item.id_material);
+                              return (
+                                <tr key={item.id_cautela_item} className="hover:bg-slate-900/10 transition-colors">
+                                  <td className="p-3 font-mono font-bold text-blue-400">{item.id_material}</td>
+                                  <td className="p-3">
+                                    <span className="text-[9px] px-1.5 py-0.5 bg-slate-950 border border-slate-800 rounded font-mono text-slate-400 font-bold uppercase">
+                                      {mat?.id_categoria.replace('CAT-', '') || 'BÉLICO'}
+                                    </span>
+                                  </td>
+                                  <td className="p-3">
+                                    <div className="flex flex-col">
+                                      <span className="font-bold text-slate-200 uppercase">{mat?.modelo || 'Não identificado'}</span>
+                                      <span className="text-[10px] text-slate-500 font-mono">
+                                        {mat?.fabricante && mat.fabricante !== 'N/A' ? `${mat.fabricante} ` : ''}
+                                        {mat?.calibre && mat.calibre !== 'N/A' ? `[Calibre: ${mat.calibre}]` : ''}
+                                      </span>
+                                    </div>
+                                  </td>
+                                  <td className="p-3 text-center font-mono font-bold">{item.quantidade}</td>
+                                  <td className="p-3 text-slate-400 font-mono">{new Date(item.cautela.data_retirada).toLocaleDateString('pt-BR')}</td>
+                                  <td className="p-3">
+                                    <div className="flex justify-center">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const userConfirm = window.confirm(`Deseja realmente dar baixa expressa no item ${mat?.modelo || item.id_material} do PM ${group.pm?.nome_de_guerra || group.matricula}?`);
+                                          if (userConfirm) {
+                                            processDevolucao(
+                                              item.cautela.id_cautela,
+                                              [item.id_material],
+                                              { [item.id_material]: 'bom' },
+                                              'Baixa expressa de carga pessoal permanente pelo armeiro.',
+                                              false,
+                                              { [item.id_material]: item.quantidade },
+                                              {}
+                                            );
+                                          }
+                                        }}
+                                        className="bg-emerald-600/15 border border-emerald-500/30 hover:border-emerald-500 text-emerald-400 hover:text-emerald-300 font-mono font-bold px-2.5 py-1.5 rounded text-[10px] uppercase transition-all cursor-pointer hover:shadow-[0_0_8px_rgba(16,185,129,0.1)]"
+                                      >
+                                        Devolver
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                );
+              });
+            })()}
+          </div>
+        </div>
+      )}
+
       {/* Modal de Baixa de Cautela */}
       <AnimatePresence>
         {isReturnModalOpen && (

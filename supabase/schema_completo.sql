@@ -81,6 +81,7 @@ CREATE TABLE IF NOT EXISTS materiais (
   id_arma_vinculada       TEXT,
   quantidade_carregadores INTEGER,
   id_quartel              UUID REFERENCES quarteis(id),
+  data_validade           DATE,
   deletado_em             TIMESTAMPTZ
 );
 

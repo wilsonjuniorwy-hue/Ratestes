@@ -45,9 +45,13 @@ interface TotemViewProps {
     matriculaPolicial: string, 
     cartItens: string[], 
     observacoes: string,
-    weaponMagazines?: Record<string, number>
+    weaponMagazines?: Record<string, number>,
+    isPermanent?: boolean
   ) => Cautela | null;
   cadastrarPolicial: (novoPolicial: Usuario) => Promise<{ success: boolean; error?: string }>;
+
+  isPermanentMode?: boolean;
+  onResetPermanentMode?: () => void;
 }
 
 export function TotemView({
@@ -80,7 +84,9 @@ export function TotemView({
   registrarLogAuditoria,
   cadastrarSenha,
   processEfetivarCautela,
-  cadastrarPolicial
+  cadastrarPolicial,
+  isPermanentMode = false,
+  onResetPermanentMode
 }: TotemViewProps) {
   const offlineDb = useOfflineDatabase();
   const [confirmarCautelaPin, setConfirmarCautelaPin] = React.useState('');
@@ -107,6 +113,19 @@ export function TotemView({
     if (!mat.calibre || mat.calibre === 'N/A') return false;
     const cal = mat.calibre.toLowerCase();
     return cal.includes('9mm') || cal.includes('5.56') || cal.includes('9x19mm') || cal.includes('5.56x45');
+  };
+
+  const isItemExpired = (dataValidade: string | undefined): boolean => {
+    if (!dataValidade) return false;
+    const parts = dataValidade.split('-');
+    if (parts.length !== 3) return false;
+    
+    const validadeDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    validadeDate.setHours(0,0,0,0);
+
+    return validadeDate.getTime() < today.getTime();
   };
 
   const normalizeCaliber = (cal: string | undefined): string => {
@@ -408,7 +427,7 @@ export function TotemView({
       }
 
       setPinError('');
-      const newCautela = processEfetivarCautela(loggedUser.matricula, cartItens, observacoesRetirada, cartWeaponMagazines);
+      const newCautela = processEfetivarCautela(loggedUser.matricula, cartItens, observacoesRetirada, cartWeaponMagazines, isPermanentMode);
       if (newCautela) {
         setGeneratedCautela(newCautela);
         setConfirmarCautelaPin('');
@@ -432,6 +451,9 @@ export function TotemView({
     setSearchQuery('');
     setForcePermitirMaisItens(false);
     setPolicialStep('login');
+    if (isPermanentMode && onResetPermanentMode) {
+      onResetPermanentMode();
+    }
   };
 
   return (
@@ -524,6 +546,16 @@ export function TotemView({
         <div className="bg-slate-900/60 backdrop-blur-md border border-slate-800/80 rounded-xl shadow-lg relative min-h-[460px] flex flex-col justify-between overflow-hidden">
           <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-blue-500/20 via-cyan-500/40 to-blue-500/20" />
           
+          {isPermanentMode && (
+            <div className="bg-blue-600/10 border-b border-blue-500/30 px-6 py-3 flex items-center gap-3 animate-pulse">
+              <ShieldAlert className="h-5 w-5 text-blue-450 shrink-0" />
+              <div>
+                <span className="text-[10px] font-mono text-blue-400 font-bold uppercase tracking-widest block">MODO ACAUTELAMENTO PERMANENTE ATIVO</span>
+                <span className="text-[9px] text-slate-300 font-sans block">Este acautelamento registrará a carga como permanente (definitiva) sob sua dotação pessoal.</span>
+              </div>
+            </div>
+          )}
+
           <AnimatePresence mode="wait">
             {/* Passo 1: Login */}
             {policialStep === 'login' && (
@@ -870,6 +902,11 @@ export function TotemView({
                                   {`Item Coletivo (Disp: ${disponivelQty})`}
                                 </span>
                               )}
+                              {isItemExpired(mat.data_validade) && (
+                                <span className="text-[8px] px-2 py-0.5 bg-red-950/70 text-red-400 border border-red-900/40 rounded font-black font-mono animate-pulse uppercase tracking-wider">
+                                  Vencido
+                                </span>
+                              )}
                             </div>
                             <h4 className="text-base font-black uppercase text-slate-100 flex items-center gap-2">
                               <span>{mat.modelo}</span>
@@ -1082,6 +1119,8 @@ export function TotemView({
                     <input
                       type="password"
                       id="input-confirmar-cautela-pin"
+                      name="confirmarCautelaPin"
+                      autoComplete="new-password"
                       maxLength={6}
                       placeholder="••••••"
                       value={confirmarCautelaPin}
@@ -1261,6 +1300,8 @@ export function TotemView({
                     <Search className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-505" />
                     <input
                       type="text"
+                      name="searchQuery"
+                      autoComplete="off"
                       placeholder="Pesquisar por nome do material (ex: Glock) ou código/serial (ex: TX-983829)..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
@@ -1323,6 +1364,11 @@ export function TotemView({
                                   {mat.controle_quantidade && (
                                     <span className="text-[9px] text-slate-500 font-mono font-bold">
                                       {`Item Coletivo (Disp: ${disponivelQty})`}
+                                    </span>
+                                  )}
+                                  {isItemExpired(mat.data_validade) && (
+                                    <span className="text-[8px] px-2 py-0.5 bg-red-950/70 text-red-400 border border-red-900/40 rounded font-black font-mono animate-pulse uppercase tracking-wider">
+                                      Vencido
                                     </span>
                                   )}
                                 </div>
@@ -1459,6 +1505,8 @@ export function TotemView({
                         <label className="text-[10px] font-mono font-bold text-slate-450 uppercase tracking-wider block">Assinatura Eletrônica (Sua Senha):</label>
                         <input
                           type="password"
+                          name="confirmarCautelaPin"
+                          autoComplete="new-password"
                           maxLength={6}
                           placeholder="••••••"
                           value={confirmarCautelaPin}

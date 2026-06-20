@@ -125,6 +125,9 @@ export function BancoDadosView({
   const [materialError, setMaterialError] = useState('');
   const [newMaterialQuantidade, setNewMaterialQuantidade] = useState(1);
   const [newMaterialCarregadores, setNewMaterialCarregadores] = useState(3);
+  const [newMaterialValidade, setNewMaterialValidade] = useState('');
+  const [newGasSubitem, setNewGasSubitem] = useState<'spray' | 'gl_max' | 'outro'>('spray');
+  const [newGasCustomSubitem, setNewGasCustomSubitem] = useState('');
 
   // Estados Adicionais para Calibres
   const [calibresDisponiveis, setCalibresDisponiveis] = useState<string[]>(['9mm', '.40 S&W', '5.56x45mm NATO']);
@@ -178,6 +181,8 @@ export function BancoDadosView({
   const isWeaponCategorySelected = isWeaponCategory(newMaterialCategoria);
   const isAccessoryCategorySelected = isAccessoryCategory(newMaterialCategoria);
   const isAmmunitionCategorySelected = newMaterialCategoria === 'CAT-MUNICAO';
+  const isGasCategorySelected = newMaterialCategoria === 'CAT-GAS-LACRIMOGENIO';
+  const isColeteCategorySelected = newMaterialCategoria === 'CAT-MANUTENCAO';
 
   // Estados para Vínculo e Modelos Estruturados
   const [selectedWeaponModel, setSelectedWeaponModel] = useState('');
@@ -206,6 +211,38 @@ export function BancoDadosView({
       .filter(ci => ci.id_material === mat.id_material && ci.estado_devolucao === undefined && cautelasAtivasIds.has(ci.id_cautela))
       .reduce((sum, item) => sum + item.quantidade, 0);
     return Math.max(0, (mat.quantidade || 0) - totalCautelado);
+  };
+
+  const getValidadeStatus = (dataValidade: string | undefined): { label: string; style: string } | null => {
+    if (!dataValidade) return null;
+    const parts = dataValidade.split('-');
+    if (parts.length !== 3) return null;
+    
+    const validadeDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    validadeDate.setHours(0,0,0,0);
+
+    const diffTime = validadeDate.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const formattedDate = `${parts[2]}/${parts[1]}/${parts[0]}`;
+
+    if (diffDays < 0) {
+      return {
+        label: `Vencido (${formattedDate})`,
+        style: 'bg-red-950/40 text-red-400 border-red-800/40 animate-pulse'
+      };
+    } else if (diffDays <= 90) {
+      return {
+        label: `Vence em ${diffDays} dias (${formattedDate})`,
+        style: 'bg-amber-950/40 text-amber-400 border-amber-800/40'
+      };
+    } else {
+      return {
+        label: `Validade: ${formattedDate}`,
+        style: 'bg-emerald-950/40 text-emerald-400 border-emerald-800/40'
+      };
+    }
   };
 
   // Handler para criar nova categoria dinamicamente
@@ -347,8 +384,24 @@ export function BancoDadosView({
       isQty = true;
     } else {
       idNorm = newMaterialId.trim().toUpperCase();
-      modNorm = newMaterialModelo.trim();
-      fabNorm = 'N/A';
+      if (isGasCategorySelected) {
+        if (newGasSubitem === 'spray') {
+          modNorm = 'Gás Lacrimogênio - Spray';
+        } else if (newGasSubitem === 'gl_max') {
+          modNorm = 'Gás Lacrimogênio - GL Max';
+        } else {
+          const customSub = newGasCustomSubitem.trim();
+          if (!customSub) {
+            setMaterialError('Por favor, informe o nome do subitem de Gás Lacrimogênio.');
+            return;
+          }
+          modNorm = `Gás Lacrimogênio - ${customSub}`;
+        }
+        fabNorm = newMaterialFabricante.trim() || 'Condor';
+      } else {
+        modNorm = newMaterialModelo.trim();
+        fabNorm = newMaterialFabricante.trim() || 'N/A';
+      }
       specNorm = newMaterialSpecs.trim();
       isQty = newMaterialQuantidade > 1;
 
@@ -388,7 +441,8 @@ export function BancoDadosView({
       controle_quantidade: isQty,
       quantidade: newMaterialQuantidade,
       id_arma_vinculada: !isWeaponCategorySelected && targetWeaponId ? targetWeaponId : undefined,
-      ...(isWeaponCategorySelected ? { quantidade_carregadores: newMaterialCarregadores } : {})
+      ...(isWeaponCategorySelected ? { quantidade_carregadores: newMaterialCarregadores } : {}),
+      data_validade: (isGasCategorySelected || isColeteCategorySelected) && newMaterialValidade ? newMaterialValidade : undefined
     };
 
     adicionarMaterial(novoMaterial);
@@ -403,6 +457,9 @@ export function BancoDadosView({
     setNewMaterialQuantidade(1);
     setNewMaterialCarregadores(3);
     setCustomCalibreValue('');
+    setNewMaterialValidade('');
+    setNewGasSubitem('spray');
+    setNewGasCustomSubitem('');
 
     // Resetar novos estados de vínculo
     setSelectedWeaponModel('');
@@ -1024,8 +1081,170 @@ export function BancoDadosView({
                       />
                     </div>
                   </>
+                ) : isGasCategorySelected ? (
+                  /* Form de Gás Lacrimogênio */
+                  <>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wide block">
+                        Número de Série / Código Identificador *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="EX: GAS-LAC-003"
+                        value={newMaterialId}
+                        onChange={(e) => setNewMaterialId(e.target.value)}
+                        className="w-full bg-slate-955 border border-slate-800 focus:border-blue-500 p-2.5 text-xs font-mono text-slate-200 focus:outline-none rounded-lg focus:ring-1 focus:ring-blue-500/20"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wide block">Unidades do Item *:</label>
+                      <input
+                        type="number"
+                        required
+                        min={1}
+                        value={newMaterialQuantidade}
+                        onChange={(e) => setNewMaterialQuantidade(parseInt(e.target.value) || 1)}
+                        className="w-full bg-slate-955 border border-slate-800 focus:border-blue-500 p-2.5 text-xs font-mono text-slate-200 focus:outline-none rounded-lg focus:ring-1 focus:ring-blue-500/20"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wide block">Subitem do Gás *:</label>
+                      <select
+                        required
+                        value={newGasSubitem}
+                        onChange={(e) => setNewGasSubitem(e.target.value as any)}
+                        className="w-full bg-slate-955 border border-slate-800 focus:border-blue-500 p-2.5 text-xs text-slate-200 focus:outline-none rounded-lg focus:ring-1 focus:ring-blue-500/20 cursor-pointer"
+                      >
+                        <option value="spray">Spray</option>
+                        <option value="gl_max">GL Max</option>
+                        <option value="outro">Outro Subitem...</option>
+                      </select>
+                    </div>
+
+                    {newGasSubitem === 'outro' && (
+                      <div className="space-y-1.5 animate-fadeIn">
+                        <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wide block">Nome do Subitem *:</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="Digite o novo subitem (ex: Granada Lacrimogênea)"
+                          value={newGasCustomSubitem}
+                          onChange={(e) => setNewGasCustomSubitem(e.target.value)}
+                          className="w-full bg-slate-955 border border-slate-800 focus:border-blue-500 p-2.5 text-xs text-slate-200 focus:outline-none rounded-lg focus:ring-1 focus:ring-blue-500/20"
+                        />
+                      </div>
+                    )}
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wide block">Fabricante / Marca:</label>
+                      <input
+                        type="text"
+                        placeholder="EX: Condor"
+                        value={newMaterialFabricante}
+                        onChange={(e) => setNewMaterialFabricante(e.target.value)}
+                        className="w-full bg-slate-955 border border-slate-800 focus:border-blue-500 p-2.5 text-xs text-slate-200 focus:outline-none rounded-lg focus:ring-1 focus:ring-blue-500/20"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wide block">Data de Validade:</label>
+                      <input
+                        type="date"
+                        value={newMaterialValidade}
+                        onChange={(e) => setNewMaterialValidade(e.target.value)}
+                        className="w-full bg-slate-955 border border-slate-800 focus:border-blue-500 p-2.5 text-xs text-slate-200 focus:outline-none rounded-lg focus:ring-1 focus:ring-blue-500/20 font-mono"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wide block">Especificações Técnicas:</label>
+                      <textarea
+                        rows={3}
+                        placeholder="Especificações do agente químico..."
+                        value={newMaterialSpecs}
+                        onChange={(e) => setNewMaterialSpecs(e.target.value)}
+                        className="w-full bg-slate-955 border border-slate-800 focus:border-blue-500 p-2.5 text-xs text-slate-200 focus:outline-none rounded-lg focus:ring-1 focus:ring-blue-500/20"
+                      />
+                    </div>
+                  </>
+                ) : isColeteCategorySelected ? (
+                  /* Form de Colete Balístico */
+                  <>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wide block">
+                        Número de Série / Código Identificador *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="EX: COL-NV3-873"
+                        value={newMaterialId}
+                        onChange={(e) => setNewMaterialId(e.target.value)}
+                        className="w-full bg-slate-955 border border-slate-800 focus:border-blue-500 p-2.5 text-xs font-mono text-slate-200 focus:outline-none rounded-lg focus:ring-1 focus:ring-blue-500/20"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wide block">Unidades do Item *:</label>
+                      <input
+                        type="number"
+                        required
+                        min={1}
+                        value={newMaterialQuantidade}
+                        onChange={(e) => setNewMaterialQuantidade(parseInt(e.target.value) || 1)}
+                        className="w-full bg-slate-955 border border-slate-800 focus:border-blue-500 p-2.5 text-xs font-mono text-slate-200 focus:outline-none rounded-lg focus:ring-1 focus:ring-blue-500/20"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wide block">Tamanho / Modelo do Colete *:</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="EX: Colete Kevlar Nivel III M"
+                        value={newMaterialModelo}
+                        onChange={(e) => setNewMaterialModelo(e.target.value)}
+                        className="w-full bg-slate-955 border border-slate-800 focus:border-blue-500 p-2.5 text-xs text-slate-200 focus:outline-none rounded-lg focus:ring-1 focus:ring-blue-500/20"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wide block">Fabricante / Marca:</label>
+                      <input
+                        type="text"
+                        placeholder="EX: Inbra Terrestre"
+                        value={newMaterialFabricante}
+                        onChange={(e) => setNewMaterialFabricante(e.target.value)}
+                        className="w-full bg-slate-955 border border-slate-800 focus:border-blue-500 p-2.5 text-xs text-slate-200 focus:outline-none rounded-lg focus:ring-1 focus:ring-blue-500/20"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wide block">Data de Validade:</label>
+                      <input
+                        type="date"
+                        value={newMaterialValidade}
+                        onChange={(e) => setNewMaterialValidade(e.target.value)}
+                        className="w-full bg-slate-955 border border-slate-800 focus:border-blue-500 p-2.5 text-xs text-slate-200 focus:outline-none rounded-lg focus:ring-1 focus:ring-blue-500/20 font-mono"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wide block">Especificações Técnicas:</label>
+                      <textarea
+                        rows={3}
+                        placeholder="Especificações de engenharia militar do colete..."
+                        value={newMaterialSpecs}
+                        onChange={(e) => setNewMaterialSpecs(e.target.value)}
+                        className="w-full bg-slate-955 border border-slate-800 focus:border-blue-500 p-2.5 text-xs text-slate-200 focus:outline-none rounded-lg focus:ring-1 focus:ring-blue-500/20"
+                      />
+                    </div>
+                  </>
                 ) : (
-                  /* Form Geral ( HT, Colete, etc. ) */
+                  /* Form Geral ( HT, etc. ) */
                   <>
                     <div className="space-y-1">
                       <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wide block">
@@ -1058,9 +1277,20 @@ export function BancoDadosView({
                       <input
                         type="text"
                         required
-                        placeholder="EX: Colete Kevlar Nivel III"
+                        placeholder="EX: Rádio HT Motorola"
                         value={newMaterialModelo}
                         onChange={(e) => setNewMaterialModelo(e.target.value)}
+                        className="w-full bg-slate-955 border border-slate-800 focus:border-blue-500 p-2.5 text-xs text-slate-200 focus:outline-none rounded-lg focus:ring-1 focus:ring-blue-500/20"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wide block">Fabricante / Marca:</label>
+                      <input
+                        type="text"
+                        placeholder="EX: Motorola, Harris..."
+                        value={newMaterialFabricante}
+                        onChange={(e) => setNewMaterialFabricante(e.target.value)}
                         className="w-full bg-slate-955 border border-slate-800 focus:border-blue-500 p-2.5 text-xs text-slate-200 focus:outline-none rounded-lg focus:ring-1 focus:ring-blue-500/20"
                       />
                     </div>
@@ -1070,7 +1300,7 @@ export function BancoDadosView({
                       <select
                         value={newMaterialCalibre}
                         onChange={(e) => setNewMaterialCalibre(e.target.value)}
-                        className="w-full bg-slate-955 border border-slate-800 focus:border-blue-500 p-2.5 text-xs text-slate-200 focus:outline-none rounded-lg focus:ring-1 focus:ring-blue-500/20 cursor-pointer"
+                        className="w-full bg-slate-955 border border-slate-800 focus:border-blue-500 p-2.5 text-xs text-slate-202 focus:outline-none rounded-lg focus:ring-1 focus:ring-blue-500/20 cursor-pointer"
                       >
                         <option value="N/A">N/A (Não Aplicável)</option>
                         {calibresDisponiveis.map(cal => (
@@ -1086,7 +1316,7 @@ export function BancoDadosView({
                         placeholder="Especificações de engenharia militar do item..."
                         value={newMaterialSpecs}
                         onChange={(e) => setNewMaterialSpecs(e.target.value)}
-                        className="w-full bg-slate-955 border border-slate-800 focus:border-blue-500 p-2.5 text-xs text-slate-200 focus:outline-none rounded-lg focus:ring-1 focus:ring-blue-500/20"
+                        className="w-full bg-slate-955 border border-slate-800 focus:border-blue-500 p-2.5 text-xs text-slate-202 focus:outline-none rounded-lg focus:ring-1 focus:ring-blue-500/20"
                       />
                     </div>
                   </>
@@ -1179,6 +1409,15 @@ export function BancoDadosView({
                                   {mat.fabricante && mat.fabricante !== 'N/A' ? `${mat.fabricante} ` : ''}
                                   {mat.calibre !== 'N/A' && mat.calibre ? `[Calibre: ${mat.calibre}]` : ''}
                                 </span>
+                                {(() => {
+                                  const valBadge = getValidadeStatus(mat.data_validade);
+                                  if (!valBadge) return null;
+                                  return (
+                                    <span className={`text-[9px] font-mono font-bold uppercase tracking-wider mt-1 block px-1.5 py-0.5 rounded border w-fit ${valBadge.style}`}>
+                                      {valBadge.label}
+                                    </span>
+                                  );
+                                })()}
                                 {mat.quantidade_carregadores !== undefined && (
                                   <span className="text-[9px] text-amber-450 font-mono font-bold uppercase tracking-wider mt-1 block bg-amber-950/20 px-1.5 py-0.5 rounded border border-amber-900/20 w-fit">
                                     Carregadores: {mat.quantidade_carregadores}

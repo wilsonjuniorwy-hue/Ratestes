@@ -26,7 +26,7 @@ export type StatusMaterial = 'disponivel' | 'cautelado' | 'manutencao' | 'conden
 export type CondicaoUso = 'excelente' | 'bom' | 'regular' | 'avariado';
 
 // --- Status da Cautela ---
-export type StatusCautela = 'ativa' | 'devolvida' | 'atrasada' | 'prorrogada';
+export type StatusCautela = 'ativa' | 'devolvida' | 'atrasada' | 'prorrogada' | 'permanente';
 
 export interface Usuario {
   matricula: string; // Chave Primária (Ex: PM-874291)
@@ -67,6 +67,7 @@ export interface Material {
   id_arma_vinculada?: string; // ID/Código da arma vinculada
   quantidade_carregadores?: number; // Quantidade de carregadores desta arma
   id_quartel?: string;   // UUID do quartel
+  data_validade?: string; // Data de validade do item (ex: YYYY-MM-DD)
 }
 
 export interface Cautela {

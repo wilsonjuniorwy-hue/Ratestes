@@ -197,6 +197,12 @@ export default function FlowSimulator({
   const [observacoesRetirada, setObservacoesRetirada] = useState('Escala operacional de serviço de radiopatrulha tática.');
   const [generatedCautela, setGeneratedCautela] = useState<Cautela | null>(null);
   const [authError, setAuthError] = useState('');
+  const [isPermanentMode, setIsPermanentMode] = useState(false);
+
+  const onResetPermanentMode = () => {
+    setIsPermanentMode(false);
+    setRoleMode('armeiro');
+  };
 
   // Estados para Impressão de Relatórios
   const [printMode, setPrintMode] = useState<'cautelas' | 'logs' | 'ocorrencia' | 'relatorio' | null>(null);
@@ -348,6 +354,8 @@ export default function FlowSimulator({
             cadastrarSenha={db.cadastrarSenha}
             processEfetivarCautela={db.processEfetivarCautela}
             cadastrarPolicial={db.cadastrarPolicial}
+            isPermanentMode={isPermanentMode}
+            onResetPermanentMode={onResetPermanentMode}
           />
         </ErrorBoundary>
       )}
@@ -369,6 +377,21 @@ export default function FlowSimulator({
             activeArmeiroMatricula={activeArmeiroMatricula}
             authenticatedPerfil={authenticatedPerfil}
             excluirCautelaTotal={db.excluirCautelaTotal}
+            onOpenPermanentTotem={() => {
+              setPolicialStep('login');
+              setMatriculaInput('');
+              setSenhaInput('');
+              setLoggedUser(null);
+              setNovaSenhaInput('');
+              setConfirmarSenhaInput('');
+              setCadastroSenhaError('');
+              setCartItens([]);
+              setObservacoesRetirada('Carga pessoal permanente.');
+              setGeneratedCautela(null);
+              setAuthError('');
+              setIsPermanentMode(true);
+              setRoleMode('policial');
+            }}
           />
         </ErrorBoundary>
       )}
