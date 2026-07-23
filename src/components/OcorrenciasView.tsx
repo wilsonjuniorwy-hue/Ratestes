@@ -694,13 +694,63 @@ Riacho Fundo I - DF, ${dataMinusculo}.`;
     const activeCautelas = cautelas.filter(c => !c.data_devolucao_efetiva);
 
     materiais.forEach(m => {
-      const key = m.modelo;
+      const catObj = categorias.find(c => c.id_categoria === m.id_categoria);
+      const isBastaoModel = /^B\d+$/i.test(m.modelo.trim()) || 
+        /^BASTAO/i.test(m.modelo.trim()) || 
+        /^BASTÃO/i.test(m.modelo.trim());
+      const isBastaoId = /^BASTAO/i.test(m.id_material.trim()) || 
+        /^BASTÃO/i.test(m.id_material.trim());
+      const isBastaoCategory = m.id_categoria === 'CAT-493' || 
+        (catObj?.nome.toLowerCase().includes('bastã') ?? false) ||
+        (catObj?.nome.toLowerCase().includes('bastao') ?? false);
+
+      const isBastao = isBastaoCategory || isBastaoModel || isBastaoId;
+
+      const isRadioHytera = m.fabricante.toUpperCase() === 'HYTERA' || /^HY/i.test(m.modelo.trim());
+      const isRadioSepura = m.fabricante.toUpperCase() === 'SEPURA' || /^SEP/i.test(m.modelo.trim());
+      const isRadioOther = m.id_categoria === 'CAT-COMUNICACAO' ||
+        /^HT/i.test(m.modelo.trim()) ||
+        /^HT/i.test(m.id_material.trim());
+
+      const isColeteImbel = (m.id_categoria === 'CAT-MANUTENCAO' || /colete/i.test(m.modelo)) && 
+        (m.fabricante.toUpperCase() === 'IMBEL' || /^300/i.test(m.id_material.trim()) || /imbel/i.test(m.modelo));
+
+      const isColeteProtecop = (m.id_categoria === 'CAT-MANUTENCAO' || /colete/i.test(m.modelo)) && 
+        !isColeteImbel &&
+        (m.fabricante.toUpperCase() === 'PROTECOP' || /^SC/i.test(m.id_material.trim()) || /protecop/i.test(m.modelo));
+
+      let groupTitle = m.modelo;
+      let groupFabricante = m.fabricante;
+
+      if (isBastao) {
+        groupTitle = 'Bastão Policial';
+        groupFabricante = 'Dotação PMDF';
+      } else if (isRadioSepura) {
+        groupTitle = 'Rádio HT Sepura';
+        groupFabricante = 'SEPURA';
+      } else if (isRadioHytera) {
+        groupTitle = 'Rádio HT Hytera';
+        groupFabricante = 'HYTERA';
+      } else if (isRadioOther) {
+        groupTitle = 'Rádio HT Telecom';
+        groupFabricante = m.fabricante || 'Telecom';
+      } else if (isColeteImbel) {
+        groupTitle = 'Colete Balístico Imbel (M)';
+        groupFabricante = 'IMBEL';
+      } else if (isColeteProtecop) {
+        groupTitle = 'Colete Balístico Protecop (G)';
+        groupFabricante = 'PROTECOP';
+      }
+
+      const key = groupTitle;
+      const isCustomGroup = isBastao || isRadioSepura || isRadioHytera || isRadioOther || isColeteImbel || isColeteProtecop;
+
       if (!groups[key]) {
         groups[key] = {
-          modelo: m.modelo,
-          fabricante: m.fabricante,
+          modelo: groupTitle,
+          fabricante: groupFabricante,
           categoriaId: m.id_categoria,
-          isColetivo: !!m.controle_quantidade,
+          isColetivo: isCustomGroup ? false : !!m.controle_quantidade,
           quantidadeTotal: 0,
           carregadoresTotal: 0,
           breakdown: {
@@ -716,7 +766,7 @@ Riacho Fundo I - DF, ${dataMinusculo}.`;
       }
 
       if (m.controle_quantidade) {
-        // Obter todas as cautelas ativas que contêm este lote de munição
+        // Obter todas as cautelas ativas que contêm este lote de munição ou bastão sem número
         const activeCautelaItensForLote = cautelaItens.filter(ci => 
           ci.id_material === m.id_material && 
           activeCautelas.some(ac => ac.id_cautela === ci.id_cautela)
@@ -760,7 +810,7 @@ Riacho Fundo I - DF, ${dataMinusculo}.`;
     });
 
     return Object.values(groups);
-  }, [materiais, cautelas, cautelaItens]);
+  }, [materiais, cautelas, cautelaItens, categorias]);
 
   const handleSalvarOcorrenciaSubmit = (e: React.FormEvent) => {
     e.preventDefault();
