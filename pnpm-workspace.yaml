@@ -1,4 +1,7 @@
-allowBuilds:
-  '@google/genai': true
-  esbuild: true
-  protobufjs: true
+packages:
+  - '.'
+
+onlyBuiltDependencies:
+  - '@google/genai'
+  - esbuild
+  - protobufjs
