@@ -323,6 +323,37 @@ export function useMockDatabase() {
     );
   };
 
+  // ---- CONFIRMAR ENTRADA / ACRESCIMO AO ESTOQUE COM JUSTIFICATIVA ----
+  const confirmarEntrada = (id: string, motivo: string, quantidade_entrada: number = 1) => {
+    const mat = materiais.find(m => m.id_material === id);
+    if (!mat) return;
+
+    let newQty = mat.quantidade || 0;
+    const materiaisAtualizados = materiais.map(m => {
+      if (m.id_material === id) {
+        if (m.controle_quantidade) {
+          newQty = (m.quantidade || 0) + quantidade_entrada;
+          return { ...m, quantidade: newQty };
+        }
+        return { ...m, status_atual: 'disponivel' as StatusMaterial };
+      }
+      return m;
+    });
+
+    setMateriais(materiaisAtualizados);
+
+    const armeiroSvc = usuarios.find(u => u.perfil === 'armeiro_gestor')?.matricula || 'SYS-AM';
+    const desc = mat.controle_quantidade 
+      ? `Material ${mat.modelo} (Lote: ${id}) - Qtd: ${quantidade_entrada} ADICIONADAS ao estoque. Motivo/Origem: "${motivo}". Novo total: ${newQty}.`
+      : `Material ${mat.modelo} (S/N: ${id}) REINTEGRADO ao estoque (Disponível). Motivo/Origem: "${motivo}".`;
+
+    registrarLogAuditoria(
+      armeiroSvc,
+      'retorno_manutencao',
+      desc
+    );
+  };
+
   // ---- EFETIVAR CAUTELA ----
   const processEfetivarCautela = (
     matriculaPolicial: string, 
@@ -668,6 +699,7 @@ export function useMockDatabase() {
     adicionarMaterial,
     updateMaterialStatus,
     confirmarRetirada,
+    confirmarEntrada,
     processEfetivarCautela,
     processDevolucao,
     adicionarCategoria,

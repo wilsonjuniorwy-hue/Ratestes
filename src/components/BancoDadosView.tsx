@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   Database, Search, KeyRound, Package, ShieldAlert, CheckCircle, AlertTriangle, Plus, Lock, X, FolderLock,
-  RefreshCw, Trash2, Eye, Play, FileText, Trash
+  RefreshCw, Trash2, Eye, Play, FileText, Trash, Edit
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Usuario, Material, SituacaoMilitar, StatusMaterial, Categoria, Cautela, CautelaItem, ArmaParticular } from '../types';
@@ -20,6 +20,7 @@ interface BancoDadosViewProps {
   adicionarMaterial: (novoMaterial: Material) => void;
   updateMaterialStatus: (id: string, novoStatus: StatusMaterial) => void;
   confirmarRetirada: (id: string, destino: string, quantidade_retirada?: number) => void;
+  confirmarEntrada?: (id: string, motivo: string, quantidade_entrada?: number) => void;
   modelosArmas: Array<{ modelo: string; calibre: string }>;
   adicionarModeloArma: (modelo: string, calibre: string) => void;
   activeArmeiroMatricula?: string;
@@ -51,6 +52,7 @@ export function BancoDadosView({
   adicionarMaterial,
   updateMaterialStatus,
   confirmarRetirada,
+  confirmarEntrada,
   modelosArmas,
   adicionarModeloArma,
   activeArmeiroMatricula,
@@ -202,6 +204,18 @@ export function BancoDadosView({
   const [removalDestino, setRemovalDestino] = useState('');
   const [removalQuantity, setRemovalQuantity] = useState(1);
   const [removalError, setRemovalError] = useState('');
+
+  // Estados para Modal de Entrada / Acrescer ao Estoque
+  const [entryMaterialId, setEntryMaterialId] = useState<string | null>(null);
+  const [entryMotivo, setEntryMotivo] = useState('');
+  const [entryQuantity, setEntryQuantity] = useState(1);
+  const [entryError, setEntryError] = useState('');
+
+  // Estados para Modal de Edição de Policial
+  const [editUserMatricula, setEditUserMatricula] = useState<string | null>(null);
+  const [editUserNome, setEditUserNome] = useState('');
+  const [editUserNomeDeGuerra, setEditUserNomeDeGuerra] = useState('');
+  const [editUserError, setEditUserError] = useState('');
 
   // Helper para obter quantidade disponível de itens de controle_quantidade
   const getQuantidadeDisponivel = (mat: Material) => {
@@ -522,6 +536,84 @@ export function BancoDadosView({
     setRemovalError('');
   };
 
+  // ---- INICIAR ENTRADA ----
+  const handleIniciarEntrada = (id: string) => {
+    const mat = materiais.find(m => m.id_material === id);
+    if (!mat) return;
+
+    setEntryMaterialId(id);
+    setEntryMotivo('');
+    setEntryQuantity(1);
+    setEntryError('');
+  };
+
+  // ---- CONFIRMAR ENTRADA / ACRESCIMO ----
+  const handleConfirmarEntradaSubmit = () => {
+    if (!entryMaterialId || !confirmarEntrada) return;
+
+    const mat = materiais.find(m => m.id_material === entryMaterialId);
+    if (!mat) return;
+
+    const motivoNorm = entryMotivo.trim();
+    if (!motivoNorm) {
+      setEntryError('Informe o motivo ou origem da entrada no estoque.');
+      return;
+    }
+
+    if (mat.controle_quantidade) {
+      if (entryQuantity < 1 || isNaN(entryQuantity)) {
+        setEntryError('A quantidade a acrescentar deve ser maior ou igual a 1.');
+        return;
+      }
+    }
+
+    confirmarEntrada(entryMaterialId, motivoNorm, mat.controle_quantidade ? entryQuantity : 1);
+
+    alert(`Material S/N: ${entryMaterialId} acrescido/reintegrado ao estoque com sucesso.`);
+    setEntryMaterialId(null);
+    setEntryMotivo('');
+    setEntryQuantity(1);
+    setEntryError('');
+  };
+
+  // ---- EDIÇÃO DE POLICIAL MILITAR ----
+  const handleIniciarEdicaoPolicial = (user: Usuario) => {
+    setEditUserMatricula(user.matricula);
+    setEditUserNome(user.nome || '');
+    setEditUserNomeDeGuerra(user.nome_de_guerra || '');
+    setEditUserError('');
+  };
+
+  const handleSalvarEdicaoPolicialSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setEditUserError('');
+
+    if (!editUserMatricula || !editarPolicial) return;
+
+    const nomeNorm = editUserNome.trim();
+    const nomeGuerraNorm = editUserNomeDeGuerra.trim();
+
+    if (!nomeNorm) {
+      setEditUserError('Informe o Nome Completo do policial.');
+      return;
+    }
+
+    try {
+      await editarPolicial(editUserMatricula, {
+        nome: nomeNorm,
+        nome_de_guerra: nomeGuerraNorm || undefined
+      });
+
+      alert(`Dados do militar (${editUserMatricula}) atualizados com sucesso.`);
+      setEditUserMatricula(null);
+      setEditUserNome('');
+      setEditUserNomeDeGuerra('');
+      setEditUserError('');
+    } catch (err: any) {
+      setEditUserError(err.message || 'Erro ao atualizar dados do policial.');
+    }
+  };
+
   const handleDesbloquearMilitarClick = async (matricula: string) => {
     if (editarPolicial) {
       const u = usuarios.find(usr => usr.matricula === matricula);
@@ -823,6 +915,14 @@ export function BancoDadosView({
                         </td>
                         <td className="p-4">
                           <div className="flex items-center gap-2 flex-wrap">
+                            <button
+                              onClick={() => handleIniciarEdicaoPolicial(user)}
+                              className="px-3 py-1.5 bg-slate-955 hover:bg-blue-955/20 border border-slate-800 hover:border-blue-900/50 text-[10px] font-mono text-slate-400 hover:text-blue-400 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer uppercase font-bold"
+                            >
+                              <Edit className="h-3.5 w-3.5" />
+                              <span>Editar</span>
+                            </button>
+
                             <button
                               onClick={() => handleZerarSenhaClick(user.matricula)}
                               className="px-3 py-1.5 bg-slate-955 hover:bg-amber-955/20 border border-slate-800 hover:border-amber-900/50 text-[10px] font-mono text-slate-400 hover:text-amber-400 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer uppercase font-bold"
@@ -1461,44 +1561,72 @@ export function BancoDadosView({
                               )}
                             </td>
                             <td className="p-4">
-                               <div className="flex items-center gap-2">
-                                 {isQtyControlled ? (
-                                   <button
-                                     onClick={() => handleIniciarRetirada(mat.id_material)}
-                                     disabled={qtyDisp === 0}
-                                     className={`px-3 py-1.5 rounded-lg text-[10px] font-mono transition-all duration-150 flex items-center justify-center font-bold uppercase cursor-pointer ${
-                                       qtyDisp === 0
-                                         ? 'bg-slate-955 border border-slate-850 text-slate-655 cursor-not-allowed opacity-40'
-                                         : 'bg-red-955/30 border border-red-900/30 hover:border-red-800/80 text-red-400 hover:text-red-300'
-                                     }`}
-                                   >
-                                     Retirar
-                                   </button>
-                                 ) : !isRetirado ? (
-                                   <button
-                                     onClick={() => handleIniciarRetirada(mat.id_material)}
-                                     disabled={isCautelado}
-                                     className={`px-3 py-1.5 rounded-lg text-[10px] font-mono transition-all duration-150 flex items-center justify-center font-bold uppercase cursor-pointer ${
-                                       isCautelado
-                                         ? 'bg-slate-950 border border-slate-850 text-slate-650 cursor-not-allowed opacity-40'
-                                         : 'bg-red-955/30 border border-red-900/30 hover:border-red-800/80 text-red-400 hover:text-red-300'
-                                     }`}
-                                   >
-                                     Retirar
-                                   </button>
-                                 ) : (
-                                   <span className="text-[9px] font-mono text-slate-500 italic font-bold">Item Fora</span>
-                                 )}
+                              <div className="flex items-center gap-2">
+                                {isQtyControlled ? (
+                                  <>
+                                    <button
+                                      onClick={() => handleIniciarRetirada(mat.id_material)}
+                                      disabled={qtyDisp === 0}
+                                      className={`px-3 py-1.5 rounded-lg text-[10px] font-mono transition-all duration-150 flex items-center justify-center font-bold uppercase cursor-pointer ${
+                                        qtyDisp === 0
+                                          ? 'bg-slate-955 border border-slate-850 text-slate-655 cursor-not-allowed opacity-40'
+                                          : 'bg-red-955/30 border border-red-900/30 hover:border-red-800/80 text-red-400 hover:text-red-300'
+                                      }`}
+                                    >
+                                      Retirar
+                                    </button>
 
-                                 {authenticatedPerfil === 'admin' && (
-                                   <button
-                                     onClick={() => handleExcluirMaterialClick(mat.id_material)}
-                                     className="px-3 py-1.5 bg-slate-955 hover:bg-red-955/20 border border-slate-800 hover:border-red-900/50 text-[10px] font-mono text-slate-400 hover:text-red-400 rounded-lg transition-colors flex items-center justify-center font-bold uppercase cursor-pointer"
-                                   >
-                                     Excluir
-                                   </button>
-                                 )}
-                               </div>
+                                    <button
+                                      onClick={() => handleIniciarEntrada(mat.id_material)}
+                                      className="px-3 py-1.5 rounded-lg text-[10px] font-mono transition-all duration-150 flex items-center justify-center font-bold uppercase cursor-pointer bg-emerald-955/30 border border-emerald-900/30 hover:border-emerald-800/80 text-emerald-400 hover:text-emerald-300"
+                                    >
+                                      Entrada
+                                    </button>
+                                  </>
+                                ) : !isRetirado ? (
+                                  <>
+                                    <button
+                                      onClick={() => handleIniciarRetirada(mat.id_material)}
+                                      disabled={isCautelado}
+                                      className={`px-3 py-1.5 rounded-lg text-[10px] font-mono transition-all duration-150 flex items-center justify-center font-bold uppercase cursor-pointer ${
+                                        isCautelado
+                                          ? 'bg-slate-950 border border-slate-850 text-slate-650 cursor-not-allowed opacity-40'
+                                          : 'bg-red-955/30 border border-red-900/30 hover:border-red-800/80 text-red-400 hover:text-red-300'
+                                      }`}
+                                    >
+                                      Retirar
+                                    </button>
+
+                                    {mat.status_atual !== 'disponivel' && !isCautelado && (
+                                      <button
+                                        onClick={() => handleIniciarEntrada(mat.id_material)}
+                                        className="px-3 py-1.5 rounded-lg text-[10px] font-mono transition-all duration-150 flex items-center justify-center font-bold uppercase cursor-pointer bg-emerald-955/30 border border-emerald-900/30 hover:border-emerald-800/80 text-emerald-400 hover:text-emerald-300"
+                                      >
+                                        Entrada
+                                      </button>
+                                    )}
+                                  </>
+                                ) : (
+                                  <>
+                                    <span className="text-[9px] font-mono text-slate-500 italic font-bold">Item Fora</span>
+                                    <button
+                                      onClick={() => handleIniciarEntrada(mat.id_material)}
+                                      className="px-3 py-1.5 rounded-lg text-[10px] font-mono transition-all duration-150 flex items-center justify-center font-bold uppercase cursor-pointer bg-emerald-955/30 border border-emerald-900/30 hover:border-emerald-800/80 text-emerald-400 hover:text-emerald-300"
+                                    >
+                                      Entrada
+                                    </button>
+                                  </>
+                                )}
+
+                                {authenticatedPerfil === 'admin' && (
+                                  <button
+                                    onClick={() => handleExcluirMaterialClick(mat.id_material)}
+                                    className="px-3 py-1.5 bg-slate-955 hover:bg-red-955/20 border border-slate-800 hover:border-red-900/50 text-[10px] font-mono text-slate-400 hover:text-red-400 rounded-lg transition-colors flex items-center justify-center font-bold uppercase cursor-pointer"
+                                  >
+                                    Excluir
+                                  </button>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         );
@@ -1983,6 +2111,197 @@ export function BancoDadosView({
                   Confirmar Retirada
                 </button>
               </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL DE ENTRADA / ACRESCER AO ESTOQUE */}
+      <AnimatePresence>
+        {entryMaterialId && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-955/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 no-print"
+          >
+            <motion.div
+              initial={{ scale: 0.95 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0.95 }}
+              className="bg-slate-900 border border-slate-800 rounded-xl max-w-md w-full p-6 shadow-2xl space-y-4 text-xs font-sans relative overflow-hidden"
+            >
+              <div className="absolute top-0 left-0 right-0 h-[2px] bg-emerald-500" />
+              
+              <div className="flex items-start gap-3">
+                <div className="bg-emerald-955/40 p-2.5 rounded-lg border border-emerald-900/30 text-emerald-400">
+                  <Package className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-slate-200 font-mono uppercase tracking-widest">Entrada / Reintegração de Material</h3>
+                  <p className="text-xs text-slate-450 leading-relaxed mt-0.5 font-medium">Informe a quantidade a acrescentar ou a justificativa para reintegrar este material ao estoque disponível.</p>
+                </div>
+              </div>
+
+              <div className="bg-slate-950 p-3.5 rounded-lg border border-slate-855/80 font-mono text-[10px] space-y-1.5">
+                <p className="text-slate-400">Material: <strong className="text-slate-205 font-sans font-black">{materiais.find(m => m.id_material === entryMaterialId)?.modelo}</strong></p>
+                <p className="text-slate-400">
+                  {materiais.find(m => m.id_material === entryMaterialId)?.controle_quantidade ? 'Código do Lote:' : 'Número de Série:'}{' '}
+                  <strong className="text-blue-400 font-bold">{entryMaterialId}</strong>
+                </p>
+                {materiais.find(m => m.id_material === entryMaterialId)?.controle_quantidade && (
+                  <p className="text-slate-400">
+                    Estoque Atual: <strong className="text-emerald-400 font-bold">{materiais.find(m => m.id_material === entryMaterialId)?.quantidade || 0} un</strong>
+                  </p>
+                )}
+              </div>
+
+              {(() => {
+                const mat = materiais.find(m => m.id_material === entryMaterialId);
+                if (!mat?.controle_quantidade) return null;
+                
+                return (
+                  <div className="space-y-1.5 animate-fadeIn">
+                    <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wider block">Quantidade a Acrescentar *:</label>
+                    <input
+                      type="number"
+                      required
+                      min={1}
+                      value={entryQuantity}
+                      onChange={(e) => setEntryQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                      className="w-full bg-slate-955 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/20"
+                    />
+                  </div>
+                );
+              })()}
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wider block">Motivo / Origem da Entrada *:</label>
+                <textarea
+                  rows={3}
+                  required
+                  placeholder="Ex: Recebimento de novo lote do almoxarifado central, retorno de manutenção técnica ou reincorporação ao paiol."
+                  value={entryMotivo}
+                  onChange={(e) => setEntryMotivo(e.target.value)}
+                  className="w-full bg-slate-955 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/20"
+                />
+              </div>
+
+              {entryError && (
+                <div className="bg-red-955/30 border border-red-900/40 p-3 rounded-lg text-xs text-red-400 font-mono flex items-start gap-2">
+                  <ShieldAlert className="h-4 w-4 shrink-0 mt-0.5 text-red-550" />
+                  <span>{entryError}</span>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2.5 font-mono">
+                <button
+                  type="button"
+                  onClick={() => setEntryMaterialId(null)}
+                  className="px-4 py-2 border border-slate-800 hover:border-slate-700 bg-transparent text-slate-400 hover:text-slate-200 rounded-lg transition-colors font-bold uppercase cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmarEntradaSubmit}
+                  className="px-4 py-2 bg-emerald-650 hover:bg-emerald-500 text-white rounded-lg transition-colors font-bold uppercase cursor-pointer shadow-md glow-emerald"
+                >
+                  Confirmar Entrada
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL DE EDIÇÃO DE POLICIAL MILITAR */}
+      <AnimatePresence>
+        {editUserMatricula && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-955/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 no-print"
+          >
+            <motion.div
+              initial={{ scale: 0.95 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0.95 }}
+              className="bg-slate-900 border border-slate-800 rounded-xl max-w-md w-full p-6 shadow-2xl space-y-4 text-xs font-sans relative overflow-hidden"
+            >
+              <div className="absolute top-0 left-0 right-0 h-[2px] bg-blue-500" />
+              
+              <div className="flex items-start gap-3">
+                <div className="bg-blue-955/40 p-2.5 rounded-lg border border-blue-900/30 text-blue-400">
+                  <Edit className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-slate-200 font-mono uppercase tracking-widest">Editar Perfil do Militar</h3>
+                  <p className="text-xs text-slate-450 leading-relaxed mt-0.5 font-medium">Altere o nome completo ou o nome de guerra do policial militar cadastrado.</p>
+                </div>
+              </div>
+
+              <form onSubmit={handleSalvarEdicaoPolicialSubmit} className="space-y-4">
+                <div className="space-y-1.5 font-mono">
+                  <label className="text-[10px] font-bold text-slate-455 uppercase tracking-wider block">Matrícula (RG Funcional):</label>
+                  <input
+                    type="text"
+                    disabled
+                    value={editUserMatricula}
+                    className="w-full bg-slate-950/60 border border-slate-850 rounded-lg p-2.5 text-xs text-blue-400 font-bold opacity-75 cursor-not-allowed uppercase"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wider block">Nome Completo *:</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ex: João da Silva Santos"
+                    value={editUserNome}
+                    onChange={(e) => setEditUserNome(e.target.value)}
+                    className="w-full bg-slate-955 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wider block">Nome de Guerra:</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: Silva"
+                    value={editUserNomeDeGuerra}
+                    onChange={(e) => setEditUserNomeDeGuerra(e.target.value)}
+                    className="w-full bg-slate-955 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20"
+                  />
+                </div>
+
+                {editUserError && (
+                  <div className="bg-red-955/30 border border-red-900/40 p-3 rounded-lg text-xs text-red-400 font-mono flex items-start gap-2">
+                    <ShieldAlert className="h-4 w-4 shrink-0 mt-0.5 text-red-550" />
+                    <span>{editUserError}</span>
+                  </div>
+                )}
+
+                <div className="flex justify-end gap-2.5 font-mono">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditUserMatricula(null);
+                      setEditUserError('');
+                    }}
+                    className="px-4 py-2 border border-slate-800 hover:border-slate-700 bg-transparent text-slate-400 hover:text-slate-200 rounded-lg transition-colors font-bold uppercase cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors font-bold uppercase cursor-pointer shadow-md glow-blue"
+                  >
+                    Salvar Alterações
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </motion.div>
         )}

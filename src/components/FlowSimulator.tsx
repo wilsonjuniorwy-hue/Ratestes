@@ -485,6 +485,7 @@ export default function FlowSimulator({
             adicionarMaterial={db.adicionarMaterial}
             updateMaterialStatus={db.updateMaterialStatus}
             confirmarRetirada={db.confirmarRetirada}
+            confirmarEntrada={db.confirmarEntrada}
             modelosArmas={db.modelosArmas}
             adicionarModeloArma={db.adicionarModeloArma}
             activeArmeiroMatricula={activeArmeiroMatricula}
