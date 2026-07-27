@@ -334,7 +334,7 @@ export function ArmeiroView({
                           <td className="p-4 font-mono font-bold text-blue-400">{caut.id_cautela}</td>
                           <td className="p-4">
                             <div className="flex flex-col">
-                              <span className="font-bold text-slate-200">{policial?.posto_graduacao} {policial?.nome}</span>
+                              <span className="font-bold text-slate-200">{policial?.posto_graduacao} {policial?.nome_de_guerra || policial?.nome}</span>
                               <span className="text-[9px] text-slate-500 font-mono mt-0.5">RG: {caut.matricula_policial}</span>
                             </div>
                           </td>
@@ -629,7 +629,7 @@ export function ArmeiroView({
                           <td className="p-4 font-mono font-bold text-blue-400 align-top">{c.id_cautela}</td>
                           <td className="p-4 align-top">
                             <div className="flex flex-col">
-                              <span className="font-bold text-slate-205">{pol?.posto_graduacao} {pol?.nome}</span>
+                              <span className="font-bold text-slate-205">{pol?.posto_graduacao} {pol?.nome_de_guerra || pol?.nome}</span>
                               <span className="text-[9px] text-slate-500 font-mono mt-0.5">
                                 RG: {c.matricula_policial} {pol?.nome_de_guerra ? `(Guerra: ${pol.nome_de_guerra})` : ''}
                               </span>
@@ -866,7 +866,7 @@ export function ArmeiroView({
                               </div>
 
                               <div className="font-mono text-[10px] text-slate-450 leading-relaxed space-y-0.5">
-                                <p>Operador: <strong className="text-slate-305 font-sans font-bold">{pm?.posto_graduacao} {pm?.nome} ({caut.matricula_policial})</strong></p>
+                                <p>Operador: <strong className="text-slate-305 font-sans font-bold">{pm?.posto_graduacao} {pm?.nome_de_guerra || pm?.nome} ({caut.matricula_policial})</strong></p>
                                 <p>Saída: {new Date(caut.data_retirada).toLocaleTimeString()} (Armeiro: {caut.matricula_armeiro_retirada})</p>
                                 {caut.data_devolucao_efetiva ? (
                                   <p className="text-emerald-450 font-bold uppercase tracking-wider text-[9px] mt-1 bg-emerald-950/20 px-2 py-0.5 border border-emerald-900/30 rounded w-fit">
@@ -1060,7 +1060,7 @@ export function ArmeiroView({
                         </div>
                         <div>
                           <h4 className="text-xs font-bold text-slate-200 font-sans uppercase">
-                            {group.pm ? `${group.pm.posto_graduacao} ${group.pm.nome}` : `Policial (${group.matricula})`}
+                            {group.pm ? `${group.pm.posto_graduacao} ${group.pm.nome_de_guerra || group.pm.nome}` : `Policial (${group.matricula})`}
                           </h4>
                           <p className="text-[10px] text-slate-500 font-mono mt-0.5">
                             Matrícula: {group.matricula} {group.pm?.nome_de_guerra ? `| Guerra: ${group.pm.nome_de_guerra}` : ''}
@@ -1273,7 +1273,7 @@ export function ArmeiroView({
                             <div className="flex justify-between items-start w-full">
                               <div className="space-y-0.5">
                                 <span className="text-[9px] text-slate-500 font-mono block">CÓDIGO: {c.id_cautela}</span>
-                                <h4 className="text-xs font-black uppercase text-slate-205">{pm?.posto_graduacao} {pm?.nome}</h4>
+                                <h4 className="text-xs font-black uppercase text-slate-205">{pm?.posto_graduacao} {pm?.nome_de_guerra || pm?.nome}</h4>
                                 <span className="text-[9px] text-slate-500 font-mono">Matrícula: {c.matricula_policial}</span>
                               </div>
                               <div className="flex flex-col items-end gap-1 shrink-0 ml-2">
@@ -1339,7 +1339,7 @@ export function ArmeiroView({
                             <span className="text-[8px] text-slate-500 font-mono font-bold uppercase tracking-wider block">Militar para Descarrego:</span>
                             <div className="flex justify-between items-center font-mono">
                               <div>
-                                <p className="text-white uppercase font-sans font-bold text-xs">{pm?.posto_graduacao} {pm?.nome}</p>
+                                <p className="text-white uppercase font-sans font-bold text-xs">{pm?.posto_graduacao} {pm?.nome_de_guerra || pm?.nome}</p>
                                 <p className="text-[9px] text-slate-500 mt-0.5">RG FUNCIONAL: {selectedCaut?.matricula_policial}</p>
                               </div>
                               <div className="text-right">

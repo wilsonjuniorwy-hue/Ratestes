@@ -210,19 +210,94 @@ export default function FlowSimulator({
   const [selectedOcorrenciaPrint, setSelectedOcorrenciaPrint] = useState<OcorrenciaRelatorio | null>(null);
   const [printReportData, setPrintReportData] = useState<any>(null);
 
+  // Auxiliar para localizar armeiro responsável com suporte a buscas flexíveis e fallback
+  const getArmeiroUser = (targetMatricula?: string) => {
+    if (!db?.usuarios || db.usuarios.length === 0) return null;
+
+    const normalizeMat = (m?: string) => {
+      let clean = (m || '').trim().toUpperCase();
+      if (clean.startsWith('A')) clean = clean.substring(1);
+      return clean;
+    };
+
+    // 1. Procurar por matrícula específica QUE POSSUA assinatura foto cadastrada
+    if (targetMatricula) {
+      const normTarget = normalizeMat(targetMatricula);
+      const foundWithSig = db.usuarios.find((u: any) => normalizeMat(u.matricula) === normTarget && u.assinatura_foto);
+      if (foundWithSig) return foundWithSig;
+    }
+
+    // 2. Procurar por armeiro ativo QUE POSSUA assinatura foto cadastrada
+    if (activeArmeiroMatricula) {
+      const normActive = normalizeMat(activeArmeiroMatricula);
+      const foundActiveWithSig = db.usuarios.find((u: any) => normalizeMat(u.matricula) === normActive && u.assinatura_foto);
+      if (foundActiveWithSig) return foundActiveWithSig;
+    }
+
+    // 3. Fallback inteligente: buscar QUALQUER armeiro/usuário no banco que POSSUA a foto da assinatura
+    const anyUserWithSig = db.usuarios.find((u: any) => u.assinatura_foto && typeof u.assinatura_foto === 'string' && u.assinatura_foto.length > 50);
+    if (anyUserWithSig) return anyUserWithSig;
+
+    // 4. Se ninguém tiver foto de assinatura, retornar dados textuais por matrícula
+    if (targetMatricula) {
+      const normTarget = normalizeMat(targetMatricula);
+      const found = db.usuarios.find((u: any) => normalizeMat(u.matricula) === normTarget);
+      if (found) return found;
+    }
+
+    if (activeArmeiroMatricula) {
+      const normActive = normalizeMat(activeArmeiroMatricula);
+      const foundActive = db.usuarios.find((u: any) => normalizeMat(u.matricula) === normActive);
+      if (foundActive) return foundActive;
+    }
+
+    return db.usuarios.find((u: any) => u.perfil === 'armeiro_gestor') || null;
+  };
+
+  const renderSignatureFooter = (targetMatricula?: string, fallbackTitle: string = 'Armeiro Responsável') => {
+    const armeiroUser = getArmeiroUser(targetMatricula);
+    const armeiroNomeCompleto = armeiroUser ? `${armeiroUser.posto_graduacao} ${armeiroUser.nome_de_guerra || armeiroUser.nome}` : fallbackTitle;
+    const cleanMat = armeiroUser 
+      ? (armeiroUser.matricula.toUpperCase().startsWith('A') ? armeiroUser.matricula.substring(1) : armeiroUser.matricula) 
+      : (targetMatricula ? (targetMatricula.toUpperCase().startsWith('A') ? targetMatricula.substring(1) : targetMatricula) : 'N/A');
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: '50px', pageBreakInside: 'avoid' }}>
+        {armeiroUser?.assinatura_foto ? (
+          <div style={{ marginBottom: '4px', textAlign: 'center' }}>
+            <img 
+              src={armeiroUser.assinatura_foto} 
+              alt="Assinatura Digitalizada" 
+              style={{ maxHeight: '60px', height: '60px', width: 'auto', display: 'inline-block', objectFit: 'contain' }} 
+            />
+          </div>
+        ) : (
+          <div style={{ height: '30px' }} />
+        )}
+        <div style={{ textAlign: 'center', width: '60%' }}>
+          <div style={{ borderTop: '1.5px solid #000', paddingTop: '5px', fontSize: '9pt', fontWeight: 'bold' }}>
+            {armeiroNomeCompleto}
+            <br />
+            <span style={{ fontWeight: 'normal', fontSize: '8.5pt' }}>Matrícula: {cleanMat}</span>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // ---- IMPRESSÃO DE RELATÓRIOS ----
   const handlePrintCautelas = () => {
     setPrintMode('cautelas');
     setTimeout(() => {
       window.print();
-    }, 150);
+    }, 350);
   };
 
   const handlePrintLogs = () => {
     setPrintMode('logs');
     setTimeout(() => {
       window.print();
-    }, 150);
+    }, 350);
   };
 
   const handlePrintOcorrencia = (oco: OcorrenciaRelatorio) => {
@@ -230,7 +305,7 @@ export default function FlowSimulator({
     setPrintMode('ocorrencia');
     setTimeout(() => {
       window.print();
-    }, 150);
+    }, 350);
   };
 
   const handlePrintRelatorio = (reportData: any) => {
@@ -238,7 +313,7 @@ export default function FlowSimulator({
     setPrintMode('relatorio');
     setTimeout(() => {
       window.print();
-    }, 150);
+    }, 350);
   };
 
   return (
@@ -513,6 +588,14 @@ export default function FlowSimulator({
           #print-area-relatorio {
             display: ${printMode === 'relatorio' ? 'block' : 'none'} !important;
           }
+          #print-area-cautelas img, #print-area-logs img, #print-area-ocorrencia img, #print-area-relatorio img {
+            display: inline-block !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+            max-height: 60px !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
           #print-area-cautelas, #print-area-logs, #print-area-ocorrencia, #print-area-relatorio {
             width: 100% !important;
             margin: 0 !important;
@@ -591,8 +674,7 @@ export default function FlowSimulator({
                 <tr key={c.id_cautela}>
                   <td>{c.id_cautela}</td>
                   <td>
-                    {pol?.posto_graduacao} {pol?.nome} ({c.matricula_policial})
-                    {pol?.nome_de_guerra ? ` [Guerra: ${pol.nome_de_guerra}]` : ''}
+                    {pol?.posto_graduacao} {pol?.nome_de_guerra || pol?.nome} ({c.matricula_policial})
                   </td>
                   <td>
                     {cItens.map(ci => {
@@ -620,6 +702,7 @@ export default function FlowSimulator({
             })}
           </tbody>
         </table>
+        {renderSignatureFooter(activeArmeiroMatricula, 'Armeiro Responsável')}
       </div>
 
       {/* ÁREA DE IMPRESSÃO - LOGS */}
@@ -663,6 +746,7 @@ export default function FlowSimulator({
               ))}
           </tbody>
         </table>
+        {renderSignatureFooter(activeArmeiroMatricula, 'Armeiro Responsável')}
       </div>
 
       {/* ÁREA DE IMPRESSÃO - OCORRÊNCIA INDIVIDUAL */}
@@ -789,36 +873,7 @@ export default function FlowSimulator({
             </div>
           )}
 
-          {(() => {
-            const armeiroMat = selectedOcorrenciaPrint.matricula_armeiro || '';
-            const cleanMat = armeiroMat.toUpperCase().startsWith('A') ? armeiroMat.substring(1) : armeiroMat;
-            const armeiroUser = db.usuarios.find((u: any) => {
-              const uMat = u.matricula.toUpperCase().startsWith('A') ? u.matricula.substring(1) : u.matricula;
-              return uMat === cleanMat;
-            });
-            const armeiroNomeCompleto = armeiroUser ? `${armeiroUser.posto_graduacao} ${armeiroUser.nome}` : 'Armeiro Relator';
-            
-            return (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: '60px', pageBreakInside: 'avoid' }}>
-                {armeiroUser?.assinatura_foto && (
-                  <div style={{ marginBottom: '4px' }}>
-                    <img 
-                      src={armeiroUser.assinatura_foto} 
-                      alt="Assinatura" 
-                      style={{ maxHeight: '60px', width: 'auto', display: 'block' }} 
-                    />
-                  </div>
-                )}
-                <div style={{ textAlign: 'center', width: '50%' }}>
-                  <div style={{ borderTop: '1.5px solid #000', paddingTop: '5px', fontSize: '9pt' }}>
-                    {armeiroNomeCompleto}
-                    <br />
-                    Matrícula: {cleanMat}
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
+          {renderSignatureFooter(selectedOcorrenciaPrint.matricula_armeiro, 'Armeiro Relator')}
         </div>
       )}
 
@@ -997,36 +1052,7 @@ export default function FlowSimulator({
           )}
 
           {/* Rodapé de Assinaturas */}
-          {(() => {
-            const armeiroMat = activeArmeiroMatricula || '';
-            const cleanMat = armeiroMat.toUpperCase().startsWith('A') ? armeiroMat.substring(1) : armeiroMat;
-            const armeiroUser = db.usuarios.find((u: any) => {
-              const uMat = u.matricula.toUpperCase().startsWith('A') ? u.matricula.substring(1) : u.matricula;
-              return uMat === cleanMat;
-            });
-            const armeiroNomeCompleto = armeiroUser ? `${armeiroUser.posto_graduacao} ${armeiroUser.nome}` : 'Armeiro Responsável';
-            
-            return (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: '60px', pageBreakInside: 'avoid' }}>
-                {armeiroUser?.assinatura_foto && (
-                  <div style={{ marginBottom: '4px' }}>
-                    <img 
-                      src={armeiroUser.assinatura_foto} 
-                      alt="Assinatura" 
-                      style={{ maxHeight: '60px', width: 'auto', display: 'block' }} 
-                    />
-                  </div>
-                )}
-                <div style={{ textAlign: 'center', width: '50%' }}>
-                  <div style={{ borderTop: '1.5px solid #000', paddingTop: '5px', fontSize: '9pt' }}>
-                    {armeiroNomeCompleto}
-                    <br />
-                    Matrícula: {cleanMat}
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
+          {renderSignatureFooter(activeArmeiroMatricula, 'Armeiro Responsável')}
         </div>
       )}
 

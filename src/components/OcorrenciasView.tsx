@@ -2101,7 +2101,7 @@ ${estoqueObservacao.trim() || 'Sem divergências ou alterações físicas relata
                   <input
                     type="text"
                     disabled
-                    value={loggedArmeiroUser ? `${loggedArmeiroUser.posto_graduacao} ${loggedArmeiroUser.nome} (${activeArmeiroMatricula})` : activeArmeiroMatricula}
+                    value={loggedArmeiroUser ? `${loggedArmeiroUser.posto_graduacao} ${loggedArmeiroUser.nome_de_guerra || loggedArmeiroUser.nome} (${activeArmeiroMatricula})` : activeArmeiroMatricula}
                     className="w-full bg-slate-950/80 border border-slate-850 p-2.5 text-xs text-slate-400 rounded-lg cursor-not-allowed font-sans"
                   />
                 </div>

@@ -1588,7 +1588,7 @@ export function BancoDadosView({
                   </div>
                   <div>
                     <span className="text-slate-500 text-[10px] block">Militar Proprietário Autenticado:</span>
-                    <strong className="text-slate-200 font-sans text-xs uppercase">{authenticatedPolicial.posto_graduacao} {authenticatedPolicial.nome}</strong>
+                    <strong className="text-slate-200 font-sans text-xs uppercase">{authenticatedPolicial.posto_graduacao} {authenticatedPolicial.nome_de_guerra || authenticatedPolicial.nome}</strong>
                   </div>
                 </div>
                 <div className="text-right">
@@ -2187,7 +2187,7 @@ export function BancoDadosView({
                     Militar: <strong className="text-slate-200 uppercase font-sans">
                       {(() => {
                         const pol = usuarios.find(u => u.matricula === selectedPolicialMatriculaDevolucao);
-                        return pol ? `${pol.posto_graduacao} ${pol.nome}` : selectedPolicialMatriculaDevolucao;
+                        return pol ? `${pol.posto_graduacao} ${pol.nome_de_guerra || pol.nome}` : selectedPolicialMatriculaDevolucao;
                       })()}
                     </strong>
                   </p>

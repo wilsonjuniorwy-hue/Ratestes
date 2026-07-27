@@ -520,7 +520,7 @@ export function TotemView({
               <span>Militar Logado</span>
             </div>
             <div className="text-[10px] space-y-2 font-mono">
-              <p className="text-white uppercase font-black text-xs">{loggedUser.posto_graduacao} {loggedUser.nome}</p>
+              <p className="text-white uppercase font-black text-xs">{loggedUser.posto_graduacao} {loggedUser.nome_de_guerra || loggedUser.nome}</p>
               <p className="text-slate-400 uppercase">RG Funcional: <span className="text-blue-400 font-bold">{loggedUser.matricula}</span></p>
               <p className="text-slate-400 uppercase">Status: <span className={`px-2 py-0.5 rounded text-[8px] font-black border ${
                 loggedUser.situacao_cautela === 'apto' 
@@ -645,7 +645,7 @@ export function TotemView({
                   </div>
                   <h3 className="text-xs font-bold text-slate-350 font-mono uppercase tracking-widest block text-cyan-400">Primeiro Acesso - Cadastrar Senha</h3>
                   <p className="text-xs text-slate-400 font-sans">
-                    Militar **{loggedUser.posto_graduacao} {loggedUser.nome}** identificado. Defina uma senha de 4 a 6 números para a sua assinatura eletrônica.
+                    Militar **{loggedUser.posto_graduacao} {loggedUser.nome_de_guerra || loggedUser.nome}** identificado. Defina uma senha de 4 a 6 números para a sua assinatura eletrônica.
                   </p>
                 </div>
 
@@ -1186,7 +1186,7 @@ export function TotemView({
                   </div>
 
                   <div className="space-y-2 text-[10px] text-slate-450">
-                    <p>Militar Beneficiário: <strong className="text-slate-200 font-sans font-bold text-xs">{loggedUser.posto_graduacao} {loggedUser.nome} ({loggedUser.matricula})</strong></p>
+                    <p>Militar Beneficiário: <strong className="text-slate-200 font-sans font-bold text-xs">{loggedUser.posto_graduacao} {loggedUser.nome_de_guerra || loggedUser.nome} ({loggedUser.matricula})</strong></p>
                     <p className="font-bold border-b border-slate-900 pb-1.5 text-slate-500">MATERIAIS CAUTELADOS:</p>
                     <ul className="list-disc pl-4 space-y-1 text-slate-200 text-[11px] font-sans">
                       {(() => {
