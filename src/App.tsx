@@ -11,6 +11,7 @@ import { useSupabaseDatabase } from './hooks/useSupabaseDatabase';
 import LoginPortal from './components/LoginPortal';
 import { AdminPanelView } from './components/AdminPanelView';
 import { Usuario, Quartel } from './types';
+import { formatPostoGraduacaoSigla } from './utils/rankUtils';
 import { supabase, configurarAssinaturaDispositivo, obterAmbienteAtual, alterarAmbiente } from './supabaseClient';
 
 export default function App() {
@@ -487,7 +488,7 @@ export default function App() {
           <div className="flex items-center gap-3 bg-slate-900/60 border border-slate-850 px-4 py-2 rounded-lg">
             <div className="flex flex-col items-end">
               <span className="text-[11px] font-bold text-slate-350 uppercase">
-                {activeArmeiro ? `${activeArmeiro.posto_graduacao}. ${activeArmeiro.nome_de_guerra || activeArmeiro.nome}` : 'Sem Armeiro'}
+                {activeArmeiro ? `${formatPostoGraduacaoSigla(activeArmeiro.posto_graduacao)} ${activeArmeiro.nome_de_guerra || activeArmeiro.nome}` : 'Sem Armeiro'}
               </span>
               <span className="text-[9px] text-cyan-405 font-mono tracking-wider">
                 MATRÍCULA: {activeArmeiro ? activeArmeiro.matricula : 'N/A'}

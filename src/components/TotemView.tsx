@@ -9,6 +9,7 @@ import { Usuario, Material, Cautela, CautelaItem, AuditoriaLog, SituacaoMilitar 
 import { supabase } from '../supabaseClient';
 import { comparePassword, hashSHA256 } from '../utils/crypto';
 import { useOfflineDatabase } from '../hooks/useOfflineDatabase';
+import { formatPostoGraduacaoSigla, POSTOS_GRADUACOES_EXTENSO } from '../utils/rankUtils';
 
 interface TotemViewProps {
   usuarios: Usuario[];
@@ -520,7 +521,7 @@ export function TotemView({
               <span>Militar Logado</span>
             </div>
             <div className="text-[10px] space-y-2 font-mono">
-              <p className="text-white uppercase font-black text-xs">{loggedUser.posto_graduacao} {loggedUser.nome_de_guerra || loggedUser.nome}</p>
+              <p className="text-white uppercase font-black text-xs">{formatPostoGraduacaoSigla(loggedUser.posto_graduacao)} {loggedUser.nome_de_guerra || loggedUser.nome}</p>
               <p className="text-slate-400 uppercase">RG Funcional: <span className="text-blue-400 font-bold">{loggedUser.matricula}</span></p>
               <p className="text-slate-400 uppercase">Status: <span className={`px-2 py-0.5 rounded text-[8px] font-black border ${
                 loggedUser.situacao_cautela === 'apto' 
@@ -645,7 +646,7 @@ export function TotemView({
                   </div>
                   <h3 className="text-xs font-bold text-slate-350 font-mono uppercase tracking-widest block text-cyan-400">Primeiro Acesso - Cadastrar Senha</h3>
                   <p className="text-xs text-slate-400 font-sans">
-                    Militar **{loggedUser.posto_graduacao} {loggedUser.nome_de_guerra || loggedUser.nome}** identificado. Defina uma senha de 4 a 6 números para a sua assinatura eletrônica.
+                    Militar **{formatPostoGraduacaoSigla(loggedUser.posto_graduacao)} {loggedUser.nome_de_guerra || loggedUser.nome}** identificado. Defina uma senha de 4 a 6 números para a sua assinatura eletrônica.
                   </p>
                 </div>
 
@@ -733,7 +734,7 @@ export function TotemView({
                       <span className="text-[9px] text-slate-505 font-mono font-bold uppercase tracking-wider block">Inspeção Cadastral PMDF</span>
                       <div className="space-y-1.5 font-mono text-[11px]">
                         <p className="text-slate-400">Nome: <strong className="text-slate-200 font-sans font-bold">{loggedUser.nome}</strong></p>
-                        <p className="text-slate-400 font-sans">Graduação: <strong className="text-slate-200">{loggedUser.posto_graduacao}</strong></p>
+                        <p className="text-slate-400 font-sans">Graduação: <strong className="text-slate-200">{formatPostoGraduacaoSigla(loggedUser.posto_graduacao)}</strong></p>
                         <p className="text-slate-400">Matrícula: <strong className="text-blue-400 font-bold">{loggedUser.matricula}</strong></p>
                       </div>
                     </div>
@@ -1186,7 +1187,7 @@ export function TotemView({
                   </div>
 
                   <div className="space-y-2 text-[10px] text-slate-450">
-                    <p>Militar Beneficiário: <strong className="text-slate-200 font-sans font-bold text-xs">{loggedUser.posto_graduacao} {loggedUser.nome_de_guerra || loggedUser.nome} ({loggedUser.matricula})</strong></p>
+                    <p>Militar Beneficiário: <strong className="text-slate-200 font-sans font-bold text-xs">{formatPostoGraduacaoSigla(loggedUser.posto_graduacao)} {loggedUser.nome_de_guerra || loggedUser.nome} ({loggedUser.matricula})</strong></p>
                     <p className="font-bold border-b border-slate-900 pb-1.5 text-slate-500">MATERIAIS CAUTELADOS:</p>
                     <ul className="list-disc pl-4 space-y-1 text-slate-200 text-[11px] font-sans">
                       {(() => {
@@ -1676,8 +1677,8 @@ export function TotemView({
                     <User className="h-5 w-5" />
                   </div>
                   <div>
-                    <h3 className="text-xs font-bold text-white uppercase tracking-widest font-mono">Cadastrar Novo Policial Militar</h3>
-                    <p className="text-[10px] text-slate-450 font-sans">Insira os dados do militar para liberação de acesso imediato.</p>
+                    <h3 className="text-xs font-bold text-white uppercase tracking-widest font-mono">Cadastrar Novo Usuário (Policial / Civil)</h3>
+                    <p className="text-[10px] text-slate-450 font-sans">Insira os dados cadastrais para liberação de acesso imediato.</p>
                   </div>
                 </div>
                 <button
@@ -1694,9 +1695,9 @@ export function TotemView({
                 {/* Corpo */}
                 <div className="p-6 space-y-4">
                   
-                  {/* Matrícula (ReadOnly/Disabled) */}
+                  {/* Matrícula / Documento */}
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-mono font-bold text-slate-450 uppercase tracking-wide block">Matrícula (RG Funcional):</label>
+                    <label className="text-[10px] font-mono font-bold text-slate-450 uppercase tracking-wide block">Matrícula (RG Funcional / CPF / Identificação):</label>
                     <input
                       type="text"
                       disabled
@@ -1740,7 +1741,7 @@ export function TotemView({
                         onChange={(e) => setNewPosto(e.target.value)}
                         className="w-full bg-slate-955 border border-slate-800 focus:border-blue-500 p-2.5 text-xs text-slate-200 focus:outline-none rounded-lg cursor-pointer"
                       >
-                        {['Soldado', 'Cabo', 'Sargento', 'Subtenente', 'Tenente', 'Capitão', 'Major', 'Tenente-Coronel', 'Coronel'].map(p => (
+                        {POSTOS_GRADUACOES_EXTENSO.map(p => (
                           <option key={p} value={p}>{p}</option>
                         ))}
                       </select>

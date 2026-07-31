@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Usuario, Material, Cautela, CautelaItem, AuditoriaLog, SituacaoMilitar, CondicaoUso } from '../types';
+import { POSTOS_GRADUACOES_EXTENSO } from '../utils/rankUtils';
 
 interface ArmeiroViewProps {
   usuarios: Usuario[];
@@ -437,11 +438,11 @@ export function ArmeiroView({
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[10px] font-mono font-bold text-slate-450 uppercase tracking-wide">Matrícula (RG Funcional):</label>
+                <label className="text-[10px] font-mono font-bold text-slate-450 uppercase tracking-wide">Matrícula (RG Funcional / CPF / Identificação):</label>
                 <input
                   type="text"
                   required
-                  placeholder="EX: PM-333333"
+                  placeholder="EX: PM-333333 ou CPF/RG (Civil)"
                   value={newMatricula}
                   onChange={(e) => setNewMatricula(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-805 focus:border-blue-500 p-2.5 text-xs font-mono text-slate-200 focus:outline-none uppercase rounded-lg focus:ring-1 focus:ring-blue-500/20"
@@ -455,7 +456,7 @@ export function ArmeiroView({
                   onChange={(e) => setNewPosto(e.target.value)}
                   className="w-full bg-slate-955 border border-slate-805 focus:border-blue-500 p-2.5 text-xs text-slate-200 focus:outline-none rounded-lg cursor-pointer"
                 >
-                  {['Soldado', 'Cabo', 'Sargento', 'Subtenente', 'Tenente', 'Capitão', 'Major', 'Tenente-Coronel', 'Coronel'].map(p => (
+                  {POSTOS_GRADUACOES_EXTENSO.map(p => (
                     <option key={p} value={p}>{p}</option>
                   ))}
                 </select>

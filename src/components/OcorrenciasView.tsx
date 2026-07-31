@@ -4,6 +4,7 @@ import {
   PlusCircle, ClipboardList, AlertCircle, History, FileText, Calendar, Search, Filter, Clock, ChevronDown
 } from 'lucide-react';
 import { OcorrenciaRelatorio, Material, PendenciaServico, Usuario, Cautela, CautelaItem, ArmaParticular, Categoria } from '../types';
+import { formatPostoGraduacaoSigla } from '../utils/rankUtils';
 
 interface OcorrenciasViewProps {
   ocorrencias: OcorrenciaRelatorio[];
@@ -191,7 +192,7 @@ export function OcorrenciasView({
   const optionsMilitares = useMemo(() => {
     return usuariosOrdenados.map(u => ({
       value: u.matricula,
-      label: `${u.posto_graduacao} ${u.nome_de_guerra || u.nome} (${u.matricula})`
+      label: `${formatPostoGraduacaoSigla(u.posto_graduacao)} ${u.nome_de_guerra || u.nome} (${u.matricula})`
     }));
   }, [usuariosOrdenados]);
 
@@ -239,13 +240,13 @@ export function OcorrenciasView({
     const getMilText = (matricula: string) => {
       const u = usuarios.find(usr => usr.matricula === matricula);
       const cleanMat = matricula.toUpperCase().startsWith('A') ? matricula.substring(1) : matricula;
-      return u ? `${u.posto_graduacao} ${u.nome_de_guerra || u.nome} (${cleanMat})` : cleanMat;
+      return u ? `${formatPostoGraduacaoSigla(u.posto_graduacao)} ${u.nome_de_guerra || u.nome} (${cleanMat})` : cleanMat;
     };
 
     const cleanActiveArmeiroMat = activeArmeiroMatricula.toUpperCase().startsWith('A') ? activeArmeiroMatricula.substring(1) : activeArmeiroMatricula;
     const armeiroAnteriorText = getMilText(handoverArmeiroAnterior);
     const armeiroDiaText = loggedArmeiroUser 
-      ? `${loggedArmeiroUser.posto_graduacao} ${loggedArmeiroUser.nome_de_guerra || loggedArmeiroUser.nome} (${cleanActiveArmeiroMat})`
+      ? `${formatPostoGraduacaoSigla(loggedArmeiroUser.posto_graduacao)} ${loggedArmeiroUser.nome_de_guerra || loggedArmeiroUser.nome} (${cleanActiveArmeiroMat})`
       : cleanActiveArmeiroMat;
     const adjuntoText = getMilText(handoverAdjunto);
     const oficialDiaText = getMilText(handoverOficialDia);
@@ -475,7 +476,7 @@ Riacho Fundo I - DF, ${dataMinusculo}.`;
         const custDetails = activeCautelaItensForLote.map(ci => {
           const ac = activeCautelas.find(c => c.id_cautela === ci.id_cautela);
           const pol = ac ? usuarios.find(u => u.matricula === ac.matricula_policial) : null;
-          const polName = pol ? `${pol.posto_graduacao} ${pol.nome_de_guerra || pol.nome}` : 'Militar Desconhecido';
+          const polName = pol ? `${formatPostoGraduacaoSigla(pol.posto_graduacao)} ${pol.nome_de_guerra || pol.nome}` : 'Militar Desconhecido';
           return {
             nome: polName,
             matricula: ac?.matricula_policial || '',
@@ -515,7 +516,7 @@ Riacho Fundo I - DF, ${dataMinusculo}.`;
           : null;
 
         const pol = activeCautela ? usuarios.find(u => u.matricula === activeCautela.matricula_policial) : null;
-        const polName = pol ? `${pol.posto_graduacao} ${pol.nome_de_guerra || pol.nome}` : 'Militar Desconhecido';
+        const polName = pol ? `${formatPostoGraduacaoSigla(pol.posto_graduacao)} ${pol.nome_de_guerra || pol.nome}` : 'Militar Desconhecido';
 
         let respText = '-';
         let statusStr: string = m.status_atual;
@@ -586,7 +587,7 @@ Riacho Fundo I - DF, ${dataMinusculo}.`;
     return activeArmas
       .map(arma => {
         const pol = usuarios.find(u => u.matricula === arma.matricula_policial);
-        const polName = pol ? `${pol.posto_graduacao} ${pol.nome_de_guerra || pol.nome}` : 'Militar Desconhecido';
+        const polName = pol ? `${formatPostoGraduacaoSigla(pol.posto_graduacao)} ${pol.nome_de_guerra || pol.nome}` : 'Militar Desconhecido';
         
         return {
           id: arma.id_particular,
@@ -2101,7 +2102,7 @@ ${estoqueObservacao.trim() || 'Sem divergências ou alterações físicas relata
                   <input
                     type="text"
                     disabled
-                    value={loggedArmeiroUser ? `${loggedArmeiroUser.posto_graduacao} ${loggedArmeiroUser.nome_de_guerra || loggedArmeiroUser.nome} (${activeArmeiroMatricula})` : activeArmeiroMatricula}
+                    value={loggedArmeiroUser ? `${formatPostoGraduacaoSigla(loggedArmeiroUser.posto_graduacao)} ${loggedArmeiroUser.nome_de_guerra || loggedArmeiroUser.nome} (${activeArmeiroMatricula})` : activeArmeiroMatricula}
                     className="w-full bg-slate-950/80 border border-slate-850 p-2.5 text-xs text-slate-400 rounded-lg cursor-not-allowed font-sans"
                   />
                 </div>

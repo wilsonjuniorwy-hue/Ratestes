@@ -4,6 +4,7 @@ import {
   Upload, Trash2, FileImage, RefreshCw
 } from 'lucide-react';
 import { Usuario } from '../types';
+import { POSTOS_GRADUACOES_EXTENSO, normalizarPostoExtenso } from '../utils/rankUtils';
 
 interface ArmeiroProfileViewProps {
   usuarios: Usuario[];
@@ -577,11 +578,11 @@ export function ArmeiroProfileView({
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wide block">Posto / Graduação:</label>
                   <select
-                    value={newPosto}
+                    value={normalizarPostoExtenso(newPosto)}
                     onChange={(e) => setNewPosto(e.target.value)}
                     className="w-full bg-slate-955 border border-slate-805 p-2.5 text-xs text-slate-200 focus:outline-none rounded-lg cursor-pointer"
                   >
-                    {['Soldado', 'Cabo', 'Sargento', 'Subtenente', 'Tenente', 'Capitão', 'Major', 'Tenente-Coronel', 'Coronel'].map(p => (
+                    {POSTOS_GRADUACOES_EXTENSO.map(p => (
                       <option key={p} value={p}>{p}</option>
                     ))}
                   </select>
@@ -677,11 +678,11 @@ export function ArmeiroProfileView({
                       <td className="py-3 px-4">
                         {isEditing ? (
                           <select
-                            value={editPosto}
+                            value={normalizarPostoExtenso(editPosto)}
                             onChange={(e) => setEditPosto(e.target.value)}
                             className="bg-slate-950 border border-slate-800 p-1.5 rounded text-xs text-slate-205 focus:outline-none cursor-pointer"
                           >
-                            {['Soldado', 'Cabo', 'Sargento', 'Subtenente', 'Tenente', 'Capitão', 'Major', 'Tenente-Coronel', 'Coronel'].map(p => (
+                            {POSTOS_GRADUACOES_EXTENSO.map(p => (
                               <option key={p} value={p}>{p}</option>
                             ))}
                           </select>

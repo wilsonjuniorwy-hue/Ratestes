@@ -1,0 +1,112 @@
+================================================================================
+          SISTEMA DE GESTÃO DE RESERVA DE ARMAMENTO PMDF 🛡️
+                       GUIA DE LEITURA E REINSTALAÇÃO
+================================================================================
+
+[ATENÇÃO IA (ANTIGRAVITY / GEMINI)]:
+Se você é uma Inteligência Artificial lendo este arquivo após a formatação do computador, este arquivo contém todas as instruções necessárias para entender a arquitetura do sistema, as dependências do ambiente e os comandos para rodar o projeto sem que o usuário precise explicar tudo novamente.
+
+--------------------------------------------------------------------------------
+1. O QUE É O SISTEMA E COMO ELE FUNCIONA
+--------------------------------------------------------------------------------
+O "Reserva de Armamento PMDF" é um sistema tático de controle, gestão, cautela e descautela de materiais Bélicos e Equipamentos da Polícia Militar do Distrito Federal (PMDF), cobrindo armamentos, coletes balísticos, munições, rádios transceptores, bastões e acessórios.
+
+Arquitetura Técnica:
+- Frontend: React 19 + TypeScript + Vite + Tailwind CSS v4 + Motion (Framer Motion) + Lucide Icons.
+- Desktop Nativo: Tauri v2 (desenvolvido em Rust), gerando aplicativo Windows nativo (.msi / .exe).
+- Backend / Banco de Dados: Supabase (PostgreSQL Cloud com Autenticação, RLS e gerenciamento de permissões).
+- Inteligência Artificial: Integração nativa com a API Google Gemini (@google/genai).
+- Segurança & Hardware: Validação de chave/UUID de hardware (Placa-mãe UUID e MachineGuid) integrada com o banco Supabase para autorização de computadores físicos nas armarias.
+- Auto-Updater: Atualizador automático integrado via GitHub Releases com assinaturas digitais Minisign/Ed25519 (tauri-plugin-updater).
+
+--------------------------------------------------------------------------------
+2. TUDO O QUE VOCÊ PRECISA INSTALAR NO PC APÓS A FORMATAÇÃO
+--------------------------------------------------------------------------------
+Para colocar o ambiente completo de desenvolvimento e compilação funcionando no Windows, instale os softwares abaixo na seguinte ordem:
+
+1. Git for Windows
+   - O que é: Controle de versão do código.
+   - Download: https://git-scm.com/download/win
+
+2. Node.js (Versão LTS - Recomendado v20.x ou superior)
+   - O que é: Ambiente de execução JavaScript.
+   - Download: https://nodejs.org/
+
+3. PNPM (Gerenciador de pacotes rápido)
+   - Como instalar: Abra o Terminal (CMD ou PowerShell) após instalar o Node.js e rode:
+     npm install -g pnpm
+
+4. Visual Studio Build Tools (C++ Desktop Workload)
+   - O que é: Ferramentas de compilação C++ necessárias pelo Rust e Tauri no Windows.
+   - Download: https://visualstudio.microsoft.com/visual-cpp-build-tools/
+   - Na tela do instalador (Visual Studio Installer), selecione a opção:
+     "Desenvolvimento para desktop com C++" (Desktop development with C++) e conclua a instalação.
+
+5. Rust & Cargo (rustup)
+   - O que é: Linguagem de compilação do Tauri para desktop nativo.
+   - Download: https://rustup.rs/ (Baixe e execute o rustup-init.exe)
+   - Escolha a opção padrão (1 - default: x86_64-pc-windows-msvc).
+
+6. VS Code (Visual Studio Code - Opcional, mas recomendado)
+   - Editor de código recomendado.
+   - Extensões sugeridas: ESLint, Tailwind CSS IntelliSense, rust-analyzer, Tauri.
+
+--------------------------------------------------------------------------------
+3. PASSO A PASSO PARA RODAR O PROJETO APÓS A FORMATAÇÃO
+--------------------------------------------------------------------------------
+
+1. Abra o Terminal / PowerShell na pasta raiz do projeto:
+   cd g:\Sistemas\gestão-de-reserva-de-armamento-pm
+
+2. Instale todas as dependências do projeto com o PNPM:
+   pnpm install
+
+3. Para executar o aplicativo:
+
+   A) MODO DESKTOP NATIVO (Tauri + Rust - Recomendado):
+      pnpm tauri dev
+      (Isso compila a janela nativa no Windows com Hot Reload).
+
+   B) MODO APENAS WEB (Navegador):
+      pnpm dev
+      (Abre o servidor Vite na porta 3000: http://localhost:3000).
+
+--------------------------------------------------------------------------------
+4. AMBIENTES E CREDENCIAIS SUPABASE
+--------------------------------------------------------------------------------
+O sistema possui suporte a dois ambientes Supabase configurados nos arquivos .env:
+
+- Homologação / Staging (Banco de testes):
+  - Arquivo: .env ou .env.staging
+  - URL: https://rndyzoyhpmubbbuxtuso.supabase.co
+  - Badge no app: HOMOLOGAÇÃO (Azul)
+
+- Produção (Banco oficial das armarias):
+  - Arquivo: .env.production
+  - URL: https://rwnldjtevkheiwutxhgg.supabase.co
+  - Badge no app: PRODUÇÃO (Vermelho)
+
+A alteração entre os ambientes pode ser feita diretamente pelo rodapé da tela de login do aplicativo.
+
+--------------------------------------------------------------------------------
+5. COMANDOS ÚTEIS E GERENCIAMENTO DE RELEASES
+--------------------------------------------------------------------------------
+- Testar build Web:
+  pnpm build
+
+- Compilar instalador Windows (.msi/.exe):
+  pnpm tauri build
+
+- Publicar nova versão/update automático para os policiais:
+  1. Atualize a versão em `package.json` e `src-tauri/tauri.conf.json`.
+  2. Execute os comandos git:
+     git add package.json src-tauri/tauri.conf.json
+     git commit -m "chore: release vX.X.X"
+     git tag vX.X.X
+     git push origin main
+     git push origin vX.X.X
+  3. No GitHub Actions, aguarde o build e publique o rascunho gerado na aba Releases.
+
+================================================================================
+Arquivo gerado em 29/07/2026 para auxílio de formatação do computador.
+================================================================================

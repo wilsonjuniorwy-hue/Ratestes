@@ -11,6 +11,7 @@ import {
   UserPlus, ClipboardList, Printer, Database, Download, Upload
 } from 'lucide-react';
 import { Usuario, Cautela, OcorrenciaRelatorio } from '../types';
+import { formatPostoGraduacaoSigla } from '../utils/rankUtils';
 
 import { useSupabaseDatabase } from '../hooks/useSupabaseDatabase';
 import ErrorBoundary from './ErrorBoundary';
@@ -210,7 +211,7 @@ export default function FlowSimulator({
   const [selectedOcorrenciaPrint, setSelectedOcorrenciaPrint] = useState<OcorrenciaRelatorio | null>(null);
   const [printReportData, setPrintReportData] = useState<any>(null);
 
-  // Auxiliar para localizar armeiro responsável com suporte a buscas flexíveis e fallback
+  // Auxiliar para localizar armeiro responsável pelo relatório
   const getArmeiroUser = (targetMatricula?: string) => {
     if (!db?.usuarios || db.usuarios.length === 0) return null;
 
@@ -220,43 +221,26 @@ export default function FlowSimulator({
       return clean;
     };
 
-    // 1. Procurar por matrícula específica QUE POSSUA assinatura foto cadastrada
-    if (targetMatricula) {
-      const normTarget = normalizeMat(targetMatricula);
-      const foundWithSig = db.usuarios.find((u: any) => normalizeMat(u.matricula) === normTarget && u.assinatura_foto);
-      if (foundWithSig) return foundWithSig;
-    }
-
-    // 2. Procurar por armeiro ativo QUE POSSUA assinatura foto cadastrada
-    if (activeArmeiroMatricula) {
-      const normActive = normalizeMat(activeArmeiroMatricula);
-      const foundActiveWithSig = db.usuarios.find((u: any) => normalizeMat(u.matricula) === normActive && u.assinatura_foto);
-      if (foundActiveWithSig) return foundActiveWithSig;
-    }
-
-    // 3. Fallback inteligente: buscar QUALQUER armeiro/usuário no banco que POSSUA a foto da assinatura
-    const anyUserWithSig = db.usuarios.find((u: any) => u.assinatura_foto && typeof u.assinatura_foto === 'string' && u.assinatura_foto.length > 50);
-    if (anyUserWithSig) return anyUserWithSig;
-
-    // 4. Se ninguém tiver foto de assinatura, retornar dados textuais por matrícula
+    // 1. Procurar por matrícula específica do relator/armeiro informado no relatório
     if (targetMatricula) {
       const normTarget = normalizeMat(targetMatricula);
       const found = db.usuarios.find((u: any) => normalizeMat(u.matricula) === normTarget);
       if (found) return found;
     }
 
+    // 2. Procurar por armeiro ativo logado no sistema
     if (activeArmeiroMatricula) {
       const normActive = normalizeMat(activeArmeiroMatricula);
       const foundActive = db.usuarios.find((u: any) => normalizeMat(u.matricula) === normActive);
       if (foundActive) return foundActive;
     }
 
-    return db.usuarios.find((u: any) => u.perfil === 'armeiro_gestor') || null;
+    return null;
   };
 
   const renderSignatureFooter = (targetMatricula?: string, fallbackTitle: string = 'Armeiro Responsável') => {
     const armeiroUser = getArmeiroUser(targetMatricula);
-    const armeiroNomeCompleto = armeiroUser ? `${armeiroUser.posto_graduacao} ${armeiroUser.nome_de_guerra || armeiroUser.nome}` : fallbackTitle;
+    const armeiroNomeCompleto = armeiroUser ? `${formatPostoGraduacaoSigla(armeiroUser.posto_graduacao)} ${armeiroUser.nome_de_guerra || armeiroUser.nome}` : fallbackTitle;
     const cleanMat = armeiroUser 
       ? (armeiroUser.matricula.toUpperCase().startsWith('A') ? armeiroUser.matricula.substring(1) : armeiroUser.matricula) 
       : (targetMatricula ? (targetMatricula.toUpperCase().startsWith('A') ? targetMatricula.substring(1) : targetMatricula) : 'N/A');
@@ -675,7 +659,7 @@ export default function FlowSimulator({
                 <tr key={c.id_cautela}>
                   <td>{c.id_cautela}</td>
                   <td>
-                    {pol?.posto_graduacao} {pol?.nome_de_guerra || pol?.nome} ({c.matricula_policial})
+                    {formatPostoGraduacaoSigla(pol?.posto_graduacao)} {pol?.nome_de_guerra || pol?.nome} ({c.matricula_policial})
                   </td>
                   <td>
                     {cItens.map(ci => {
@@ -738,7 +722,7 @@ export default function FlowSimulator({
                    <td>
                     {(() => {
                       const exec = db.usuarios.find(u => u.matricula === log.matricula_executor);
-                      return exec ? `${exec.posto_graduacao} ${exec.nome_de_guerra || exec.nome} (${log.matricula_executor})` : log.matricula_executor;
+                      return exec ? `${formatPostoGraduacaoSigla(exec.posto_graduacao)} ${exec.nome_de_guerra || exec.nome} (${log.matricula_executor})` : log.matricula_executor;
                     })()}
                   </td>
                   <td>{log.detalhes}</td>

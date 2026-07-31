@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Usuario, Material, SituacaoMilitar, StatusMaterial, Categoria, Cautela, CautelaItem, ArmaParticular } from '../types';
 import { comparePassword } from '../utils/crypto';
 import { supabase } from '../supabaseClient';
+import { POSTOS_GRADUACOES_EXTENSO, normalizarPostoExtenso } from '../utils/rankUtils';
 
 interface BancoDadosViewProps {
   usuarios: Usuario[];
@@ -884,7 +885,7 @@ export function BancoDadosView({
                         </td>
                         <td className="p-4">
                           <select
-                            value={user.posto_graduacao}
+                            value={normalizarPostoExtenso(user.posto_graduacao)}
                             onChange={async (e) => {
                               if (editarPolicial) {
                                 try {
@@ -894,9 +895,9 @@ export function BancoDadosView({
                                 }
                               }
                             }}
-                            className="bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs font-mono text-slate-200 focus:outline-none focus:border-blue-500 cursor-pointer"
+                            className="bg-slate-955 border border-slate-800 rounded px-2.5 py-1.5 text-xs font-mono text-slate-200 focus:outline-none focus:border-blue-500 cursor-pointer"
                           >
-                            {['Soldado', 'Cabo', 'Sargento', 'Subtenente', 'Tenente', 'Capitão', 'Major', 'Tenente-Coronel', 'Coronel'].map(p => (
+                            {POSTOS_GRADUACOES_EXTENSO.map(p => (
                               <option key={p} value={p}>{p}</option>
                             ))}
                           </select>

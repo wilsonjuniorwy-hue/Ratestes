@@ -9,6 +9,7 @@ import { motion } from 'motion/react';
 import { Usuario, Quartel } from '../types';
 import { supabase, obterAmbienteAtual, alterarAmbiente } from '../supabaseClient';
 import { comparePassword, hashSHA256 } from '../utils/crypto';
+import { formatPostoGraduacaoSigla } from '../utils/rankUtils';
 import { useAppUpdater } from '../hooks/useAppUpdater';
 import packageJson from '../../package.json';
 
@@ -596,7 +597,7 @@ export default function LoginPortal({
                 <span>Primeiro Acesso Detectado</span>
               </h4>
               <p className="text-[10px] text-slate-400 font-sans leading-relaxed">
-                Bem-vindo, <strong>{primeiroAcessoUser?.posto_graduacao} {primeiroAcessoUser?.nome_de_guerra || primeiroAcessoUser?.nome}</strong>. Cadastre a sua senha de acesso de 4 a 6 dígitos abaixo.
+                Bem-vindo, <strong>{formatPostoGraduacaoSigla(primeiroAcessoUser?.posto_graduacao)} {primeiroAcessoUser?.nome_de_guerra || primeiroAcessoUser?.nome}</strong>. Cadastre a sua senha de acesso de 4 a 6 dígitos abaixo.
               </p>
             </div>
 
