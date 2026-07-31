@@ -1,33 +1,23 @@
 @echo off
-SET GIT=C:\Users\wagne\AppData\Local\GitHubDesktop\app-3.4.15\resources\app\git\cmd\git.exe
-
-IF NOT EXIST "%GIT%" (
-    echo Git nao encontrado em %GIT%
-    echo Tente usar o Git Bash ou o GitHub Desktop.
-    pause
-    exit /b
-)
-
-cd /d "G:\Sistemas\gestão-de-reserva-de-armamento-pm"
+cd /d "%~dp0"
 
 echo === ENVIANDO RELEASE V0.2.28 PARA O GITHUB ===
 echo.
 
+git config --global --add safe.directory "%~dp0"
+
 echo [1/5] Adicionando arquivos...
-"%GIT%" add .
+git add .
 
 echo [2/5] Criando commit...
-"%GIT%" commit -m "release: v0.2.28 - acrescimo de material ao estoque e edicao do nome do policial"
+git commit -m "release: v0.2.28 - correcao das assinaturas nos relatorios, siglas e opcao CIVIL"
 
-echo [3/5] Criando tag v0.2.28...
-"%GIT%" tag v0.2.28
+echo [3/5] Enviando codigo para o GitHub...
+git push origin feature/tauri-desktop
 
-echo [4/5] Enviando codigo para o GitHub (branch main)...
-"%GIT%" push origin main
-
-echo [5/5] Enviando tag v0.2.28 para disparar o atualizador...
-"%GIT%" push origin v0.2.28
+echo [4/5] Enviando para a branch main...
+git push origin feature/tauri-desktop:main
 
 echo.
-echo === CONCLUIDO! O SISTEMA SERA ATUALIZADO AUTOMATICAMENTE NAS OUTRAS MAQUINAS ===
+echo === CONCLUIDO! O SISTEMA FOI ENVIADO COM SUCESSO AO GITHUB ===
 pause
