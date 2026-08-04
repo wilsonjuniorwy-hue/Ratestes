@@ -1008,7 +1008,8 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
     cartItens: string[], 
     observacoes: string,
     weaponMagazines?: Record<string, number>,
-    isPermanent?: boolean
+    isPermanent?: boolean,
+    radioBatteries?: Record<string, { brand: 'Hytera' | 'Sepura'; qty: number }>
   ) => {
     const user = usuarios.find(u => u.matricula === matriculaPolicial);
     if (!user) return null;
@@ -1052,7 +1053,31 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
       };
     });
 
+    // Adicionar itens de baterias vinculados aos rádios HT
+    const batteryDeductions: Record<string, number> = {};
+    if (radioBatteries) {
+      Object.entries(radioBatteries).forEach(([idMat, bInfo]) => {
+        if (cartItens.includes(idMat) && bInfo.qty > 0) {
+          const batId = `BAT-${bInfo.brand.toUpperCase()}`;
+          batteryDeductions[batId] = (batteryDeductions[batId] || 0) + bInfo.qty;
+
+          novosItensCautela.push({
+            id_cautela_item: `ITEM-BAT-${Math.floor(100000 + Math.random() * 900000)}`,
+            id_cautela: idNewCautela,
+            id_material: batId,
+            quantidade: bInfo.qty,
+            estado_entrega: 'excelente',
+            id_quartel: quartelId || undefined
+          });
+        }
+      });
+    }
+
     const materiaisAtualizados = materiais.map(m => {
+      if (batteryDeductions[m.id_material] && m.controle_quantidade) {
+        const newQty = Math.max(0, (m.quantidade || 0) - batteryDeductions[m.id_material]);
+        return { ...m, quantidade: newQty };
+      }
       if (cartItens.includes(m.id_material)) {
         if (m.controle_quantidade) {
           return m; // Quantity-based remains active in list
@@ -1062,9 +1087,9 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
       return m;
     });
 
-    // Marcar militar como pendente_devolucao
+    // Marcar militar como pendente_devolucao apenas se for cautela diária/normal
     const usuariosAtualizados = usuarios.map(u => {
-      if (u.matricula === matriculaPolicial) {
+      if (u.matricula === matriculaPolicial && !isPermanent) {
         return { ...u, situacao_cautela: 'pendente_devolucao' as const };
       }
       return u;
@@ -1129,12 +1154,14 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
         });
       }
 
-      // Sincronizar status do militar para pendente_devolucao no Supabase
-      supabase.from('usuarios').update({ situacao_cautela: 'pendente_devolucao' }).eq('matricula', matriculaPolicial).then(({ error: errUser }) => {
-        if (errUser) {
-          console.error('Erro ao atualizar situação do militar para pendente_devolucao:', errUser);
-        }
-      });
+      // Sincronizar status do militar para pendente_devolucao no Supabase (somente se não for permanente)
+      if (!isPermanent) {
+        supabase.from('usuarios').update({ situacao_cautela: 'pendente_devolucao' }).eq('matricula', matriculaPolicial).then(({ error: errUser }) => {
+          if (errUser) {
+            console.error('Erro ao atualizar situação do militar para pendente_devolucao:', errUser);
+          }
+        });
+      }
     }
 
     registrarLogAuditoria(
@@ -1195,7 +1222,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
         ? (consumedQuantities[idMat] ?? 0)
         : 0;
 
-      const condition = claimConditions[idMat] || 'bom';
+      const condition = claimConditions?.[idMat] || 'bom';
       const totalProcessed = qtyToReturn + qtyConsumed;
 
       if (totalProcessed >= ci.quantidade) {
@@ -1330,8 +1357,9 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
 
     // 6. Atualizar Militar
     const policialResponsavel = cautelaParaBaixa.matricula_policial;
+    const outrasCautelasDiariasAtivas = cautelasAtualizadas.some(c => c.matricula_policial === policialResponsavel && (c.status_cautela === 'ativa' || c.status_cautela === 'atrasada' || c.status_cautela === 'prorrogada'));
     const usuariosAtualizados = usuarios.map(u => {
-      if (u.matricula === policialResponsavel && todosDevolvidos) {
+      if (u.matricula === policialResponsavel && todosDevolvidos && !outrasCautelasDiariasAtivas) {
         return { ...u, situacao_cautela: 'apto' as const };
       }
       return u;
@@ -1410,8 +1438,8 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
         });
       }
 
-      // Sincronizar Militar (se todos devolvidos)
-      if (todosDevolvidos) {
+      // Sincronizar Militar (se todos devolvidos e sem outras cautelas diárias ativas)
+      if (todosDevolvidos && !outrasCautelasDiariasAtivas) {
         supabase.from('usuarios').update({ situacao_cautela: 'apto' }).eq('matricula', policialResponsavel).then(({ error }) => {
           if (error) console.error('Erro ao reabilitar militar no Supabase:', error);
         });
@@ -1898,10 +1926,10 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
         .eq('id_cautela', idCautela);
       if (errCautela) throw errCautela;
 
-      // 4. Se o militar ficar sem nenhuma outra cautela ativa, garantir que sua situação não seja 'pendente_devolucao'
+      // 4. Se o militar ficar sem nenhuma outra cautela diária ativa, garantir que sua situação não seja 'pendente_devolucao'
       const matriculaPolicial = cautelaObj.matricula_policial;
-      const outrasCautelasAtivas = cautelas.filter(c => c.matricula_policial === matriculaPolicial && c.id_cautela !== idCautela && c.status_cautela !== 'devolvida');
-      if (outrasCautelasAtivas.length === 0) {
+      const outrasCautelasDiariasAtivas = cautelas.filter(c => c.matricula_policial === matriculaPolicial && c.id_cautela !== idCautela && (c.status_cautela === 'ativa' || c.status_cautela === 'atrasada' || c.status_cautela === 'prorrogada'));
+      if (outrasCautelasDiariasAtivas.length === 0) {
         const polObj = usuarios.find(u => u.matricula === matriculaPolicial);
         if (polObj && polObj.situacao_cautela === 'pendente_devolucao') {
           const { error: errUser } = await supabase
@@ -1928,7 +1956,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
           return m;
         }));
       }
-      if (outrasCautelasAtivas.length === 0) {
+      if (outrasCautelasDiariasAtivas.length === 0) {
         setUsuarios(prev => prev.map(u => {
           if (u.matricula === matriculaPolicial && u.situacao_cautela === 'pendente_devolucao') {
             return { ...u, situacao_cautela: 'apto' };

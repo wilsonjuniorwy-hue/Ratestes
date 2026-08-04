@@ -1,7 +1,7 @@
 @echo off
 cd /d "%~dp0"
 
-echo === ENVIANDO RELEASE V0.2.28 PARA O GITHUB ===
+echo === ENVIANDO RELEASE V0.2.36 PARA O GITHUB ===
 echo.
 
 git config --global --add safe.directory "%~dp0"
@@ -10,7 +10,7 @@ echo [1/5] Adicionando arquivos...
 git add .
 
 echo [2/5] Criando commit...
-git commit -m "release: v0.2.28 - correcao das assinaturas nos relatorios, siglas e opcao CIVIL"
+git commit -m "release: v0.2.36 - auditoria geral: correcoes de state leak, TypeError, printMode e imports"
 
 echo [3/5] Enviando codigo para o GitHub...
 git push origin feature/tauri-desktop

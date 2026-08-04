@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { 
   Terminal, ShieldAlert, CheckCircle, Printer, Boxes, BookOpen, Check, AlertTriangle, X,
-  PlusCircle, ClipboardList, AlertCircle, History, FileText, Calendar, Search, Filter, Clock, ChevronDown
+  PlusCircle, ClipboardList, History, FileText, Calendar, Search, Clock, ChevronDown
 } from 'lucide-react';
 import { OcorrenciaRelatorio, Material, PendenciaServico, Usuario, Cautela, CautelaItem, ArmaParticular, Categoria } from '../types';
 import { formatPostoGraduacaoSigla } from '../utils/rankUtils';
@@ -151,7 +151,7 @@ export function OcorrenciasView({
   const [isStockModalOpen, setIsStockModalOpen] = useState(false);
   const [isAlteracoesModalOpen, setIsAlteracoesModalOpen] = useState(false);
   const [isReportsModalOpen, setIsReportsModalOpen] = useState(false);
-  const [selectedReportTab, setSelectedReportTab] = useState<'periodico' | 'estoque' | 'particulares'>('periodico');
+  const [selectedReportTab, setSelectedReportTab] = useState<'periodico' | 'estoque' | 'particulares' | 'permanente'>('periodico');
   const [isHandoverModalOpen, setIsHandoverModalOpen] = useState(false);
   const [handoverArmeiroAnterior, setHandoverArmeiroAnterior] = useState('');
   const [handoverAdjunto, setHandoverAdjunto] = useState('');
@@ -635,13 +635,41 @@ Riacho Fundo I - DF, ${dataMinusculo}.`;
           itens: estoqueRelatorioData
         }
       };
-    } else {
+    } else if (selectedReportTab === 'particulares') {
       reportData = {
         title: 'Relatório de Armas Particulares Custodiadas - PMDF',
         meta: `Consulta gerada em: ${new Date().toLocaleString()}`,
         type: 'particulares',
         data: {
           armas: armasParticularesData
+        }
+      };
+    } else {
+      const permanentCautelas = cautelas.filter(c => c.status_cautela === 'permanente');
+      const permanentReportItems = permanentCautelas.flatMap(c => {
+        const pm = usuarios.find(u => u.matricula === c.matricula_policial);
+        const items = cautelaItens.filter(ci => ci.id_cautela === c.id_cautela && !ci.estado_devolucao);
+        return items.map(ci => {
+          const mat = materiais.find(m => m.id_material === ci.id_material);
+          return {
+            id_cautela: c.id_cautela,
+            matricula: c.matricula_policial,
+            policial: pm ? `${pm.posto_graduacao} ${pm.nome_de_guerra || pm.nome}` : c.matricula_policial,
+            id_material: ci.id_material,
+            modelo: mat?.modelo || 'Material',
+            categoria: mat?.id_categoria.replace('CAT-', '') || 'BÉLICO',
+            quantidade: ci.quantidade,
+            data_carga: new Date(c.data_retirada).toLocaleDateString('pt-BR')
+          };
+        });
+      });
+
+      reportData = {
+        title: 'Relatório de Cargas Bélicas Permanentes (Dotação Pessoal) - PMDF',
+        meta: `Relatório emitido em: ${new Date().toLocaleString('pt-BR')}`,
+        type: 'permanente',
+        data: {
+          itens: permanentReportItems
         }
       };
     }
@@ -1690,6 +1718,17 @@ ${estoqueObservacao.trim() || 'Sem divergências ou alterações físicas relata
               >
                 Armas Particulares
               </button>
+              <button
+                type="button"
+                onClick={() => setSelectedReportTab('permanente')}
+                className={`px-4 py-2 text-xs font-mono font-bold border-t-2 border-x border-b border-transparent rounded-t-lg transition-all cursor-pointer ${
+                  selectedReportTab === 'permanente'
+                    ? 'border-t-violet-500 border-x-slate-800 bg-slate-900 text-slate-100 border-b-slate-900'
+                    : 'text-slate-455 hover:text-slate-200 hover:bg-slate-850/50'
+                }`}
+              >
+                Cargas Permanentes
+              </button>
             </div>
 
             {/* Conteúdo do Modal */}
@@ -2042,6 +2081,77 @@ ${estoqueObservacao.trim() || 'Sem divergências ou alterações físicas relata
                 </div>
               )}
 
+              {/* ABA 4: CARGAS PERMANENTES */}
+              {selectedReportTab === 'permanente' && (
+                <div className="space-y-4 animate-fadeIn">
+                  <div className="bg-slate-955/20 border border-slate-800 p-4 rounded-xl flex items-center justify-between">
+                    <div>
+                      <h4 className="text-xs font-bold font-mono text-slate-100 uppercase">Resumo de Cargas Bélicas Permanentes</h4>
+                      <p className="text-[10px] text-slate-400 font-sans mt-0.5">Listagem de todos os armamentos, equipamentos e rádios acautelados de forma definitiva (sem prazo diário).</p>
+                    </div>
+                    <span className="bg-blue-955/50 text-blue-400 border border-blue-900/40 px-3 py-1 rounded font-mono text-xs font-bold uppercase">
+                      {cautelas.filter(c => c.status_cautela === 'permanente').length} Cautela(s) Ativa(s)
+                    </span>
+                  </div>
+
+                  <div className="overflow-x-auto border border-slate-855 rounded-xl bg-slate-950/20">
+                    <table className="w-full text-left border-collapse text-xs font-sans">
+                      <thead>
+                        <tr className="bg-slate-900/80 border-b border-slate-850 font-mono text-[10px] uppercase tracking-wider text-slate-400">
+                          <th className="p-3.5">Código Guia</th>
+                          <th className="p-3.5">Matrícula</th>
+                          <th className="p-3.5">Policial Militar</th>
+                          <th className="p-3.5">Código / RFID</th>
+                          <th className="p-3.5">Categoria</th>
+                          <th className="p-3.5">Modelo / Item</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(() => {
+                          const permanentCautelas = cautelas.filter(c => c.status_cautela === 'permanente');
+                          const rows = permanentCautelas.flatMap(c => {
+                            const pm = usuarios.find(u => u.matricula === c.matricula_policial);
+                            const items = cautelaItens.filter(ci => ci.id_cautela === c.id_cautela && !ci.estado_devolucao);
+                            return items.map(ci => {
+                              const mat = materiais.find(m => m.id_material === ci.id_material);
+                              return {
+                                id_cautela: c.id_cautela,
+                                matricula: c.matricula_policial,
+                                policial: pm ? `${pm.posto_graduacao} ${pm.nome_de_guerra || pm.nome}` : c.matricula_policial,
+                                id_material: ci.id_material,
+                                modelo: mat?.modelo || 'Material',
+                                categoria: mat?.id_categoria.replace('CAT-', '') || 'BÉLICO',
+                                quantidade: ci.quantidade
+                              };
+                            });
+                          });
+
+                          if (rows.length === 0) {
+                            return (
+                              <tr>
+                                <td colSpan={6} className="p-6 text-center text-slate-500 font-mono italic">
+                                  Nenhuma carga permanente registrada no sistema no momento.
+                                </td>
+                              </tr>
+                            );
+                          }
+
+                          return rows.map((row, index) => (
+                            <tr key={index} className="border-b border-slate-855/50 hover:bg-slate-850/10 transition-colors">
+                              <td className="p-3.5 font-mono font-bold text-blue-400">{row.id_cautela}</td>
+                              <td className="p-3.5 font-mono text-slate-300">{row.matricula}</td>
+                              <td className="p-3.5 font-bold text-slate-100">{row.policial}</td>
+                              <td className="p-3.5 font-mono text-cyan-400 font-bold">{row.id_material}</td>
+                              <td className="p-3.5 text-slate-400 font-mono text-[10px]">{row.categoria}</td>
+                              <td className="p-3.5 text-slate-200 uppercase font-bold">{row.modelo} {row.quantidade > 1 ? `(x${row.quantidade})` : ''}</td>
+                            </tr>
+                          ));
+                        })()}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Rodapé do Modal */}

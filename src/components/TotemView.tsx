@@ -47,7 +47,8 @@ interface TotemViewProps {
     cartItens: string[], 
     observacoes: string,
     weaponMagazines?: Record<string, number>,
-    isPermanent?: boolean
+    isPermanent?: boolean,
+    radioBatteries?: Record<string, { brand: 'Hytera' | 'Sepura'; qty: number }>
   ) => Cautela | null;
   cadastrarPolicial: (novoPolicial: Usuario) => Promise<{ success: boolean; error?: string }>;
 
@@ -108,7 +109,46 @@ export function TotemView({
   const [selectedAccessoryWeapon, setSelectedAccessoryWeapon] = React.useState<Material | null>(null);
   const [selectedAccessoryAmmoQty, setSelectedAccessoryAmmoQty] = React.useState(0);
   const [selectedAccessoryMagQty, setSelectedAccessoryMagQty] = React.useState(0);
+  const [selectedAccessoryBatteryQty, setSelectedAccessoryBatteryQty] = React.useState(1);
   const [cartWeaponMagazines, setCartWeaponMagazines] = React.useState<Record<string, number>>({});
+  const [cartRadioBatteries, setCartRadioBatteries] = React.useState<Record<string, { brand: 'Hytera' | 'Sepura'; qty: number }>>({});
+
+  const getRadioInfo = (mat: Material | null): { isRadio: boolean; brand: 'Hytera' | 'Sepura' | null } => {
+    if (!mat) return { isRadio: false, brand: null };
+    const modelUpper = (mat.modelo || '').toUpperCase();
+    const idUpper = (mat.id_material || '').toUpperCase();
+    const fabUpper = (mat.fabricante || '').toUpperCase();
+    const catId = (mat.id_categoria || '').toUpperCase();
+
+    const isRadioMatch =
+      catId === 'CAT-COMUNICACAO' ||
+      fabUpper === 'HYTERA' ||
+      fabUpper === 'SEPURA' ||
+      modelUpper.includes('RÁDIO') ||
+      modelUpper.includes('RADIO') ||
+      modelUpper.startsWith('HT') ||
+      idUpper.startsWith('HT') ||
+      modelUpper.startsWith('HY') ||
+      idUpper.startsWith('HY') ||
+      modelUpper.startsWith('SEP') ||
+      idUpper.startsWith('SEP');
+
+    if (!isRadioMatch) {
+      return { isRadio: false, brand: null };
+    }
+
+    if (fabUpper === 'HYTERA' || modelUpper.startsWith('HY') || idUpper.startsWith('HY') || idUpper.includes('.213.') || modelUpper.includes('HY213')) {
+      return { isRadio: true, brand: 'Hytera' };
+    }
+    if (fabUpper === 'SEPURA' || modelUpper.startsWith('SEP') || idUpper.startsWith('SEP') || idUpper.includes('.216.') || modelUpper.includes('SEP216')) {
+      return { isRadio: true, brand: 'Sepura' };
+    }
+
+    if (modelUpper.includes('HY')) return { isRadio: true, brand: 'Hytera' };
+    if (modelUpper.includes('SEP')) return { isRadio: true, brand: 'Sepura' };
+
+    return { isRadio: true, brand: 'Hytera' };
+  };
 
   const isFirearmRequiringAccessories = (mat: Material) => {
     if (!mat.calibre || mat.calibre === 'N/A') return false;
@@ -400,11 +440,19 @@ export function TotemView({
         delete copy[idMat];
         return copy;
       });
+      // Remover das baterias
+      setCartRadioBatteries(prev => {
+        const copy = { ...prev };
+        delete copy[idMat];
+        return copy;
+      });
     } else {
-      if (isFirearmRequiringAccessories(mat)) {
+      const radioInfo = getRadioInfo(mat);
+      if (isFirearmRequiringAccessories(mat) || radioInfo.isRadio) {
         setSelectedAccessoryWeapon(mat);
         setSelectedAccessoryAmmoQty(0);
         setSelectedAccessoryMagQty(0);
+        setSelectedAccessoryBatteryQty(1); // Padrão de 1 bateria para rádios
         setIsAccessoryModalOpen(true);
       } else {
         setCartItens(prev => [...prev, idMat]);
@@ -428,7 +476,22 @@ export function TotemView({
       }
 
       setPinError('');
-      const newCautela = processEfetivarCautela(loggedUser.matricula, cartItens, observacoesRetirada, cartWeaponMagazines, isPermanentMode);
+      
+      // Monta observações de baterias dos rádios acautelados
+      let finalObs = observacoesRetirada || '';
+      const batteryNotes: string[] = [];
+      Object.entries(cartRadioBatteries).forEach(([idMat, bInfo]) => {
+        if (cartItens.includes(idMat) && bInfo.qty >= 0) {
+          const m = materiais.find(mat => mat.id_material === idMat);
+          const mName = m ? m.modelo : idMat;
+          batteryNotes.push(`${mName}: ${bInfo.qty}x Bateria ${bInfo.brand}`);
+        }
+      });
+      if (batteryNotes.length > 0) {
+        finalObs = finalObs ? `${finalObs} | [Baterias HT: ${batteryNotes.join(', ')}]` : `[Baterias HT: ${batteryNotes.join(', ')}]`;
+      }
+
+      const newCautela = processEfetivarCautela(loggedUser.matricula, cartItens, finalObs, cartWeaponMagazines, isPermanentMode, cartRadioBatteries);
       if (newCautela) {
         setGeneratedCautela(newCautela);
         setConfirmarCautelaPin('');
@@ -446,11 +509,19 @@ export function TotemView({
     setSenhaInput('');
     setCartItens([]);
     setCartWeaponMagazines({});
+    setCartRadioBatteries({});
     setConfirmarCautelaPin('');
     setPinError('');
     setIsSearchModalOpen(false);
     setSearchQuery('');
     setForcePermitirMaisItens(false);
+    // Limpar estados de autenticação e cadastro para não contaminar próxima sessão
+    setAuthError('');
+    setNovaSenhaInput('');
+    setConfirmarSenhaInput('');
+    setCadastroSenhaError('');
+    setObservacoesRetirada('');
+    setGeneratedCautela(null);
     setPolicialStep('login');
     if (isPermanentMode && onResetPermanentMode) {
       onResetPermanentMode();
@@ -1083,6 +1154,9 @@ export function TotemView({
                                 {!isQtyItem && cartWeaponMagazines[id] && cartWeaponMagazines[id] > 0 ? (
                                   <span className="text-cyan-400 font-mono font-bold"> (+{cartWeaponMagazines[id]} Carregadores)</span>
                                 ) : ''}
+                                {!isQtyItem && cartRadioBatteries[id] ? (
+                                  <span className="text-emerald-400 font-mono font-bold"> (+{cartRadioBatteries[id].qty}x Bateria {cartRadioBatteries[id].brand})</span>
+                                ) : ''}
                               </span>
                               <span className="text-slate-505">
                                 {isQtyItem ? 'Item Coletivo' : `Serial: ${id}`}
@@ -1126,6 +1200,12 @@ export function TotemView({
                       placeholder="••••••"
                       value={confirmarCautelaPin}
                       onChange={(e) => setConfirmarCautelaPin(e.target.value.replace(/\D/g, ''))}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleEfetivarCautela();
+                        }
+                      }}
                       className="w-full bg-slate-955 border border-slate-800 focus:border-blue-500 p-3 text-xs font-mono text-slate-200 focus:outline-none tracking-widest text-center rounded-lg transition-all focus:ring-1 focus:ring-blue-500/20 text-lg"
                     />
                   </div>
@@ -1165,31 +1245,31 @@ export function TotemView({
                 key="sucesso-step"
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="p-6 md:p-8 space-y-5 flex-1 flex flex-col justify-center text-center max-w-xl mx-auto w-full" 
+                className="p-6 md:p-8 space-y-6 flex-1 flex flex-col justify-center text-center max-w-3xl mx-auto w-full" 
                 id="policial-success-step"
               >
-                <div className="space-y-2">
-                  <div className="bg-emerald-500/10 text-emerald-450 w-16 h-16 rounded-full flex items-center justify-center mx-auto border border-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.1)] glow-emerald">
-                    <CheckCircle className="h-9 w-9 text-emerald-400" />
+                <div className="space-y-2.5">
+                  <div className="bg-emerald-500/10 text-emerald-450 w-20 h-20 rounded-full flex items-center justify-center mx-auto border border-emerald-500/20 shadow-[0_0_20px_rgba(16,185,129,0.15)] glow-emerald">
+                    <CheckCircle className="h-11 w-11 text-emerald-400" />
                   </div>
-                  <span className="text-[9px] text-emerald-450 font-bold uppercase tracking-wider font-mono block">TRANSAÇÃO RELACIONAL ACID CONCLUÍDA</span>
-                  <h3 className="text-base font-extrabold text-white font-mono uppercase tracking-wide">Guia Eletrônica de Cautela Emitida</h3>
-                  <p className="text-xs text-slate-400 leading-relaxed font-sans">A carga foi debitada no estoque do paiol e associada à sua matrícula. O armamento está liberado na portaria.</p>
+                  <span className="text-xs text-emerald-450 font-bold uppercase tracking-wider font-mono block">TRANSAÇÃO RELACIONAL ACID CONCLUÍDA</span>
+                  <h3 className="text-2xl font-black text-white font-mono uppercase tracking-wide">Guia Eletrônica de Cautela Emitida</h3>
+                  <p className="text-sm text-slate-350 leading-relaxed font-sans max-w-2xl mx-auto">A carga foi debitada no estoque do paiol e associada à sua matrícula. O armamento está liberado na portaria.</p>
                 </div>
 
                 {/* Recibo Tático */}
-                <div className="bg-slate-950 p-5 border border-slate-850 text-left space-y-4 font-mono text-xs relative overflow-hidden rounded-xl">
-                  <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 via-cyan-500 to-blue-500" />
+                <div className="bg-slate-950 p-6 md:p-8 border border-slate-850 text-left space-y-5 font-mono text-sm relative overflow-hidden rounded-xl shadow-xl">
+                  <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-blue-500 via-cyan-500 to-blue-500" />
 
-                  <div className="flex justify-between items-center text-[9px] text-slate-500 border-b border-slate-900 pb-2">
+                  <div className="flex justify-between items-center text-xs font-bold text-slate-400 border-b border-slate-900 pb-3">
                     <span>GUIA ID: {generatedCautela.id_cautela}</span>
                     <span>{new Date(generatedCautela.data_retirada).toLocaleString()}</span>
                   </div>
 
-                  <div className="space-y-2 text-[10px] text-slate-450">
-                    <p>Militar Beneficiário: <strong className="text-slate-200 font-sans font-bold text-xs">{formatPostoGraduacaoSigla(loggedUser.posto_graduacao)} {loggedUser.nome_de_guerra || loggedUser.nome} ({loggedUser.matricula})</strong></p>
-                    <p className="font-bold border-b border-slate-900 pb-1.5 text-slate-500">MATERIAIS CAUTELADOS:</p>
-                    <ul className="list-disc pl-4 space-y-1 text-slate-200 text-[11px] font-sans">
+                  <div className="space-y-3 text-xs text-slate-300">
+                    <p className="text-sm">Militar Beneficiário: <strong className="text-white font-sans font-bold text-base ml-1">{formatPostoGraduacaoSigla(loggedUser.posto_graduacao)} {loggedUser.nome_de_guerra || loggedUser.nome} ({loggedUser.matricula})</strong></p>
+                    <p className="font-bold border-b border-slate-900 pb-2 text-slate-400 text-xs tracking-wider uppercase">MATERIAIS CAUTELADOS:</p>
+                    <ul className="list-disc pl-5 space-y-1.5 text-slate-100 font-sans">
                       {(() => {
                         const groupedCart = cartItens.reduce((acc, id) => {
                           acc[id] = (acc[id] || 0) + 1;
@@ -1199,10 +1279,13 @@ export function TotemView({
                           const item = materiais.find(m => m.id_material === id);
                           const isQtyItem = item?.controle_quantidade;
                           return (
-                            <li key={id} className="font-mono text-xs text-slate-200">
-                              {item?.modelo} {isQtyItem ? <strong className="text-blue-450"> (Qtd: {qty})</strong> : <span className="text-[9px] text-slate-500 font-mono">(S/N: {id})</span>}
+                            <li key={id} className="font-mono text-sm text-slate-100 font-bold">
+                              {item?.modelo} {isQtyItem ? <strong className="text-blue-400"> (Qtd: {qty})</strong> : <span className="text-xs text-slate-400 font-mono font-normal">(S/N: {id})</span>}
                               {!isQtyItem && cartWeaponMagazines[id] && cartWeaponMagazines[id] > 0 ? (
                                 <strong className="text-cyan-400"> (+{cartWeaponMagazines[id]} Carregadores)</strong>
+                              ) : ''}
+                              {!isQtyItem && cartRadioBatteries[id] ? (
+                                <strong className="text-emerald-400"> (+{cartRadioBatteries[id].qty}x Bateria {cartRadioBatteries[id].brand})</strong>
                               ) : ''}
                             </li>
                           );
@@ -1234,7 +1317,7 @@ export function TotemView({
                       );
                     })()}
                     
-                    <p className="border-t border-slate-900 pt-2.5 text-[9px]">Previsão de Baixa Obrigatória: <strong className="text-amber-450">{new Date(generatedCautela.previsao_devolucao).toLocaleString()}</strong></p>
+                    <p className="border-t border-slate-900 pt-3 text-xs text-slate-350">Previsão de Baixa Obrigatória: <strong className="text-amber-400 font-bold text-sm ml-1">{new Date(generatedCautela.previsao_devolucao).toLocaleString()}</strong></p>
                   </div>
 
                   <div className="border-t border-slate-900 pt-2 text-[8px] text-slate-500 flex justify-between items-center">
@@ -1270,7 +1353,7 @@ export function TotemView({
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-[96vw] lg:max-w-7xl max-h-[92vh] overflow-hidden flex flex-col shadow-2xl relative text-left"
+              className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-[98vw] lg:max-w-[95vw] max-h-[94vh] overflow-hidden flex flex-col shadow-2xl relative text-left"
             >
               {/* Header */}
               <div className="p-5 border-b border-slate-800 flex justify-between items-center bg-slate-950/40">
@@ -1279,8 +1362,8 @@ export function TotemView({
                     <Search className="h-5 w-5" />
                   </div>
                   <div>
-                    <h3 className="text-xs font-bold text-white uppercase tracking-widest font-mono">Busca Rápida & Cautela Tática</h3>
-                    <p className="text-[10px] text-slate-450 font-sans">Pesquise materiais e assine digitalmente nesta mesma tela.</p>
+                    <h3 className="text-sm font-black text-white uppercase tracking-widest font-mono">Busca Rápida & Cautela Tática</h3>
+                    <p className="text-xs text-slate-400 font-sans">Pesquise materiais e assine digitalmente nesta mesma tela.</p>
                   </div>
                 </div>
                 <button
@@ -1298,7 +1381,7 @@ export function TotemView({
                 {/* Lado Esquerdo: Busca e Resultados */}
                 <div className="lg:col-span-8 flex flex-col space-y-4 overflow-hidden h-full">
                   <div className="relative">
-                    <Search className="absolute left-3.5 top-3.5 h-4 w-4 text-slate-505" />
+                    <Search className="absolute left-4 top-4 h-5 w-5 text-slate-400" />
                     <input
                       type="text"
                       name="searchQuery"
@@ -1306,7 +1389,7 @@ export function TotemView({
                       placeholder="Pesquisar por nome do material (ex: Glock) ou código/serial (ex: TX-983829)..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 focus:border-cyan-500 p-3.5 pl-10 text-xs font-mono text-slate-200 focus:outline-none rounded-lg transition-all focus:ring-1 focus:ring-cyan-500/20"
+                      className="w-full bg-slate-950 border border-slate-800 focus:border-cyan-500 p-4 pl-12 text-sm font-mono text-slate-100 focus:outline-none rounded-xl transition-all focus:ring-1 focus:ring-cyan-500/20 placeholder:text-slate-500 font-medium"
                     />
                   </div>
 
@@ -1437,7 +1520,7 @@ export function TotemView({
                   <div className="lg:col-span-4 flex flex-col space-y-4 justify-between h-full border-t lg:border-t-0 lg:border-l border-slate-800 pt-4 lg:pt-0 lg:pl-6">
                   
                   <div className="space-y-3 flex-1 overflow-y-auto max-h-[340px] lg:max-h-none">
-                    <span className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wider block">Itens Selecionados ({cartItens.length}):</span>
+                    <span className="text-xs font-mono font-bold text-slate-350 uppercase tracking-wider block">Itens Selecionados ({cartItens.length}):</span>
                     {cartItens.length === 0 ? (
                       <div className="p-4 border border-slate-800 rounded-lg text-center text-slate-505 text-xs font-mono">
                         Nenhum item selecionado. Use a busca ao lado para adicionar.
@@ -1453,15 +1536,18 @@ export function TotemView({
                             const item = materiais.find(m => m.id_material === id);
                             const isQtyItem = item?.controle_quantidade;
                             return (
-                              <div key={id} className="bg-slate-955 border border-slate-850 p-2.5 rounded-lg flex justify-between items-center text-xs font-mono">
+                              <div key={id} className="bg-slate-955 border border-slate-850 p-3 rounded-lg flex justify-between items-center text-xs font-mono">
                                 <div className="truncate pr-2">
-                                  <p className="text-white uppercase font-sans font-bold truncate text-[10px]">
+                                  <p className="text-white uppercase font-sans font-bold truncate text-xs">
                                     {item?.modelo} {isQtyItem ? `(Qtd: ${qty})` : ''}
                                     {!isQtyItem && cartWeaponMagazines[id] && cartWeaponMagazines[id] > 0 ? (
                                       <span className="text-cyan-400 font-mono font-bold"> (+{cartWeaponMagazines[id]} Carg)</span>
                                     ) : ''}
+                                    {!isQtyItem && cartRadioBatteries[id] ? (
+                                      <span className="text-emerald-400 font-mono font-bold"> (+{cartRadioBatteries[id].qty}x Bat {cartRadioBatteries[id].brand})</span>
+                                    ) : ''}
                                   </p>
-                                  <p className="text-[8px] text-slate-505">
+                                  <p className="text-[10px] text-slate-400 font-mono">
                                     {isQtyItem ? 'Item Coletivo' : `CÓD: ${id}`}
                                   </p>
                                 </div>
@@ -1512,6 +1598,12 @@ export function TotemView({
                           placeholder="••••••"
                           value={confirmarCautelaPin}
                           onChange={(e) => setConfirmarCautelaPin(e.target.value.replace(/\D/g, ''))}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleEfetivarCautela();
+                            }
+                          }}
                           className="w-full bg-slate-955 border border-slate-800 focus:border-cyan-550 p-2.5 text-xs font-mono text-slate-200 focus:outline-none tracking-widest text-center rounded-lg transition-all focus:ring-1 focus:ring-cyan-500/20 text-lg"
                         />
                       </div>
@@ -1594,39 +1686,77 @@ export function TotemView({
 
                 {/* Seletores */}
                 {(() => {
+                  const radioInfo = getRadioInfo(selectedAccessoryWeapon);
                   const maxMag = selectedAccessoryWeapon.quantidade_carregadores || 0;
+                  const isWeapon = isFirearmRequiringAccessories(selectedAccessoryWeapon);
 
                   return (
                     <div className="space-y-4">
-                      {/* Carregadores */}
-                      <div className="flex items-center justify-between p-3 bg-slate-950/30 border border-slate-850/60 rounded-xl">
-                        <div>
-                          <h5 className="text-xs font-bold text-slate-200 uppercase font-mono">Carregadores da Arma</h5>
-                          <p className="text-[10px] text-slate-500 font-sans">
-                            Disponíveis com esta arma: <span className="text-slate-350 font-bold">{maxMag} un.</span>
-                          </p>
+                      {/* Baterias (para Rádios HT Hytera / Sepura) */}
+                      {radioInfo.isRadio && (
+                        <div className="flex items-center justify-between p-3.5 bg-slate-955/60 border border-slate-800 rounded-xl">
+                          <div>
+                            <span className="text-[8px] px-2 py-0.5 rounded font-black font-mono border bg-emerald-950/70 text-emerald-400 border-emerald-900/40 uppercase block mb-1 w-fit">
+                              Bateria {radioInfo.brand}
+                            </span>
+                            <h5 className="text-xs font-bold text-slate-200 uppercase font-mono">Baterias do Rádio HT</h5>
+                            <p className="text-[10px] text-slate-450 font-sans">
+                              Quantidade de baterias para este rádio (Padrão: 1 un.)
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-3 bg-slate-950 p-1.5 border border-slate-800 rounded-lg">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedAccessoryBatteryQty(prev => Math.max(0, prev - 1))}
+                              className="w-7 h-7 bg-slate-900 hover:bg-slate-800 text-xs font-bold text-slate-200 rounded flex items-center justify-center transition-colors cursor-pointer"
+                            >
+                              -
+                            </button>
+                            <span className="text-xs font-mono font-bold text-emerald-400 w-6 text-center">
+                              {selectedAccessoryBatteryQty}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedAccessoryBatteryQty(prev => prev + 1)}
+                              className="w-7 h-7 bg-slate-900 hover:bg-slate-800 text-xs font-bold text-slate-200 rounded flex items-center justify-center transition-colors cursor-pointer"
+                            >
+                              +
+                            </button>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-3 bg-slate-950 p-1.5 border border-slate-800 rounded-lg">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedAccessoryMagQty(prev => Math.max(0, prev - 1))}
-                            className="w-7 h-7 bg-slate-900 hover:bg-slate-800 text-xs font-bold text-slate-200 rounded flex items-center justify-center transition-colors"
-                          >
-                            -
-                          </button>
-                          <span className="text-xs font-mono font-bold text-white w-6 text-center">
-                            {selectedAccessoryMagQty}
-                          </span>
-                          <button
-                            type="button"
-                            disabled={selectedAccessoryMagQty >= maxMag}
-                            onClick={() => setSelectedAccessoryMagQty(prev => Math.min(maxMag, prev + 1))}
-                            className="w-7 h-7 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold text-slate-200 rounded flex items-center justify-center transition-colors"
-                          >
-                            +
-                          </button>
+                      )}
+
+                      {/* Carregadores (para Armamentos) */}
+                      {isWeapon && (
+                        <div className="flex items-center justify-between p-3 bg-slate-950/30 border border-slate-850/60 rounded-xl">
+                          <div>
+                            <h5 className="text-xs font-bold text-slate-200 uppercase font-mono">Carregadores da Arma</h5>
+                            <p className="text-[10px] text-slate-500 font-sans">
+                              Disponíveis com esta arma: <span className="text-slate-350 font-bold">{maxMag} un.</span>
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-3 bg-slate-950 p-1.5 border border-slate-800 rounded-lg">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedAccessoryMagQty(prev => Math.max(0, prev - 1))}
+                              className="w-7 h-7 bg-slate-900 hover:bg-slate-800 text-xs font-bold text-slate-200 rounded flex items-center justify-center transition-colors cursor-pointer"
+                            >
+                              -
+                            </button>
+                            <span className="text-xs font-mono font-bold text-white w-6 text-center">
+                              {selectedAccessoryMagQty}
+                            </span>
+                            <button
+                              type="button"
+                              disabled={selectedAccessoryMagQty >= maxMag}
+                              onClick={() => setSelectedAccessoryMagQty(prev => Math.min(maxMag, prev + 1))}
+                              className="w-7 h-7 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold text-slate-200 rounded flex items-center justify-center transition-colors cursor-pointer"
+                            >
+                              +
+                            </button>
+                          </div>
                         </div>
-                      </div>
+                      )}
                     </div>
                   );
                 })()}
@@ -1643,7 +1773,30 @@ export function TotemView({
                 </button>
                 <button
                   type="button"
-                  onClick={handleConfirmarAcessorios}
+                  onClick={() => {
+                    if (selectedAccessoryWeapon) {
+                      const radioInfo = getRadioInfo(selectedAccessoryWeapon);
+                      if (radioInfo.isRadio && radioInfo.brand) {
+                        setCartRadioBatteries(prev => ({
+                          ...prev,
+                          [selectedAccessoryWeapon.id_material]: {
+                            brand: radioInfo.brand!,
+                            qty: selectedAccessoryBatteryQty
+                          }
+                        }));
+                      }
+                      if (isFirearmRequiringAccessories(selectedAccessoryWeapon)) {
+                        setCartWeaponMagazines(prev => ({
+                          ...prev,
+                          [selectedAccessoryWeapon.id_material]: selectedAccessoryMagQty
+                        }));
+                      }
+                      if (!cartItens.includes(selectedAccessoryWeapon.id_material)) {
+                        setCartItens(prev => [...prev, selectedAccessoryWeapon.id_material]);
+                      }
+                    }
+                    setIsAccessoryModalOpen(false);
+                  }}
                   className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold font-mono py-2.5 rounded-lg text-xs transition-all shadow-md uppercase tracking-wider cursor-pointer text-center glow-blue"
                 >
                   Confirmar Carga

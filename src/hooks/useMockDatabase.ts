@@ -360,7 +360,8 @@ export function useMockDatabase() {
     cartItens: string[], 
     observacoes: string,
     weaponMagazines?: Record<string, number>,
-    isPermanent?: boolean
+    isPermanent?: boolean,
+    radioBatteries?: Record<string, { brand: 'Hytera' | 'Sepura'; qty: number }>
   ) => {
     const user = usuarios.find(u => u.matricula === matriculaPolicial);
     if (!user) return null;
@@ -398,7 +399,30 @@ export function useMockDatabase() {
       };
     });
 
+    // Adicionar itens de baterias vinculados aos rádios HT
+    const batteryDeductions: Record<string, number> = {};
+    if (radioBatteries) {
+      Object.entries(radioBatteries).forEach(([idMat, bInfo]) => {
+        if (cartItens.includes(idMat) && bInfo.qty > 0) {
+          const batId = `BAT-${bInfo.brand.toUpperCase()}`;
+          batteryDeductions[batId] = (batteryDeductions[batId] || 0) + bInfo.qty;
+
+          novosItensCautela.push({
+            id_cautela_item: `ITEM-BAT-${Math.floor(Math.random() * 100000)}`,
+            id_cautela: idNewCautela,
+            id_material: batId,
+            quantidade: bInfo.qty,
+            estado_entrega: 'excelente'
+          });
+        }
+      });
+    }
+
     const materiaisAtualizados = materiais.map(m => {
+      if (batteryDeductions[m.id_material] && m.controle_quantidade) {
+        const newQty = Math.max(0, (m.quantidade || 0) - batteryDeductions[m.id_material]);
+        return { ...m, quantidade: newQty };
+      }
       if (cartItens.includes(m.id_material)) {
         if (m.controle_quantidade) {
           return m; // Quantity-based materials remain available in stock list
@@ -408,9 +432,18 @@ export function useMockDatabase() {
       return m;
     });
 
+    // Marcar militar como pendente_devolucao apenas se for cautela diária/normal
+    const usuariosAtualizados = usuarios.map(u => {
+      if (u.matricula === matriculaPolicial && !isPermanent) {
+        return { ...u, situacao_cautela: 'pendente_devolucao' as const };
+      }
+      return u;
+    });
+
     setCautelas(prev => [novaCautela, ...prev]);
     setCautelaItens(prev => [...prev, ...novosItensCautela]);
     setMateriais(materiaisAtualizados);
+    setUsuarios(usuariosAtualizados);
 
     registrarLogAuditoria(
       matriculaPolicial, 
@@ -461,7 +494,7 @@ export function useMockDatabase() {
     idsMateriaisDevolvidos.forEach(idMat => {
       // Encontra o CautelaItem ativo para este material nesta cautela
       const ci = Array.from(activeItemsMap.values()).find(
-        item => item.id_cautela === cautId && item.id_material === idMat && item.estado_devolucao === undefined
+        item => item.id_cautela === cautId && item.id_material === idMat && !item.estado_devolucao
       );
       if (!ci) return;
 
@@ -475,7 +508,7 @@ export function useMockDatabase() {
         ? (consumedQuantities[idMat] ?? 0)
         : 0;
 
-      const condition = claimConditions[idMat] || 'bom';
+      const condition = claimConditions?.[idMat] || 'bom';
       const totalProcessed = qtyToReturn + qtyConsumed;
 
       if (totalProcessed >= ci.quantidade) {
@@ -612,10 +645,11 @@ export function useMockDatabase() {
       return c;
     });
 
-    // 6. Liberar o militar apenas se todos os itens foram devolvidos
+    // 6. Liberar o militar apenas se todos os itens foram devolvidos e sem outras cautelas diárias ativas
     const policialResponsavel = cautelaParaBaixa.matricula_policial;
+    const outrasCautelasDiariasAtivas = cautelasAtualizadas.some(c => c.matricula_policial === policialResponsavel && (c.status_cautela === 'ativa' || c.status_cautela === 'atrasada' || c.status_cautela === 'prorrogada'));
     const usuariosAtualizados = usuarios.map(u => {
-      if (u.matricula === policialResponsavel && todosDevolvidos) {
+      if (u.matricula === policialResponsavel && todosDevolvidos && !outrasCautelasDiariasAtivas) {
         return { ...u, situacao_cautela: 'apto' as const };
       }
       return u;

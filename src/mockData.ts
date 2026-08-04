@@ -756,6 +756,32 @@ export const mockMateriais: Material[] = [
     quantidade_carregadores: null
   },
   {
+    id_material: 'BAT-HYTERA',
+    id_categoria: 'CAT-COMUNICACAO',
+    modelo: 'Bateria Hytera',
+    fabricante: 'HYTERA',
+    calibre: 'N/A',
+    status_atual: 'disponivel',
+    data_aquisicao: '2026-07-23',
+    especificacoes_tecnicas: 'Bateria recarregável para rádio HT Hytera',
+    controle_quantidade: true,
+    quantidade: 50,
+    quantidade_carregadores: null
+  },
+  {
+    id_material: 'BAT-SEPURA',
+    id_categoria: 'CAT-COMUNICACAO',
+    modelo: 'Bateria Sepura',
+    fabricante: 'SEPURA',
+    calibre: 'N/A',
+    status_atual: 'disponivel',
+    data_aquisicao: '2026-07-23',
+    especificacoes_tecnicas: 'Bateria recarregável para rádio HT Sepura',
+    controle_quantidade: true,
+    quantidade: 50,
+    quantidade_carregadores: null
+  },
+  {
     id_material: 'BASTAO-SEM-NUMERO',
     id_categoria: 'CAT-493',
     modelo: 'Bastao Policial (Sem Numero)',

@@ -217,23 +217,46 @@ export default function FlowSimulator({
 
     const normalizeMat = (m?: string) => {
       let clean = (m || '').trim().toUpperCase();
-      if (clean.startsWith('A')) clean = clean.substring(1);
+      // Remove prefixo 'A' numérico de matrícula administrativa (ex: A12345 -> 12345)
+      // mas só se o que sobrar for numérico, para não truncar nomes que começam com 'A'
+      if (clean.length > 1 && clean.startsWith('A') && !isNaN(Number(clean.substring(1)))) {
+        clean = clean.substring(1);
+      }
       return clean;
     };
 
-    // 1. Procurar por matrícula específica do relator/armeiro informado no relatório
-    if (targetMatricula) {
-      const normTarget = normalizeMat(targetMatricula);
-      const found = db.usuarios.find((u: any) => normalizeMat(u.matricula) === normTarget);
-      if (found) return found;
+    // 1. Match exato pela matrícula informada (sem normalização)
+    if (targetMatricula && targetMatricula.trim()) {
+      const exactMatch = db.usuarios.find((u: any) =>
+        (u.matricula || '').trim().toUpperCase() === targetMatricula.trim().toUpperCase()
+      );
+      if (exactMatch) return exactMatch;
     }
 
-    // 2. Procurar por armeiro ativo logado no sistema
-    if (activeArmeiroMatricula) {
+    // 2. Match normalizado pela matrícula informada
+    if (targetMatricula && targetMatricula.trim()) {
+      const normTarget = normalizeMat(targetMatricula);
+      if (normTarget) {
+        const found = db.usuarios.find((u: any) => normalizeMat(u.matricula) === normTarget);
+        if (found) return found;
+      }
+    }
+
+    // 3. Procurar por armeiro ativo logado no sistema (exato primeiro, depois normalizado)
+    if (activeArmeiroMatricula && activeArmeiroMatricula.trim()) {
+      const exactActive = db.usuarios.find((u: any) =>
+        (u.matricula || '').trim().toUpperCase() === activeArmeiroMatricula.trim().toUpperCase()
+      );
+      if (exactActive) return exactActive;
+
       const normActive = normalizeMat(activeArmeiroMatricula);
       const foundActive = db.usuarios.find((u: any) => normalizeMat(u.matricula) === normActive);
       if (foundActive) return foundActive;
     }
+
+    // 4. Fallback final: qualquer usuário que tenha assinatura digitalizada cadastrada
+    const withSignature = db.usuarios.find((u: any) => u.assinatura_foto && u.assinatura_foto.trim());
+    if (withSignature) return withSignature;
 
     return null;
   };
@@ -273,6 +296,7 @@ export default function FlowSimulator({
   const handlePrintCautelas = () => {
     setPrintMode('cautelas');
     setTimeout(() => {
+      window.onafterprint = () => { setPrintMode(null); window.onafterprint = null; };
       window.print();
     }, 350);
   };
@@ -280,6 +304,7 @@ export default function FlowSimulator({
   const handlePrintLogs = () => {
     setPrintMode('logs');
     setTimeout(() => {
+      window.onafterprint = () => { setPrintMode(null); window.onafterprint = null; };
       window.print();
     }, 350);
   };
@@ -288,6 +313,7 @@ export default function FlowSimulator({
     setSelectedOcorrenciaPrint(oco);
     setPrintMode('ocorrencia');
     setTimeout(() => {
+      window.onafterprint = () => { setPrintMode(null); setSelectedOcorrenciaPrint(null); window.onafterprint = null; };
       window.print();
     }, 350);
   };
@@ -296,6 +322,7 @@ export default function FlowSimulator({
     setPrintReportData(reportData);
     setPrintMode('relatorio');
     setTimeout(() => {
+      window.onafterprint = () => { setPrintMode(null); setPrintReportData(null); window.onafterprint = null; };
       window.print();
     }, 350);
   };
@@ -431,6 +458,7 @@ export default function FlowSimulator({
             processDevolucao={db.processDevolucao}
             handlePrintCautelas={handlePrintCautelas}
             handlePrintLogs={handlePrintLogs}
+            handlePrintRelatorio={handlePrintRelatorio}
             printLogDate={printLogDate}
             setPrintLogDate={setPrintLogDate}
             activeArmeiroMatricula={activeArmeiroMatricula}
@@ -1031,6 +1059,45 @@ export default function FlowSimulator({
                       <td>{arma.obs}</td>
                     </tr>
                   ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {printReportData.type === 'permanente' && (
+            <div>
+              <h3 style={{ fontSize: '11pt', fontWeight: 'bold', borderBottom: '1px solid #000', paddingBottom: '3px', marginBottom: '15px', textTransform: 'uppercase' }}>
+                Cargas Bélicas Permanentes (Dotação Pessoal Efetiva)
+              </h3>
+              <table>
+                <thead>
+                  <tr>
+                    <th style={{ width: '12%' }}>Guia</th>
+                    <th style={{ width: '15%' }}>Matrícula</th>
+                    <th style={{ width: '25%' }}>Policial Militar</th>
+                    <th style={{ width: '18%' }}>Código / RFID</th>
+                    <th style={{ width: '15%' }}>Categoria</th>
+                    <th style={{ width: '15%' }}>Modelo / Item</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {printReportData.data.itens && printReportData.data.itens.map((item: any, index: number) => (
+                    <tr key={index}>
+                      <td style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{item.id_cautela}</td>
+                      <td>{item.matricula}</td>
+                      <td style={{ fontWeight: 'bold' }}>{item.policial}</td>
+                      <td style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{item.id_material}</td>
+                      <td>{item.categoria}</td>
+                      <td style={{ textTransform: 'uppercase' }}>{item.modelo} {item.quantidade > 1 ? `(x${item.quantidade})` : ''}</td>
+                    </tr>
+                  ))}
+                  {(!printReportData.data.itens || printReportData.data.itens.length === 0) && (
+                    <tr>
+                      <td colSpan={6} style={{ textAlign: 'center', fontStyle: 'italic', padding: '12px' }}>
+                        Nenhum militar com carga bélica permanente registrada no sistema até o momento.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>

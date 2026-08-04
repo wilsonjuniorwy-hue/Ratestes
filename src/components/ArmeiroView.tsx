@@ -31,6 +31,7 @@ interface ArmeiroViewProps {
   authenticatedPerfil?: string;
   excluirCautelaTotal?: (idCautela: string) => Promise<{ success: boolean }>;
   onOpenPermanentTotem?: () => void;
+  handlePrintRelatorio?: (reportData: any) => void;
 }
 
 export function ArmeiroView({
@@ -48,7 +49,8 @@ export function ArmeiroView({
   activeArmeiroMatricula,
   authenticatedPerfil,
   excluirCautelaTotal,
-  onOpenPermanentTotem
+  onOpenPermanentTotem,
+  handlePrintRelatorio
 }: ArmeiroViewProps) {
   // ---- FLUXO ARMEIRO: ESTADOS LOCAIS ----
   const [armeiroSubTab, setArmeiroSubTab] = useState<'dashboard' | 'cadastro_usuarios' | 'consulta_historico' | 'auditoria' | 'logs' | 'cautelas_permanentes'>('dashboard');
@@ -312,10 +314,9 @@ export function ArmeiroView({
                   CONEXÃO ATIVA
                 </span>
               </div>
-
               <div className="p-5 overflow-x-auto" id="dashboard-rtm-table-wrapper">
-                <table className="w-full text-left text-xs text-slate-350" id="dashboard-rtm-table">
-                  <thead className="bg-[#0b1329]/65 border border-slate-850 text-slate-455 font-mono text-[9px] uppercase tracking-wider">
+                <table className="w-full text-left text-sm text-slate-200" id="dashboard-rtm-table">
+                  <thead className="bg-[#0b1329]/75 border border-slate-850 text-slate-350 font-mono text-xs uppercase tracking-wider font-bold">
                     <tr>
                       <th className="p-4">Identificador</th>
                       <th className="p-4">Militar Carga</th>
@@ -325,48 +326,51 @@ export function ArmeiroView({
                       {authenticatedPerfil === 'admin' && <th className="p-4">Ação</th>}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-850/50 font-sans text-xs">
+                  <tbody className="divide-y divide-slate-850/50 font-sans text-sm">
                     {cautelas.filter(c => c.status_cautela === 'ativa' || c.status_cautela === 'atrasada' || c.status_cautela === 'prorrogada').map((caut) => {
                       const policial = usuarios.find(u => u.matricula === caut.matricula_policial);
                       const itens = cautelaItens.filter(ci => ci.id_cautela === caut.id_cautela);
                       
                       return (
                         <tr key={caut.id_cautela} className="hover:bg-slate-900/25 transition-colors">
-                          <td className="p-4 font-mono font-bold text-blue-400">{caut.id_cautela}</td>
+                          <td className="p-4 font-mono font-black text-base text-blue-400">{caut.id_cautela}</td>
                           <td className="p-4">
                             <div className="flex flex-col">
-                              <span className="font-bold text-slate-200">{policial?.posto_graduacao} {policial?.nome_de_guerra || policial?.nome}</span>
-                              <span className="text-[9px] text-slate-500 font-mono mt-0.5">RG: {caut.matricula_policial}</span>
+                              <span className="font-bold text-base text-slate-100">{policial?.posto_graduacao} {policial?.nome_de_guerra || policial?.nome}</span>
+                              <span className="text-xs text-slate-400 font-mono mt-0.5">RG: {caut.matricula_policial}</span>
                             </div>
                           </td>
-                          <td className="p-4 space-y-1.5 font-mono text-[10px] max-w-xs">
+                          <td className="p-4 space-y-1.5 font-mono text-sm max-w-sm">
                             {itens.map(ci => {
                               const matItem = materiais.find(m => m.id_material === ci.id_material);
+                              const isBattery = ci.id_material.startsWith('BAT-') || matItem?.modelo.toLowerCase().includes('bateria');
                               return (
-                                <div key={ci.id_cautela_item} className="bg-slate-950/60 px-2.5 py-1 rounded border border-slate-850 flex items-center justify-between gap-2">
-                                  <span className="text-slate-350 truncate">{matItem?.modelo}</span>
-                                  <span className="text-slate-505 text-[8px] font-mono shrink-0">({ci.id_material})</span>
+                                <div key={ci.id_cautela_item} className={`px-3 py-1.5 rounded-md border text-sm font-mono flex items-center justify-between gap-3 font-bold ${
+                                  isBattery ? 'bg-emerald-955/70 border-emerald-900/60 text-emerald-300' : 'bg-slate-950/80 border-slate-800 text-slate-100'
+                                }`}>
+                                  <span className="truncate">{matItem?.modelo}</span>
+                                  <span className="text-slate-400 text-xs font-mono shrink-0">({ci.id_material})</span>
                                 </div>
                               );
                             })}
                           </td>
-                          <td className="p-4 font-mono text-[10px] text-slate-400 leading-relaxed">
+                          <td className="p-4 font-mono text-xs text-slate-300 leading-relaxed">
                             <div>Saída: {new Date(caut.data_retirada).toLocaleTimeString()}</div>
-                            <div className="text-amber-505 mt-0.5">Prazo: {new Date(caut.previsao_devolucao).toLocaleTimeString()}</div>
+                            <div className="text-amber-400 font-bold mt-0.5">Prazo: {new Date(caut.previsao_devolucao).toLocaleTimeString()}</div>
                           </td>
                           <td className="p-4">
                             <div className="flex flex-col gap-1.5 items-start">
-                              <span className={`text-[8px] font-mono font-black uppercase px-2.5 py-1 rounded-full border ${
+                              <span className={`text-xs font-mono font-black uppercase px-3 py-1 rounded-full border ${
                                 caut.status_cautela === 'atrasada'
                                   ? 'bg-red-955/40 text-red-400 border-red-900/50 glow-red animate-pulse'
                                   : caut.status_cautela === 'prorrogada'
                                   ? 'bg-amber-950/40 text-amber-400 border-amber-800/50'
-                                  : 'bg-emerald-950/40 text-emerald-450 border-emerald-900/30'
+                                  : 'bg-emerald-955/40 text-emerald-450 border-emerald-900/30'
                               }`}>
                                 {caut.status_cautela === 'atrasada' ? '⚠️ ATRASADO' : caut.status_cautela === 'prorrogada' ? '⏳ PRORROGADA' : '● NA RUA'}
                               </span>
                               {caut.prorrogada && caut.data_prorrogacao && (
-                                <span className="text-[7px] font-mono text-amber-600 block leading-tight">
+                                <span className="text-[9px] font-mono text-amber-500 block leading-tight">
                                   Aut. {new Date(caut.data_prorrogacao).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
                                 </span>
                               )}
@@ -639,12 +643,15 @@ export function ArmeiroView({
                           <td className="p-4 space-y-1.5 max-w-xs align-top">
                             {cItens.map(ci => {
                               const matItem = materiais.find(m => m.id_material === ci.id_material);
+                              const isBattery = ci.id_material.startsWith('BAT-') || matItem?.modelo.toLowerCase().includes('bateria');
                               return (
-                                <div key={ci.id_cautela_item} className="bg-slate-950/60 px-2.5 py-1.5 rounded border border-slate-850 text-[10px] font-mono flex items-center justify-between gap-2">
-                                  <span className="text-slate-300 truncate">
+                                <div key={ci.id_cautela_item} className={`px-2.5 py-1.5 rounded border text-[10px] font-mono flex items-center justify-between gap-2 ${
+                                  isBattery ? 'bg-emerald-955/60 border-emerald-900/50 text-emerald-300' : 'bg-slate-950/60 border-slate-850 text-slate-300'
+                                }`}>
+                                  <span className="font-bold truncate">
                                     {matItem?.modelo} {matItem?.controle_quantidade ? `(x${ci.quantidade})` : ''}
                                   </span>
-                                  <span className="text-slate-505 text-[8px]">
+                                  <span className="text-[8px] opacity-75">
                                     {matItem?.controle_quantidade ? 'Item Coletivo' : ci.id_material}
                                   </span>
                                 </div>
@@ -996,16 +1003,57 @@ export function ArmeiroView({
               </p>
             </div>
             
-            {onOpenPermanentTotem && (
-              <button
-                type="button"
-                onClick={onOpenPermanentTotem}
-                className="bg-blue-600 hover:bg-blue-550 text-white border border-blue-500/30 text-xs font-mono font-bold px-4 py-2.5 rounded-lg flex items-center gap-2 transition-colors cursor-pointer shadow-md glow-blue uppercase tracking-wider"
-              >
-                <ExternalLink className="h-4 w-4 shrink-0" />
-                <span>Abrir Totem para Cautela Permanente</span>
-              </button>
-            )}
+            <div className="flex flex-wrap items-center gap-3">
+              {handlePrintRelatorio && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const permanentCautelas = cautelas.filter(c => c.status_cautela === 'permanente');
+                    const permanentReportItems = permanentCautelas.flatMap(c => {
+                      const pm = usuarios.find(u => u.matricula === c.matricula_policial);
+                      const items = cautelaItens.filter(ci => ci.id_cautela === c.id_cautela && !ci.estado_devolucao);
+                      return items.map(ci => {
+                        const mat = materiais.find(m => m.id_material === ci.id_material);
+                        return {
+                          id_cautela: c.id_cautela,
+                          matricula: c.matricula_policial,
+                          policial: pm ? `${pm.posto_graduacao} ${pm.nome_de_guerra || pm.nome}` : c.matricula_policial,
+                          id_material: ci.id_material,
+                          modelo: mat?.modelo || 'Material',
+                          categoria: mat?.id_categoria?.replace('CAT-', '') || 'BÉLICO',
+                          quantidade: ci.quantidade,
+                          data_carga: new Date(c.data_retirada).toLocaleDateString('pt-BR')
+                        };
+                      });
+                    });
+
+                    handlePrintRelatorio({
+                      title: 'Relatório de Cargas Bélicas Permanentes (Dotação Pessoal) - PMDF',
+                      meta: `Relatório emitido em: ${new Date().toLocaleString('pt-BR')}`,
+                      type: 'permanente',
+                      data: {
+                        itens: permanentReportItems
+                      }
+                    });
+                  }}
+                  className="bg-slate-950 hover:bg-slate-850 text-slate-200 border border-slate-800 text-xs font-mono font-bold px-4 py-2.5 rounded-lg flex items-center gap-2 transition-colors cursor-pointer shadow-md uppercase tracking-wider"
+                >
+                  <Printer className="h-4 w-4 shrink-0 text-cyan-400" />
+                  <span>Imprimir Relatório de Carga Permanente</span>
+                </button>
+              )}
+
+              {onOpenPermanentTotem && (
+                <button
+                  type="button"
+                  onClick={onOpenPermanentTotem}
+                  className="bg-blue-600 hover:bg-blue-550 text-white border border-blue-500/30 text-xs font-mono font-bold px-4 py-2.5 rounded-lg flex items-center gap-2 transition-colors cursor-pointer shadow-md glow-blue uppercase tracking-wider"
+                >
+                  <ExternalLink className="h-4 w-4 shrink-0" />
+                  <span>Abrir Totem para Cautela Permanente</span>
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Listagem agrupada por Militar */}
@@ -1395,6 +1443,15 @@ export function ArmeiroView({
                                               : 'bg-slate-950/50 border-slate-900 text-slate-550'
                                           }`}>
                                             <span>Devolver {ci.quantidade_carregadores} Carregador(es)</span>
+                                          </div>
+                                        )}
+                                        {(ci.id_material.startsWith('BAT-') || mat?.modelo.toLowerCase().includes('bateria')) && (
+                                          <div className={`flex items-center gap-1.5 mt-1.5 px-2 py-1 rounded border text-[9px] font-mono font-bold uppercase tracking-wider w-fit ${
+                                            isChecked 
+                                              ? 'bg-emerald-955/40 border-emerald-900/40 text-emerald-400' 
+                                              : 'bg-slate-950/50 border-slate-900 text-slate-550'
+                                          }`}>
+                                            <span>Devolver {ci.quantidade} Bateria(s)</span>
                                           </div>
                                         )}
                                       </div>
