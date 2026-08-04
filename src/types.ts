@@ -85,6 +85,8 @@ export interface Cautela {
   prorrogada?: boolean; // true quando o armeiro autorizou prorrogação
   data_prorrogacao?: string; // ISO DateTime do momento em que foi prorrogada
   matricula_armeiro_prorrogacao?: string; // Armeiro que autorizou a prorrogação
+  is_emergencial?: boolean;
+  motivo_emergencial?: string;
   id_quartel?: string;   // UUID do quartel
 }
 

@@ -2,7 +2,7 @@ import React from 'react';
 import { 
   User, Shield, ArrowRight, ShieldAlert, KeyRound, 
   Layers, Package, ChevronRight, CheckCircle, Power, FileCheck2, AlertTriangle, AlertOctagon,
-  Search, X
+  Search, X, Siren
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Usuario, Material, Cautela, CautelaItem, AuditoriaLog, SituacaoMilitar } from '../types';
@@ -48,12 +48,16 @@ interface TotemViewProps {
     observacoes: string,
     weaponMagazines?: Record<string, number>,
     isPermanent?: boolean,
-    radioBatteries?: Record<string, { brand: 'Hytera' | 'Sepura'; qty: number }>
+    radioBatteries?: Record<string, { brand: 'Hytera' | 'Sepura'; qty: number }>,
+    isEmergencial?: boolean,
+    motivoEmergencial?: string
   ) => Cautela | null;
   cadastrarPolicial: (novoPolicial: Usuario) => Promise<{ success: boolean; error?: string }>;
 
   isPermanentMode?: boolean;
   onResetPermanentMode?: () => void;
+  isEmergencyMode?: boolean;
+  onResetEmergencyMode?: () => void;
 }
 
 export function TotemView({
@@ -88,11 +92,14 @@ export function TotemView({
   processEfetivarCautela,
   cadastrarPolicial,
   isPermanentMode = false,
-  onResetPermanentMode
+  onResetPermanentMode,
+  isEmergencyMode = false,
+  onResetEmergencyMode
 }: TotemViewProps) {
   const offlineDb = useOfflineDatabase();
   const [confirmarCautelaPin, setConfirmarCautelaPin] = React.useState('');
   const [pinError, setPinError] = React.useState('');
+  const [motivoEmergencialInput, setMotivoEmergencialInput] = React.useState('');
   const [isSearchModalOpen, setIsSearchModalOpen] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState('');
   const [forcePermitirMaisItens, setForcePermitirMaisItens] = React.useState(false);
@@ -464,6 +471,42 @@ export function TotemView({
   const handleEfetivarCautela = () => {
     if (!loggedUser || cartItens.length === 0) return;
 
+    // Se for cautela emergencial, ignora verificação de PIN da senha do policial
+    if (isEmergencyMode) {
+      setPinError('');
+      let finalObs = observacoesRetirada || '';
+      const batteryNotes: string[] = [];
+      Object.entries(cartRadioBatteries).forEach(([idMat, bInfo]) => {
+        if (cartItens.includes(idMat) && bInfo.qty >= 0) {
+          const m = materiais.find(mat => mat.id_material === idMat);
+          const mName = m ? m.modelo : idMat;
+          batteryNotes.push(`${mName}: ${bInfo.qty}x Bateria ${bInfo.brand}`);
+        }
+      });
+      if (batteryNotes.length > 0) {
+        finalObs = finalObs ? `${finalObs} | [Baterias HT: ${batteryNotes.join(', ')}]` : `[Baterias HT: ${batteryNotes.join(', ')}]`;
+      }
+
+      const newCautela = processEfetivarCautela(
+        loggedUser.matricula, 
+        cartItens, 
+        finalObs, 
+        cartWeaponMagazines, 
+        isPermanentMode, 
+        cartRadioBatteries,
+        true,
+        motivoEmergencialInput
+      );
+      if (newCautela) {
+        setGeneratedCautela(newCautela);
+        setConfirmarCautelaPin('');
+        setIsSearchModalOpen(false);
+        setSearchQuery('');
+        setPolicialStep('sucesso');
+      }
+      return;
+    }
+
     if (!confirmarCautelaPin) {
       setPinError('Digite sua senha para assinar e confirmar os itens.');
       return;
@@ -491,7 +534,16 @@ export function TotemView({
         finalObs = finalObs ? `${finalObs} | [Baterias HT: ${batteryNotes.join(', ')}]` : `[Baterias HT: ${batteryNotes.join(', ')}]`;
       }
 
-      const newCautela = processEfetivarCautela(loggedUser.matricula, cartItens, finalObs, cartWeaponMagazines, isPermanentMode, cartRadioBatteries);
+      const newCautela = processEfetivarCautela(
+        loggedUser.matricula, 
+        cartItens, 
+        finalObs, 
+        cartWeaponMagazines, 
+        isPermanentMode, 
+        cartRadioBatteries,
+        false,
+        ''
+      );
       if (newCautela) {
         setGeneratedCautela(newCautela);
         setConfirmarCautelaPin('');
@@ -521,10 +573,14 @@ export function TotemView({
     setConfirmarSenhaInput('');
     setCadastroSenhaError('');
     setObservacoesRetirada('');
+    setMotivoEmergencialInput('');
     setGeneratedCautela(null);
     setPolicialStep('login');
     if (isPermanentMode && onResetPermanentMode) {
       onResetPermanentMode();
+    }
+    if (isEmergencyMode && onResetEmergencyMode) {
+      onResetEmergencyMode();
     }
   };
 
@@ -1185,30 +1241,61 @@ export function TotemView({
                     />
                   </div>
 
-                  {/* Confirmação de Senha para Assinatura */}
-                  <div className="space-y-1.5 border-t border-slate-850 pt-3">
-                    <div className="flex justify-between items-center">
-                      <label className="text-[10px] font-mono font-bold text-slate-450 uppercase tracking-wider block">Assinatura Eletrônica (Sua Senha):</label>
-                      <span className="text-[9px] text-slate-500 font-mono">Confirme para homologar</span>
+                  {/* Confirmação de Senha ou Modo Emergencial */}
+                  {isEmergencyMode ? (
+                    <div className="space-y-3 border-t border-slate-850 pt-3">
+                      <div className="bg-red-950/40 border border-red-800/60 p-3 rounded-lg flex items-center gap-2.5">
+                        <Siren className="h-5 w-5 text-red-500 animate-pulse shrink-0" />
+                        <div className="text-left">
+                          <h4 className="text-xs font-bold text-red-400 font-mono uppercase">CAUTELA EMERGENCIAL ATIVA</h4>
+                          <p className="text-[10px] text-slate-400 font-sans mt-0.5">Esta cautela será homologada sem exigência da senha do policial militar.</p>
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-1.5 text-left">
+                        <label className="text-[10px] font-mono font-bold text-red-400 uppercase tracking-wider block">
+                          Motivo da Cautela Emergencial (Opcional):
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Ex: Apoio imediato a ocorrência de roubo / Acionamento de emergência..."
+                          value={motivoEmergencialInput}
+                          onChange={(e) => setMotivoEmergencialInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleEfetivarCautela();
+                            }
+                          }}
+                          className="w-full bg-slate-955 border border-red-900/50 rounded-lg p-3 text-xs text-slate-200 focus:outline-none focus:border-red-500 font-mono"
+                        />
+                      </div>
                     </div>
-                    <input
-                      type="password"
-                      id="input-confirmar-cautela-pin"
-                      name="confirmarCautelaPin"
-                      autoComplete="new-password"
-                      maxLength={6}
-                      placeholder="••••••"
-                      value={confirmarCautelaPin}
-                      onChange={(e) => setConfirmarCautelaPin(e.target.value.replace(/\D/g, ''))}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          handleEfetivarCautela();
-                        }
-                      }}
-                      className="w-full bg-slate-955 border border-slate-800 focus:border-blue-500 p-3 text-xs font-mono text-slate-200 focus:outline-none tracking-widest text-center rounded-lg transition-all focus:ring-1 focus:ring-blue-500/20 text-lg"
-                    />
-                  </div>
+                  ) : (
+                    <div className="space-y-1.5 border-t border-slate-850 pt-3">
+                      <div className="flex justify-between items-center">
+                        <label className="text-[10px] font-mono font-bold text-slate-450 uppercase tracking-wider block">Assinatura Eletrônica (Sua Senha):</label>
+                        <span className="text-[9px] text-slate-500 font-mono">Confirme para homologar</span>
+                      </div>
+                      <input
+                        type="password"
+                        id="input-confirmar-cautela-pin"
+                        name="confirmarCautelaPin"
+                        autoComplete="new-password"
+                        maxLength={6}
+                        placeholder="••••••"
+                        value={confirmarCautelaPin}
+                        onChange={(e) => setConfirmarCautelaPin(e.target.value.replace(/\D/g, ''))}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleEfetivarCautela();
+                          }
+                        }}
+                        className="w-full bg-slate-955 border border-slate-800 focus:border-blue-500 p-3 text-xs font-mono text-slate-200 focus:outline-none tracking-widest text-center rounded-lg transition-all focus:ring-1 focus:ring-blue-500/20 text-lg"
+                      />
+                    </div>
+                  )}
 
                   {pinError && (
                     <div className="bg-red-955/30 border border-red-900/40 p-3.5 rounded-lg text-xs text-red-400 font-mono leading-normal flex items-start gap-2.5 glow-red">
@@ -1230,9 +1317,12 @@ export function TotemView({
                   <button
                     id="btn-finalize-cautela"
                     onClick={handleEfetivarCautela}
-                    className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2.5 px-5 rounded-lg text-xs flex items-center gap-1.5 transition-all shadow-md uppercase tracking-wider cursor-pointer glow-blue"
+                    className={isEmergencyMode
+                      ? "bg-red-600 hover:bg-red-550 text-white font-bold py-2.5 px-5 rounded-lg text-xs flex items-center gap-1.5 transition-all shadow-md uppercase tracking-wider cursor-pointer glow-red"
+                      : "bg-blue-600 hover:bg-blue-500 text-white font-bold py-2.5 px-5 rounded-lg text-xs flex items-center gap-1.5 transition-all shadow-md uppercase tracking-wider cursor-pointer glow-blue"
+                    }
                   >
-                    <span>Assinar & Cautelar</span>
+                    <span>{isEmergencyMode ? 'Efetivar Cautela Emergencial' : 'Assinar & Cautelar'}</span>
                     <ChevronRight className="h-4.5 w-4.5" />
                   </button>
                 </div>
@@ -1258,7 +1348,7 @@ export function TotemView({
                 </div>
 
                 {/* Recibo Tático */}
-                <div className="bg-slate-950 p-6 md:p-8 border border-slate-850 text-left space-y-5 font-mono text-sm relative overflow-hidden rounded-xl shadow-xl">
+                <div className="bg-slate-955 p-6 md:p-8 border border-slate-850 text-left space-y-5 font-mono text-sm relative overflow-hidden rounded-xl shadow-xl">
                   <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-blue-500 via-cyan-500 to-blue-500" />
 
                   <div className="flex justify-between items-center text-xs font-bold text-slate-400 border-b border-slate-900 pb-3">
@@ -1268,6 +1358,20 @@ export function TotemView({
 
                   <div className="space-y-3 text-xs text-slate-300">
                     <p className="text-sm">Militar Beneficiário: <strong className="text-white font-sans font-bold text-base ml-1">{formatPostoGraduacaoSigla(loggedUser.posto_graduacao)} {loggedUser.nome_de_guerra || loggedUser.nome} ({loggedUser.matricula})</strong></p>
+                    
+                    {generatedCautela.is_emergencial && (
+                      <div className="bg-red-950/60 border border-red-800/80 rounded-lg p-3 my-2 text-left">
+                        <div className="flex items-center gap-2 text-xs font-mono font-black text-red-400 uppercase tracking-wider">
+                          <Siren className="h-4.5 w-4.5 shrink-0 animate-pulse text-red-500" />
+                          <span>CAUTELA EMERGENCIAL (SEM USO DE SENHA)</span>
+                        </div>
+                        {generatedCautela.motivo_emergencial && (
+                          <p className="text-xs font-mono text-slate-300 mt-1.5 pl-6">
+                            <strong>Motivo registrado pelo Armeiro:</strong> {generatedCautela.motivo_emergencial}
+                          </p>
+                        )}
+                      </div>
+                    )}
                     <p className="font-bold border-b border-slate-900 pb-2 text-slate-400 text-xs tracking-wider uppercase">MATERIAIS CAUTELADOS:</p>
                     <ul className="list-disc pl-5 space-y-1.5 text-slate-100 font-sans">
                       {(() => {

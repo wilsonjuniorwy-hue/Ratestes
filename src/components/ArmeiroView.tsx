@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   LayoutDashboard, UserPlus, ClipboardList, Search, History, FileCheck2, 
-  Clock, ShieldAlert, CheckCircle, Printer, X, Timer, Briefcase, ChevronDown, ChevronUp, ExternalLink
+  Clock, ShieldAlert, CheckCircle, Printer, X, Timer, Briefcase, ChevronDown, ChevronUp, ExternalLink, Siren
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Usuario, Material, Cautela, CautelaItem, AuditoriaLog, SituacaoMilitar, CondicaoUso } from '../types';
@@ -31,6 +31,7 @@ interface ArmeiroViewProps {
   authenticatedPerfil?: string;
   excluirCautelaTotal?: (idCautela: string) => Promise<{ success: boolean }>;
   onOpenPermanentTotem?: () => void;
+  onOpenEmergencyTotem?: () => void;
   handlePrintRelatorio?: (reportData: any) => void;
 }
 
@@ -50,6 +51,7 @@ export function ArmeiroView({
   authenticatedPerfil,
   excluirCautelaTotal,
   onOpenPermanentTotem,
+  onOpenEmergencyTotem,
   handlePrintRelatorio
 }: ArmeiroViewProps) {
   // ---- FLUXO ARMEIRO: ESTADOS LOCAIS ----
@@ -296,6 +298,17 @@ export function ArmeiroView({
                 <Search className="h-4 w-4" />
                 <span>Abrir Painel de Devolução</span>
               </button>
+
+              {onOpenEmergencyTotem && (
+                <button
+                  type="button"
+                  onClick={onOpenEmergencyTotem}
+                  className="w-full bg-red-950/80 hover:bg-red-900/90 text-red-300 border border-red-800/80 font-bold py-2.5 rounded-lg text-xs font-mono transition-colors cursor-pointer uppercase tracking-wider shadow-md flex items-center justify-center gap-2 mt-2 glow-red"
+                >
+                  <Siren className="h-4 w-4 text-red-400 animate-pulse" />
+                  <span>Cautela Emergencial (Sem Senha)</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -337,6 +350,12 @@ export function ArmeiroView({
                           <td className="p-4">
                             <div className="flex flex-col">
                               <span className="font-bold text-base text-slate-100">{policial?.posto_graduacao} {policial?.nome_de_guerra || policial?.nome}</span>
+                              {caut.is_emergencial && (
+                                <span className="text-[10px] font-mono font-bold text-red-400 bg-red-955/80 border border-red-900/60 px-2 py-0.5 rounded uppercase mt-0.5 inline-flex items-center gap-1 w-fit" title={caut.motivo_emergencial ? `Motivo: ${caut.motivo_emergencial}` : 'Sem senha'}>
+                                  <Siren className="h-3 w-3 text-red-400 animate-pulse shrink-0" />
+                                  <span>EMERGENCIAL (SEM SENHA)</span>
+                                </span>
+                              )}
                               <span className="text-xs text-slate-400 font-mono mt-0.5">RG: {caut.matricula_policial}</span>
                             </div>
                           </td>
@@ -635,6 +654,12 @@ export function ArmeiroView({
                           <td className="p-4 align-top">
                             <div className="flex flex-col">
                               <span className="font-bold text-slate-205">{pol?.posto_graduacao} {pol?.nome_de_guerra || pol?.nome}</span>
+                              {c.is_emergencial && (
+                                <span className="text-[9px] font-mono font-bold text-red-400 bg-red-955/80 border border-red-900/60 px-1.5 py-0.5 rounded uppercase mt-0.5 inline-flex items-center gap-1 w-fit" title={c.motivo_emergencial ? `Motivo: ${c.motivo_emergencial}` : 'Sem senha'}>
+                                  <Siren className="h-2.5 w-2.5 text-red-400 animate-pulse shrink-0" />
+                                  <span>EMERGENCIAL</span>
+                                </span>
+                              )}
                               <span className="text-[9px] text-slate-500 font-mono mt-0.5">
                                 RG: {c.matricula_policial} {pol?.nome_de_guerra ? `(Guerra: ${pol.nome_de_guerra})` : ''}
                               </span>

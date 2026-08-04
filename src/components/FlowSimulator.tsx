@@ -199,9 +199,15 @@ export default function FlowSimulator({
   const [generatedCautela, setGeneratedCautela] = useState<Cautela | null>(null);
   const [authError, setAuthError] = useState('');
   const [isPermanentMode, setIsPermanentMode] = useState(false);
+  const [isEmergencyMode, setIsEmergencyMode] = useState(false);
 
   const onResetPermanentMode = () => {
     setIsPermanentMode(false);
+    setRoleMode('armeiro');
+  };
+
+  const onResetEmergencyMode = () => {
+    setIsEmergencyMode(false);
     setRoleMode('armeiro');
   };
 
@@ -442,6 +448,8 @@ export default function FlowSimulator({
             cadastrarPolicial={db.cadastrarPolicial}
             isPermanentMode={isPermanentMode}
             onResetPermanentMode={onResetPermanentMode}
+            isEmergencyMode={isEmergencyMode}
+            onResetEmergencyMode={onResetEmergencyMode}
           />
         </ErrorBoundary>
       )}
@@ -477,6 +485,23 @@ export default function FlowSimulator({
               setGeneratedCautela(null);
               setAuthError('');
               setIsPermanentMode(true);
+              setIsEmergencyMode(false);
+              setRoleMode('policial');
+            }}
+            onOpenEmergencyTotem={() => {
+              setPolicialStep('login');
+              setMatriculaInput('');
+              setSenhaInput('');
+              setLoggedUser(null);
+              setNovaSenhaInput('');
+              setConfirmarSenhaInput('');
+              setCadastroSenhaError('');
+              setCartItens([]);
+              setObservacoesRetirada('Cautela emergencial.');
+              setGeneratedCautela(null);
+              setAuthError('');
+              setIsEmergencyMode(true);
+              setIsPermanentMode(false);
               setRoleMode('policial');
             }}
           />

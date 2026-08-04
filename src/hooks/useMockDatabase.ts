@@ -361,7 +361,9 @@ export function useMockDatabase() {
     observacoes: string,
     weaponMagazines?: Record<string, number>,
     isPermanent?: boolean,
-    radioBatteries?: Record<string, { brand: 'Hytera' | 'Sepura'; qty: number }>
+    radioBatteries?: Record<string, { brand: 'Hytera' | 'Sepura'; qty: number }>,
+    isEmergencial?: boolean,
+    motivoEmergencial?: string
   ) => {
     const user = usuarios.find(u => u.matricula === matriculaPolicial);
     if (!user) return null;
@@ -378,7 +380,9 @@ export function useMockDatabase() {
         ? new Date(Date.now() + 10 * 365 * 24 * 60 * 60 * 1000).toISOString()
         : new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString(),
       status_cautela: isPermanent ? 'permanente' : 'ativa',
-      observacoes_retirada: observacoes
+      observacoes_retirada: observacoes,
+      is_emergencial: isEmergencial,
+      motivo_emergencial: motivoEmergencial
     };
 
     // Group cart items to handle quantity-based items
