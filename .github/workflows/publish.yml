@@ -48,6 +48,6 @@ jobs:
           tagName: v__VERSION__
           releaseName: 'Reserva de Armamento v__VERSION__'
           releaseBody: 'Release de produção da versão de desktop do sistema de Reserva de Armamento PMDF.'
-          releaseDraft: true
+          releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
