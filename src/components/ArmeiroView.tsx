@@ -255,13 +255,16 @@ export function ArmeiroView({
                 <div className="bg-slate-950/60 p-3.5 border border-slate-850 rounded-lg text-center">
                   <span className="text-[8px] text-slate-500 font-mono block uppercase tracking-wider font-black">Cautelas Ativas</span>
                   <span className="text-xl font-black text-blue-400 font-mono">
-                    {cautelas.filter(c => c.status_cautela === 'ativa' || c.status_cautela === 'atrasada').length}
+                    {cautelas.filter(c => {
+                      const st = c.status_cautela?.toLowerCase().trim();
+                      return st === 'ativa' || st === 'atrasada' || st === 'prorrogada';
+                    }).length}
                   </span>
                 </div>
                 <div className="bg-slate-950/60 p-3.5 border border-slate-850 rounded-lg text-center">
                   <span className="text-[8px] text-slate-500 font-mono block uppercase tracking-wider font-black">Atrasos Críticos</span>
                   <span className="text-xl font-black text-red-500 font-mono">
-                    {cautelas.filter(c => c.status_cautela === 'atrasada').length}
+                    {cautelas.filter(c => c.status_cautela?.toLowerCase().trim() === 'atrasada').length}
                   </span>
                 </div>
                 <div className="bg-slate-950/60 p-3.5 border border-slate-850 rounded-lg text-center col-span-2">
@@ -1301,7 +1304,10 @@ export function ArmeiroView({
                   <div className="flex-1 overflow-y-auto pr-1 space-y-2.5 max-h-[480px] lg:max-h-[580px]">
                     {(() => {
                       const cautelasVisiveis = cautelas
-                        .filter(c => c.status_cautela === 'ativa' || c.status_cautela === 'atrasada' || c.status_cautela === 'prorrogada')
+                        .filter(c => {
+                          const st = c.status_cautela?.toLowerCase().trim();
+                          return st === 'ativa' || st === 'atrasada' || st === 'prorrogada';
+                        })
                         .filter(c => {
                           const q = returnSearchQuery.toLowerCase().trim();
                           if (!q) return true;

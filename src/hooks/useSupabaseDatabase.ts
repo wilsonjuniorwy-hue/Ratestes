@@ -186,10 +186,78 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
           });
         }
       }
-      setUsuarios(mappedUsers);
-      setMateriais(materials || []);
+      // Auto-reconciliação: Se um militar possui situacao_cautela = 'pendente_devolucao', mas NÃO tem nenhuma cautela ativa no banco, corrigimos para 'apto'
+      const rawCautelas = cautelasData || [];
+      const activeCautelasSet = new Set(
+        rawCautelas
+          .filter(c => {
+            const st = c.status_cautela?.toLowerCase().trim();
+            return st === 'ativa' || st === 'atrasada' || st === 'prorrogada';
+          })
+          .map(c => c.matricula_policial)
+      );
+
+      const usuariosParaReabilitar: string[] = [];
+      const usuariosReconciliados = mappedUsers.map(u => {
+        if (u.situacao_cautela === 'pendente_devolucao' && !activeCautelasSet.has(u.matricula)) {
+          usuariosParaReabilitar.push(u.matricula);
+          return { ...u, situacao_cautela: 'apto' as const };
+        }
+        return u;
+      });
+
+      if (usuariosParaReabilitar.length > 0) {
+        console.log('SGBD Auto-Reconciliação: Reabilitando militares sem cautelas ativas:', usuariosParaReabilitar);
+        supabase
+          .from('usuarios')
+          .update({ situacao_cautela: 'apto' })
+          .in('matricula', usuariosParaReabilitar)
+          .then(({ error }) => {
+            if (error) console.error('SGBD Erro ao auto-reconciliar situação dos militares:', error);
+          });
+      }
+
+      setUsuarios(usuariosReconciliados);
+
+      // Auto-reconciliação de materiais marcados como 'cautelado' sem cautela ativa no banco
+      const activeCautelaIdsSet = new Set(
+        rawCautelas
+          .filter(c => {
+            const st = c.status_cautela?.toLowerCase().trim();
+            return st === 'ativa' || st === 'atrasada' || st === 'prorrogada';
+          })
+          .map(c => c.id_cautela)
+      );
+
+      const activeMaterialIdsSet = new Set(
+        (items || [])
+          .filter(ci => !ci.estado_devolucao && activeCautelaIdsSet.has(ci.id_cautela))
+          .map(ci => ci.id_material)
+      );
+
+      const materiaisParaLiberar: string[] = [];
+      const materiaisReconciliados = (materials || []).map(m => {
+        if (!m.controle_quantidade && m.status_atual === 'cautelado' && !activeMaterialIdsSet.has(m.id_material)) {
+          materiaisParaLiberar.push(m.id_material);
+          return { ...m, status_atual: 'disponivel' as const };
+        }
+        return m;
+      });
+
+      if (materiaisParaLiberar.length > 0) {
+        console.log('SGBD Auto-Reconciliação: Corrigindo materiais órfãos de cautelado para disponivel:', materiaisParaLiberar);
+        supabase
+          .from('materiais')
+          .update({ status_atual: 'disponivel' })
+          .in('id_material', materiaisParaLiberar)
+          .then(({ error }) => {
+            if (error) console.error('SGBD Erro ao auto-reconciliar materiais:', error);
+          });
+      }
+
+      setMateriais(materiaisReconciliados);
       setCategorias(categories || []);
-      setCautelas(cautelasData || []);
+      setCautelas(rawCautelas);
       setCautelaItens(items || []);
       setAuditoriaLogs(logs || []);
       setOcorrencias(ocos || []);
@@ -1034,9 +1102,21 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
       id_quartel: quartelId || undefined
     };
 
-    // Incluir id_quartel na cautela e nos itens
-    const cautelaToInsert: any = { ...novaCautela };
+    // Construir o payload sanitizado para o Supabase (garantindo compatibilidade de schema)
+    const cautelaToInsert: any = {
+      id_cautela: idNewCautela,
+      matricula_policial: matriculaPolicial,
+      matricula_armeiro_retirada: armeiroSvcMatricula,
+      data_retirada: novaCautela.data_retirada,
+      previsao_devolucao: novaCautela.previsao_devolucao,
+      status_cautela: novaCautela.status_cautela,
+      observacoes_retirada: observacoes
+    };
     if (quartelId) cautelaToInsert.id_quartel = quartelId;
+    if (isEmergencial) {
+      cautelaToInsert.is_emergencial = true;
+      if (motivoEmergencial) cautelaToInsert.motivo_emergencial = motivoEmergencial;
+    }
 
     // Group cart items to handle quantity-based items
     const groupedCart: Record<string, number> = {};
@@ -1105,6 +1185,24 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
     setMateriais(materiaisAtualizados);
     setUsuarios(usuariosAtualizados);
 
+    const salvarItensNoSupabase = () => {
+      const itensToInsert = novosItensCautela.map(item => {
+        const itemData: any = { ...item };
+        if (quartelId) itemData.id_quartel = quartelId;
+        return itemData;
+      });
+      supabase.from('cautela_itens').insert(itensToInsert).then(({ error: errItens }) => {
+        if (errItens) {
+          console.error('Erro ao salvar itens da cautela no Supabase:', errItens);
+        } else {
+          console.log('✔ Cautela e itens salvos com sucesso no Supabase!');
+          setTimeout(() => {
+            fetchData();
+          }, 2000);
+        }
+      });
+    };
+
     if (!isOnline) {
       enfileirarEAtualizar('EFETIVAR_CAUTELA', { 
         matriculaPolicial, 
@@ -1122,29 +1220,26 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
         [...cautelaItens, ...novosItensCautela]
       );
     } else {
-      // Sync to Supabase - SEQUENTIALLY to avoid Foreign Key Violations!
+      // Sync to Supabase - SEQUENTIALLY com tratamento de fallback
       supabase.from('cautelas').insert(cautelaToInsert).then(({ error: errCautela }) => {
         if (errCautela) {
           console.error('Erro ao salvar nova cautela no Supabase:', errCautela);
+          // Fallback se colunas opcionais falharem
+          if (cautelaToInsert.is_emergencial || cautelaToInsert.motivo_emergencial) {
+            const cleanFallback = { ...cautelaToInsert };
+            delete cleanFallback.is_emergencial;
+            delete cleanFallback.motivo_emergencial;
+            supabase.from('cautelas').insert(cleanFallback).then(({ error: errRetry }) => {
+              if (errRetry) {
+                console.error('Erro no fallback de salvamento da cautela:', errRetry);
+              } else {
+                console.log('✔ Cautela salva no Supabase via fallback limpo!');
+                salvarItensNoSupabase();
+              }
+            });
+          }
         } else {
-          // Adicionar id_quartel nos itens também
-          const itensToInsert = novosItensCautela.map(item => {
-            const itemData: any = { ...item };
-            if (quartelId) itemData.id_quartel = quartelId;
-            return itemData;
-          });
-          // Insert items only after the parent caution record is successfully saved
-          supabase.from('cautela_itens').insert(itensToInsert).then(({ error: errItens }) => {
-            if (errItens) {
-              console.error('Erro ao salvar itens da cautela no Supabase:', errItens);
-            } else {
-              // Safety re-fetch 2s after all writes complete to guarantee all clients are in sync
-              setTimeout(() => {
-                console.log('SGBD: Re-sincronização de segurança pós-cautela...');
-                fetchData();
-              }, 2000);
-            }
-          });
+          salvarItensNoSupabase();
         }
       });
 
