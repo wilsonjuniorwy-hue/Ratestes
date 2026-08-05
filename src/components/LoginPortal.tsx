@@ -193,11 +193,20 @@ export default function LoginPortal({
         return;
       }
 
-      // Validar se o armeiro pertence ao quartel selecionado
-      if (user.id_quartel !== selectedQuartel.id) {
+      // Validar se o armeiro pertence ao quartel selecionado (apenas se tiver quartel explícito)
+      if (user.id_quartel && user.id_quartel !== selectedQuartel.id) {
         setAuthError('Acesso negado. Sua matrícula está vinculada a outro quartel.');
         setIsAuthenticating(false);
         return;
+      }
+
+      // Auto-vínculo para armeiro sem id_quartel (registros legados)
+      if (!user.id_quartel && selectedQuartel?.id) {
+        console.log('SGBD: Auto-vinculando armeiro ao quartel selecionado:', selectedQuartel.nome);
+        supabase.from('usuarios').update({ id_quartel: selectedQuartel.id }).eq('matricula', matriculaNorm).then(({ error }) => {
+          if (error) console.error('Erro ao autovincular armeiro ao quartel:', error);
+        });
+        user.id_quartel = selectedQuartel.id;
       }
 
       // Sinalizar que estamos realizando o fluxo de login manual (para evitar que o listener de auth corte a animação)
