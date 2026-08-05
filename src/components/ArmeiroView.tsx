@@ -340,7 +340,10 @@ export function ArmeiroView({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-850/50 font-sans text-sm">
-                    {cautelas.filter(c => c.status_cautela === 'ativa' || c.status_cautela === 'atrasada' || c.status_cautela === 'prorrogada').map((caut) => {
+                    {cautelas.filter(c => {
+                      const st = c.status_cautela?.toLowerCase().trim();
+                      return st === 'ativa' || st === 'atrasada' || st === 'prorrogada';
+                    }).map((caut) => {
                       const policial = usuarios.find(u => u.matricula === caut.matricula_policial);
                       const itens = cautelaItens.filter(ci => ci.id_cautela === caut.id_cautela);
                       
@@ -408,7 +411,10 @@ export function ArmeiroView({
                         </tr>
                       );
                     })}
-                    {cautelas.filter(c => c.status_cautela === 'ativa' || c.status_cautela === 'atrasada' || c.status_cautela === 'prorrogada').length === 0 && (
+                    {cautelas.filter(c => {
+                      const st = c.status_cautela?.toLowerCase().trim();
+                      return st === 'ativa' || st === 'atrasada' || st === 'prorrogada';
+                    }).length === 0 && (
                       <tr>
                         <td colSpan={authenticatedPerfil === 'admin' ? 6 : 5} className="p-8 text-center text-slate-505 font-mono text-xs leading-loose">
                           Nenhuma cautela tática ativa no momento. Toda a carga bélica encontra-se resguardada no paiol físico.

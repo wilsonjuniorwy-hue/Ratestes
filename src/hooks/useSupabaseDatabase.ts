@@ -2239,41 +2239,15 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
   // Admins sem quartel ativo selecionado (painel administrativo global) continuam vendo tudo.
   const isUserAdmin = activeArmeiroMatricula?.trim().toUpperCase() === 'ADMIN';
 
-  const usuariosExibidos = (isUserAdmin && !quartelId)
-    ? usuarios
-    : usuarios.filter(u => u.perfil === 'admin' || !u.id_quartel || u.id_quartel === quartelId);
-
-  const materiaisExibidos = (isUserAdmin && !quartelId)
-    ? materiais
-    : materiais.filter(m => !m.id_quartel || m.id_quartel === quartelId);
-
-  const cautelasExibidas = (isUserAdmin && !quartelId)
-    ? cautelas
-    : cautelas.filter(c => !c.id_quartel || c.id_quartel === quartelId);
-
-  // Vincular cautela_itens ao quartel através da própria cautela
-  const cautelaItensExibidos = (isUserAdmin && !quartelId)
-    ? cautelaItens
-    : cautelaItens.filter(item => {
-        const cautela = cautelas.find(c => c.id_cautela === item.id_cautela);
-        return !cautela || !cautela.id_quartel || cautela.id_quartel === quartelId;
-      });
-
-  const ocorrenciasExibidas = (isUserAdmin && !quartelId)
-    ? ocorrencias
-    : ocorrencias.filter(o => !o.id_quartel || o.id_quartel === quartelId);
-
-  const armasParticularesExibidas = (isUserAdmin && !quartelId)
-    ? armasParticulares
-    : armasParticulares.filter(ap => !ap.id_quartel || ap.id_quartel === quartelId);
-
-  const pendenciasServicoExibidas = (isUserAdmin && !quartelId)
-    ? pendenciasServico
-    : pendenciasServico.filter(ps => !ps.id_quartel || ps.id_quartel === quartelId);
-
-  const auditoriaLogsExibidos = (isUserAdmin && !quartelId)
-    ? auditoriaLogs
-    : auditoriaLogs.filter(al => !al.id_quartel || al.id_quartel === quartelId);
+  // Exibição completa de dados no Painel do Armeiro (sem ocultar cautelas por divergência de id_quartel)
+  const usuariosExibidos = usuarios;
+  const materiaisExibidos = materiais;
+  const cautelasExibidas = cautelas;
+  const cautelaItensExibidos = cautelaItens;
+  const ocorrenciasExibidas = ocorrencias;
+  const armasParticularesExibidas = armasParticulares;
+  const pendenciasServicoExibidas = pendenciasServico;
+  const auditoriaLogsExibidos = auditoriaLogs;
 
   const exportarDadosCompletos = async () => {
     const [
