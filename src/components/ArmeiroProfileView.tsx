@@ -4,7 +4,7 @@ import {
   Upload, Trash2, FileImage, RefreshCw
 } from 'lucide-react';
 import { Usuario } from '../types';
-import { POSTOS_GRADUACOES_EXTENSO, normalizarPostoExtenso } from '../utils/rankUtils';
+import { POSTOS_GRADUACOES_EXTENSO, normalizarPostoExtenso, formatMatriculaExibicao, formatMatriculaArmeiroInterna } from '../utils/rankUtils';
 
 interface ArmeiroProfileViewProps {
   usuarios: Usuario[];
@@ -41,10 +41,19 @@ export function ArmeiroProfileView({
   const [pwdError, setPwdError] = useState('');
   const [pwdSuccess, setPwdSuccess] = useState('');
 
+const sanitizeNomeUsuario = (value: string): string => {
+  return value
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^A-Z0-9._-]/g, "");
+};
+
   // Estados locais para cadastro de novo armeiro
   const [newMatricula, setNewMatricula] = useState('');
   const [newNome, setNewNome] = useState('');
   const [newNomeDeGuerra, setNewNomeDeGuerra] = useState('');
+  const [newNomeUsuario, setNewNomeUsuario] = useState('');
   const [newPosto, setNewPosto] = useState('Sargento');
   const [newSenha, setNewSenha] = useState('');
   const [regError, setRegError] = useState('');
@@ -53,8 +62,10 @@ export function ArmeiroProfileView({
 
   // Estados locais para gerenciamento de armeiros (Admin)
   const [editingMatricula, setEditingMatricula] = useState<string | null>(null);
+  const [editMatriculaVal, setEditMatriculaVal] = useState('');
   const [editNome, setEditNome] = useState('');
   const [editNomeDeGuerra, setEditNomeDeGuerra] = useState('');
+  const [editNomeUsuario, setEditNomeUsuario] = useState('');
   const [editPosto, setEditPosto] = useState('Sargento');
   
   const [actionError, setActionError] = useState('');
@@ -166,8 +177,10 @@ export function ArmeiroProfileView({
 
   const startEditing = (u: Usuario) => {
     setEditingMatricula(u.matricula);
+    setEditMatriculaVal(formatMatriculaArmeiroInterna(u.matricula));
     setEditNome(u.nome);
     setEditNomeDeGuerra(u.nome_de_guerra || '');
+    setEditNomeUsuario(u.nome_usuario || '');
     setEditPosto(u.posto_graduacao);
     setActionError('');
     setActionSuccess('');
@@ -178,26 +191,52 @@ export function ArmeiroProfileView({
     setActionError('');
   };
 
-  const handleSaveEdit = async (matricula: string) => {
+  const handleSaveEdit = async (matriculaAntiga: string) => {
     setActionError('');
     setActionSuccess('');
     
+    const internalMatricula = formatMatriculaArmeiroInterna(editMatriculaVal);
     const nomeNorm = editNome.trim();
     const guerraNorm = editNomeDeGuerra.trim();
+    const nomeUsuarioNorm = sanitizeNomeUsuario(editNomeUsuario);
     
-    if (!nomeNorm || !guerraNorm) {
-      setActionError('Nome e Nome de Guerra são obrigatórios.');
+    if (!internalMatricula || !nomeNorm || !guerraNorm) {
+      setActionError('Matrícula, Nome e Nome de Guerra são obrigatórios.');
+      return;
+    }
+
+    // Verificar se já existe outro ARMEIRO com esta matrícula (excluindo a atual)
+    if (usuarios.some(u => u.perfil === 'armeiro_gestor' && u.matricula !== matriculaAntiga && u.matricula.toUpperCase() === internalMatricula)) {
+      setActionError('Esta Matrícula de armeiro já está cadastrada no sistema.');
+      return;
+    }
+
+    if (nomeUsuarioNorm && usuarios.some(u => u.matricula !== matriculaAntiga && u.nome_usuario?.toUpperCase() === nomeUsuarioNorm)) {
+      setActionError('Este Nome de Usuário já está em uso por outro operador.');
       return;
     }
 
     try {
-      await editarPolicial(matricula, {
+      const payloadToUpdate: Partial<Usuario> = {
         nome: nomeNorm,
         nome_de_guerra: guerraNorm,
-        posto_graduacao: editPosto
-      });
+        posto_graduacao: editPosto,
+        nome_usuario: nomeUsuarioNorm || undefined
+      };
+
+      // Inclui a matrícula no payload APENAS se tiver mudado de fato
+      if (internalMatricula !== matriculaAntiga) {
+        payloadToUpdate.matricula = internalMatricula;
+      }
+
+      await editarPolicial(matriculaAntiga, payloadToUpdate);
+
+      if (activeArmeiroMatricula === matriculaAntiga && internalMatricula !== matriculaAntiga) {
+        setActiveArmeiroMatricula(internalMatricula);
+      }
+
       setEditingMatricula(null);
-      setActionSuccess(`Perfil do armeiro (Matrícula: ${matricula}) atualizado com sucesso!`);
+      setActionSuccess(`Perfil do armeiro (${internalMatricula}) atualizado com sucesso!`);
     } catch (err: any) {
       setActionError(err.message || 'Erro ao atualizar dados do armeiro.');
     }
@@ -213,7 +252,7 @@ export function ArmeiroProfileView({
     }
 
     const nomeGuerra = u.nome_de_guerra || u.nome;
-    if (!window.confirm(`Tem certeza de que deseja apagar permanentemente o perfil do armeiro ${nomeGuerra} (Matrícula: ${u.matricula})? Esta ação é irreversível.`)) {
+    if (!window.confirm(`Tem certeza de que deseja apagar permanentemente o perfil do armeiro ${nomeGuerra} (Matrícula: ${formatMatriculaExibicao(u.matricula)})? Esta ação é irreversível.`)) {
       return;
     }
 
@@ -278,26 +317,34 @@ export function ArmeiroProfileView({
     setRegError('');
     setRegSuccess('');
 
-    const matNorm = newMatricula.trim().toUpperCase();
+    const internalMatricula = formatMatriculaArmeiroInterna(newMatricula);
     const nomeNorm = newNome.trim();
     const guerraNorm = newNomeDeGuerra.trim();
+    const nomeUsuarioNorm = sanitizeNomeUsuario(newNomeUsuario);
     const senhaNorm = newSenha.trim();
 
-    if (!matNorm || !nomeNorm || !guerraNorm || !senhaNorm) {
+    if (!internalMatricula || !nomeNorm || !guerraNorm || !senhaNorm) {
       setRegError('Preencha todos os campos do formulário.');
       return;
     }
 
-    // Verificar se matrícula já existe
-    if (usuarios.some(u => u.matricula.trim().toUpperCase() === matNorm)) {
-      setRegError('Matrícula já cadastrada no sistema.');
+    // Verificar se matrícula já existe entre armeiros
+    if (usuarios.some(u => u.perfil === 'armeiro_gestor' && u.matricula.toUpperCase() === internalMatricula)) {
+      setRegError('Matrícula de armeiro já cadastrada no sistema.');
+      return;
+    }
+
+    // Verificar se nome_usuario já existe
+    if (nomeUsuarioNorm && usuarios.some(u => u.nome_usuario?.toUpperCase() === nomeUsuarioNorm)) {
+      setRegError('Este Nome de Usuário já está em uso por outro armeiro.');
       return;
     }
 
     const novoArmeiro: Usuario = {
-      matricula: matNorm,
+      matricula: internalMatricula,
       nome: nomeNorm,
       nome_de_guerra: guerraNorm,
+      nome_usuario: nomeUsuarioNorm || undefined,
       senha_hash: senhaNorm,
       perfil: 'armeiro_gestor',
       posto_graduacao: newPosto,
@@ -314,6 +361,7 @@ export function ArmeiroProfileView({
         setNewMatricula('');
         setNewNome('');
         setNewNomeDeGuerra('');
+        setNewNomeUsuario('');
         setNewSenha('');
         setNewPosto('Sargento');
         setRegSuccess(`Armeiro ${guerraNorm} cadastrado e liberado para acesso com sucesso!`);
@@ -574,6 +622,18 @@ export function ArmeiroProfileView({
                 </div>
               </div>
 
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wide">Nome de Usuário (Acesso ao Sistema):</label>
+                <input
+                  type="text"
+                  placeholder="EX: ROBERTO.DIAS (sem espaços ou caracteres especiais)"
+                  value={newNomeUsuario}
+                  onChange={(e) => setNewNomeUsuario(sanitizeNomeUsuario(e.target.value))}
+                  className="w-full bg-slate-950 border border-slate-805 p-2.5 text-xs font-mono uppercase text-cyan-300 focus:outline-none rounded-lg focus:ring-1 focus:ring-blue-500/20"
+                />
+                <p className="text-[9px] text-slate-500 font-mono">Usado para fazer login no portal. Se deixado em branco, a matrícula será usada.</p>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wide block">Posto / Graduação:</label>
@@ -665,6 +725,7 @@ export function ArmeiroProfileView({
                   <th className="py-3 px-4">Posto / Graduação</th>
                   <th className="py-3 px-4">Nome Completo</th>
                   <th className="py-3 px-4">Nome de Guerra</th>
+                  <th className="py-3 px-4">Nome de Usuário (Login)</th>
                   <th className="py-3 px-4">Matrícula (RG)</th>
                   <th className="py-3 px-4 text-right">Ações</th>
                 </tr>
@@ -719,9 +780,35 @@ export function ArmeiroProfileView({
                         )}
                       </td>
 
+                      {/* Nome de Usuário */}
+                      <td className="py-3 px-4">
+                        {isEditing ? (
+                          <input
+                            type="text"
+                            value={editNomeUsuario}
+                            onChange={(e) => setEditNomeUsuario(sanitizeNomeUsuario(e.target.value))}
+                            placeholder="EX: ROBERTO.DIAS"
+                            className="bg-slate-950 border border-slate-800 p-1.5 rounded text-xs font-mono uppercase text-cyan-300 focus:outline-none w-full"
+                          />
+                        ) : (
+                          <span className="font-mono text-amber-300 text-[11px] font-semibold">{u.nome_usuario ? u.nome_usuario.toUpperCase() : <em className="text-slate-600 font-normal">Nâo definido (usar matrícula)</em>}</span>
+                        )}
+                      </td>
+
                       {/* Matrícula (RG) */}
-                      <td className="py-3 px-4 font-mono text-slate-400 uppercase text-[11px]">
-                        {u.matricula}
+                      <td className="py-3 px-4">
+                        {isEditing ? (
+                          <input
+                            type="text"
+                            value={editMatriculaVal}
+                            onChange={(e) => setEditMatriculaVal(e.target.value.toUpperCase())}
+                            className="bg-slate-950 border border-slate-800 p-1.5 rounded text-xs font-mono uppercase text-cyan-300 focus:outline-none w-full"
+                          />
+                        ) : (
+                          <span className="font-mono text-slate-400 uppercase text-[11px]">
+                            {formatMatriculaExibicao(u.matricula)}
+                          </span>
+                        )}
                       </td>
 
                       {/* Ações */}

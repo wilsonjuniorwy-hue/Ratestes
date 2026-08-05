@@ -79,3 +79,35 @@ export function normalizarPostoExtenso(posto?: string | null): string {
       return found || posto;
   }
 }
+
+/**
+ * Remove o prefixo interno de armeiro ('ARM-', 'A-', 'A') para exibição visual limpa ao usuário.
+ * Exemplo: "ARM-7317573" -> "7317573", "A-128.450-2" -> "128.450-2", "7317573" -> "7317573"
+ */
+export function formatMatriculaExibicao(matricula?: string | null): string {
+  if (!matricula) return '';
+  const mat = matricula.trim();
+  if (!mat) return '';
+  const upper = mat.toUpperCase();
+  if (upper.startsWith('ARM-')) {
+    return mat.substring(4);
+  }
+  if (upper.startsWith('A-')) {
+    return mat.substring(2);
+  }
+  if (upper.length > 1 && upper.startsWith('A') && (/[0-9]/.test(upper[1]) || upper[1] === '.' || upper[1] === '-')) {
+    return mat.substring(1);
+  }
+  return mat;
+}
+
+/**
+ * Garante o prefixo interno 'ARM-' para armazenar a matrícula do armeiro no banco de dados sem conflitar com a matrícula de policial/cautela.
+ * Exemplo: "7317573" -> "ARM-7317573", "ARM-7317573" -> "ARM-7317573"
+ */
+export function formatMatriculaArmeiroInterna(matricula: string): string {
+  const clean = formatMatriculaExibicao(matricula).toUpperCase();
+  if (!clean) return '';
+  return `ARM-${clean}`;
+}
+

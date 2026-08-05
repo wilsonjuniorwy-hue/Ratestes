@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Usuario, Material, SituacaoMilitar, StatusMaterial, Categoria, Cautela, CautelaItem, ArmaParticular } from '../types';
 import { comparePassword } from '../utils/crypto';
 import { supabase } from '../supabaseClient';
-import { POSTOS_GRADUACOES_EXTENSO, normalizarPostoExtenso } from '../utils/rankUtils';
+import { POSTOS_GRADUACOES_EXTENSO, normalizarPostoExtenso, formatMatriculaExibicao, formatMatriculaArmeiroInterna } from '../utils/rankUtils';
 
 interface BancoDadosViewProps {
   usuarios: Usuario[];
@@ -214,8 +214,10 @@ export function BancoDadosView({
 
   // Estados para Modal de Edição de Policial
   const [editUserMatricula, setEditUserMatricula] = useState<string | null>(null);
+  const [editUserMatriculaVal, setEditUserMatriculaVal] = useState('');
   const [editUserNome, setEditUserNome] = useState('');
   const [editUserNomeDeGuerra, setEditUserNomeDeGuerra] = useState('');
+  const [editUserNomeUsuario, setEditUserNomeUsuario] = useState('');
   const [editUserError, setEditUserError] = useState('');
 
   // Helper para obter quantidade disponível de itens de controle_quantidade
@@ -580,8 +582,10 @@ export function BancoDadosView({
   // ---- EDIÇÃO DE POLICIAL MILITAR ----
   const handleIniciarEdicaoPolicial = (user: Usuario) => {
     setEditUserMatricula(user.matricula);
+    setEditUserMatriculaVal(formatMatriculaExibicao(user.matricula));
     setEditUserNome(user.nome || '');
     setEditUserNomeDeGuerra(user.nome_de_guerra || '');
+    setEditUserNomeUsuario(user.nome_usuario || '');
     setEditUserError('');
   };
 
@@ -591,24 +595,39 @@ export function BancoDadosView({
 
     if (!editUserMatricula || !editarPolicial) return;
 
+    const cleanMatInput = formatMatriculaExibicao(editUserMatriculaVal).toUpperCase();
+    const targetUser = usuarios.find(u => u.matricula === editUserMatricula);
+    const isArmeiro = targetUser?.perfil === 'armeiro_gestor';
+    const internalMatricula = isArmeiro ? formatMatriculaArmeiroInterna(cleanMatInput) : cleanMatInput;
+
     const nomeNorm = editUserNome.trim();
     const nomeGuerraNorm = editUserNomeDeGuerra.trim();
+    const nomeUsuarioNorm = editUserNomeUsuario.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Z0-9._-]/g, "");
 
-    if (!nomeNorm) {
-      setEditUserError('Informe o Nome Completo do policial.');
+    if (!cleanMatInput || !nomeNorm) {
+      setEditUserError('Informe a Matrícula e o Nome Completo.');
       return;
     }
 
     try {
-      await editarPolicial(editUserMatricula, {
+      const payloadToUpdate: Partial<Usuario> = {
         nome: nomeNorm,
-        nome_de_guerra: nomeGuerraNorm || undefined
-      });
+        nome_de_guerra: nomeGuerraNorm || undefined,
+        nome_usuario: nomeUsuarioNorm || undefined
+      };
 
-      alert(`Dados do militar (${editUserMatricula}) atualizados com sucesso.`);
+      if (internalMatricula !== editUserMatricula) {
+        payloadToUpdate.matricula = internalMatricula;
+      }
+
+      await editarPolicial(editUserMatricula, payloadToUpdate);
+
+      alert(`Dados do militar (${cleanMatInput}) atualizados com sucesso.`);
       setEditUserMatricula(null);
+      setEditUserMatriculaVal('');
       setEditUserNome('');
       setEditUserNomeDeGuerra('');
+      setEditUserNomeUsuario('');
       setEditUserError('');
     } catch (err: any) {
       setEditUserError(err.message || 'Erro ao atualizar dados do policial.');
@@ -2248,9 +2267,10 @@ export function BancoDadosView({
                   <label className="text-[10px] font-bold text-slate-455 uppercase tracking-wider block">Matrícula (RG Funcional):</label>
                   <input
                     type="text"
-                    disabled
-                    value={editUserMatricula}
-                    className="w-full bg-slate-950/60 border border-slate-850 rounded-lg p-2.5 text-xs text-blue-400 font-bold opacity-75 cursor-not-allowed uppercase"
+                    required
+                    value={editUserMatriculaVal}
+                    onChange={(e) => setEditUserMatriculaVal(e.target.value.toUpperCase())}
+                    className="w-full bg-slate-955 border border-slate-800 rounded-lg p-2.5 text-xs text-blue-400 font-bold uppercase focus:outline-none focus:border-blue-500"
                   />
                 </div>
 
@@ -2275,6 +2295,18 @@ export function BancoDadosView({
                     onChange={(e) => setEditUserNomeDeGuerra(e.target.value)}
                     className="w-full bg-slate-955 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-200 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20"
                   />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wider block">Nome de Usuário (Login Armeiro/Admin):</label>
+                  <input
+                    type="text"
+                    placeholder="EX: JOAO.SILVA (sem espaços ou acentos)"
+                    value={editUserNomeUsuario}
+                    onChange={(e) => setEditUserNomeUsuario(e.target.value.toUpperCase().replace(/[^A-Z0-9._-]/g, ''))}
+                    className="w-full bg-slate-955 border border-slate-800 rounded-lg p-2.5 text-xs text-amber-300 font-mono uppercase focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20"
+                  />
+                  <p className="text-[9px] text-slate-500 font-mono">Usado para fazer login no portal. Sem espaços ou acentos.</p>
                 </div>
 
                 {editUserError && (

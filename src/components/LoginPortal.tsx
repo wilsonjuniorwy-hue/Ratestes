@@ -9,7 +9,7 @@ import { motion } from 'motion/react';
 import { Usuario, Quartel } from '../types';
 import { supabase, obterAmbienteAtual, alterarAmbiente } from '../supabaseClient';
 import { comparePassword, hashSHA256 } from '../utils/crypto';
-import { formatPostoGraduacaoSigla } from '../utils/rankUtils';
+import { formatPostoGraduacaoSigla, formatMatriculaExibicao } from '../utils/rankUtils';
 import { useAppUpdater } from '../hooks/useAppUpdater';
 import packageJson from '../../package.json';
 
@@ -101,24 +101,64 @@ export default function LoginPortal({
     setAuthError('');
     setIsAuthenticating(true);
 
-    const matriculaNorm = matricula.trim().toUpperCase();
+    const inputClean = matricula.trim().toUpperCase();
     const senhaNorm = senha.trim();
 
     try {
-      // 1. Consultar a tabela usuarios para obter informações básicas (como perfil)
-      const { data: user, error: userError } = await supabase
+      // 1. Consultar a tabela usuarios para obter informações básicas (por matrícula limpa, por matrícula ARM- ou por nome_usuario)
+      let user: Usuario | null = null;
+      const cleanMat = formatMatriculaExibicao(inputClean);
+
+      // Tenta por matrícula exata (inputClean)
+      let { data: userFound } = await supabase
         .from('usuarios')
         .select('*')
-        .eq('matricula', matriculaNorm)
+        .eq('matricula', inputClean)
         .is('deletado_em', null)
-        .single();
+        .maybeSingle();
 
+      // Tenta com o prefixo de armeiro (ARM-...)
+      if (!userFound && cleanMat) {
+        const { data: userByArm } = await supabase
+          .from('usuarios')
+          .select('*')
+          .eq('matricula', `ARM-${cleanMat}`)
+          .is('deletado_em', null)
+          .maybeSingle();
+        if (userByArm) userFound = userByArm;
+      }
 
-      if (userError || !user) {
-        setAuthError('Matrícula funcional não encontrada no SGBD.');
+      // Tenta com o prefixo antigo de armeiro (A...)
+      if (!userFound && cleanMat) {
+        const { data: userByA } = await supabase
+          .from('usuarios')
+          .select('*')
+          .eq('matricula', `A${cleanMat}`)
+          .is('deletado_em', null)
+          .maybeSingle();
+        if (userByA) userFound = userByA;
+      }
+
+      // Se não encontrou por matrícula, tenta por nome_usuario
+      if (!userFound) {
+        const { data: userByNome } = await supabase
+          .from('usuarios')
+          .select('*')
+          .ilike('nome_usuario', inputClean)
+          .is('deletado_em', null)
+          .maybeSingle();
+        if (userByNome) userFound = userByNome;
+      }
+
+      user = userFound;
+
+      if (!user) {
+        setAuthError('Usuário ou Matrícula funcional não encontrada no SGBD.');
         setIsAuthenticating(false);
         return;
       }
+
+      const matriculaNorm = user.matricula;
 
       // Validar se é primeiro acesso (senha em branco)
       // Se não tiver auth_user_id ou senha_hash, é primeiro acesso
@@ -527,14 +567,14 @@ export default function LoginPortal({
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block">Matrícula Funcional:</label>
+              <label className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block">Nome de Usuário ou Matrícula:</label>
               <input
                 type="text"
                 required
                 autoFocus
-                placeholder="Matrícula Funcional"
+                placeholder="USUÁRIO OU MATRÍCULA"
                 value={matricula}
-                onChange={(e) => setMatricula(e.target.value)}
+                onChange={(e) => setMatricula(e.target.value.toUpperCase())}
                 className="w-full bg-slate-950/70 border border-slate-800/80 p-3 text-xs font-mono uppercase text-slate-205 focus:outline-none focus:ring-1 focus:ring-blue-500/30 rounded-xl placeholder:text-slate-600 focus:border-blue-500/40"
               />
             </div>

@@ -44,6 +44,7 @@ export interface Usuario {
   tentativas_login?: number;
   bloqueado_ate?: string | null;
   assinatura_foto?: string | null;
+  nome_usuario?: string;
 }
 
 export interface Categoria {

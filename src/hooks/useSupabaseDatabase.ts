@@ -686,10 +686,23 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
         return { success: true };
       }
 
-      const { error: insertError } = await supabase.from('usuarios').upsert({
+      let { error: insertError } = await supabase.from('usuarios').upsert({
         ...userToInsert,
         deletado_em: null
       });
+
+      if (insertError && (insertError.message?.includes('nome_usuario') || insertError.message?.includes('schema cache'))) {
+        console.warn('Coluna nome_usuario não encontrada no Supabase. Executando fallback de cadastro sem nome_usuario...');
+        const userSemNome = { ...userToInsert };
+        delete userSemNome.nome_usuario;
+
+        const { error: fallbackError } = await supabase.from('usuarios').upsert({
+          ...userSemNome,
+          deletado_em: null
+        });
+        insertError = fallbackError;
+      }
+
       if (insertError) {
         console.error('Erro ao cadastrar/reativar policial/armeiro:', insertError);
         return { success: false, error: `Erro ao cadastrar: ${insertError.message}` };
@@ -781,10 +794,48 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
   // ---- EDITAR PERFIL DE USUÁRIO (POLICIAL OU ARMEIRO) ----
   const editarPolicial = async (matricula: string, dadosAtualizados: Partial<Usuario>) => {
     try {
-      const { error } = await supabase
+      const payload: any = { ...dadosAtualizados };
+      Object.keys(payload).forEach(key => {
+        if (payload[key] === undefined) delete payload[key];
+      });
+
+      let { error } = await supabase
         .from('usuarios')
-        .update(dadosAtualizados)
+        .update(payload)
         .eq('matricula', matricula);
+
+      // Fallback 1: se der erro de foreign key constraint ao tentar atualizar a matrícula (ex: auditoria_logs ou cautelas)
+      if (error && (error.message?.includes('foreign key constraint') || error.message?.includes('fkey'))) {
+        if (payload.matricula && payload.matricula !== matricula) {
+          console.warn('Foreign key constraint impediu a alteração da matrícula no Supabase. Atualizando demais dados...');
+          const payloadSemMatricula = { ...payload };
+          delete payloadSemMatricula.matricula;
+
+          const { error: retryErr } = await supabase
+            .from('usuarios')
+            .update(payloadSemMatricula)
+            .eq('matricula', matricula);
+
+          if (!retryErr) {
+            error = null;
+            delete dadosAtualizados.matricula;
+          }
+        }
+      }
+
+      // Fallback 2: caso a coluna nome_usuario ainda não tenha sido criada no banco Supabase
+      if (error && (error.message?.includes('nome_usuario') || error.message?.includes('schema cache'))) {
+        console.warn('Coluna nome_usuario não encontrada no Supabase. Executando fallback sem nome_usuario...');
+        const payloadSemNome = { ...payload };
+        delete payloadSemNome.nome_usuario;
+        
+        const { error: fallbackError } = await supabase
+          .from('usuarios')
+          .update(payloadSemNome)
+          .eq('matricula', matricula);
+
+        error = fallbackError;
+      }
 
       if (error) throw error;
 
