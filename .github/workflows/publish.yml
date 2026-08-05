@@ -45,8 +45,8 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         with:
-          tagName: v__VERSION__
-          releaseName: 'Reserva de Armamento v__VERSION__'
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Reserva de Armamento ${{ github.ref_name }}'
           releaseBody: 'Release de produção da versão de desktop do sistema de Reserva de Armamento PMDF.'
           releaseDraft: false
           prerelease: false
