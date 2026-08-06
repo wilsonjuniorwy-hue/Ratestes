@@ -382,6 +382,7 @@ CREATE POLICY "usuarios_select" ON usuarios FOR SELECT USING (
     is_current_device_authorized()
     OR get_meu_perfil() = 'admin'
     OR id_quartel = get_meu_quartel()
+    OR id_quartel IS NULL
     OR matricula = get_minha_matricula()
   )
 );
@@ -460,7 +461,7 @@ ALTER TABLE ocorrencias ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "ocorrencias_select" ON ocorrencias;
 CREATE POLICY "ocorrencias_select" ON ocorrencias FOR SELECT USING (
   deletado_em IS NULL AND (
-    get_meu_perfil() = 'admin' OR id_quartel = get_meu_quartel()
+    get_meu_perfil() = 'admin' OR id_quartel = get_meu_quartel() OR id_quartel IS NULL
   )
 );
 DROP POLICY IF EXISTS "ocorrencias_insert" ON ocorrencias;
@@ -478,7 +479,7 @@ CREATE POLICY "ocorrencias_update" ON ocorrencias FOR UPDATE USING (
 ALTER TABLE auditoria_logs ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "auditoria_select" ON auditoria_logs;
 CREATE POLICY "auditoria_select" ON auditoria_logs FOR SELECT USING (
-  get_meu_perfil() = 'admin' OR id_quartel = get_meu_quartel()
+  get_meu_perfil() = 'admin' OR id_quartel = get_meu_quartel() OR id_quartel IS NULL
 );
 DROP POLICY IF EXISTS "auditoria_insert" ON auditoria_logs;
 CREATE POLICY "auditoria_insert" ON auditoria_logs FOR INSERT WITH CHECK (
@@ -495,7 +496,7 @@ ALTER TABLE armas_particulares ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "armas_particulares_select" ON armas_particulares;
 CREATE POLICY "armas_particulares_select" ON armas_particulares FOR SELECT USING (
   deletado_em IS NULL AND (
-    get_meu_perfil() = 'admin' OR id_quartel = get_meu_quartel()
+    get_meu_perfil() = 'admin' OR id_quartel = get_meu_quartel() OR id_quartel IS NULL
   )
 );
 DROP POLICY IF EXISTS "armas_particulares_insert" ON armas_particulares;
@@ -514,7 +515,7 @@ ALTER TABLE pendencias_servico ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "pendencias_select" ON pendencias_servico;
 CREATE POLICY "pendencias_select" ON pendencias_servico FOR SELECT USING (
   deletado_em IS NULL AND (
-    get_meu_perfil() = 'admin' OR id_quartel = get_meu_quartel()
+    get_meu_perfil() = 'admin' OR id_quartel = get_meu_quartel() OR id_quartel IS NULL
   )
 );
 DROP POLICY IF EXISTS "pendencias_insert" ON pendencias_servico;
@@ -560,3 +561,50 @@ DROP POLICY IF EXISTS "dispositivos_insert_anon" ON dispositivos_autorizados;
 CREATE POLICY "dispositivos_insert_anon" ON dispositivos_autorizados FOR INSERT WITH CHECK (
   status = 'pendente'
 );
+
+-- ============================================================
+-- TRIGGER: Preenchimento Automático do id_quartel (set_id_quartel_default)
+-- ============================================================
+CREATE OR REPLACE FUNCTION set_id_quartel_default()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.id_quartel IS NULL THEN
+    NEW.id_quartel := get_meu_quartel();
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS trg_cautelas_id_quartel ON cautelas;
+CREATE TRIGGER trg_cautelas_id_quartel BEFORE INSERT ON cautelas
+FOR EACH ROW EXECUTE FUNCTION set_id_quartel_default();
+
+DROP TRIGGER IF EXISTS trg_cautela_itens_id_quartel ON cautela_itens;
+CREATE TRIGGER trg_cautela_itens_id_quartel BEFORE INSERT ON cautela_itens
+FOR EACH ROW EXECUTE FUNCTION set_id_quartel_default();
+
+DROP TRIGGER IF EXISTS trg_materiais_id_quartel ON materiais;
+CREATE TRIGGER trg_materiais_id_quartel BEFORE INSERT ON materiais
+FOR EACH ROW EXECUTE FUNCTION set_id_quartel_default();
+
+DROP TRIGGER IF EXISTS trg_ocorrencias_id_quartel ON ocorrencias;
+CREATE TRIGGER trg_ocorrencias_id_quartel BEFORE INSERT ON ocorrencias
+FOR EACH ROW EXECUTE FUNCTION set_id_quartel_default();
+
+DROP TRIGGER IF EXISTS trg_armas_particulares_id_quartel ON armas_particulares;
+CREATE TRIGGER trg_armas_particulares_id_quartel BEFORE INSERT ON armas_particulares
+FOR EACH ROW EXECUTE FUNCTION set_id_quartel_default();
+
+DROP TRIGGER IF EXISTS trg_pendencias_servico_id_quartel ON pendencias_servico;
+CREATE TRIGGER trg_pendencias_servico_id_quartel BEFORE INSERT ON pendencias_servico
+FOR EACH ROW EXECUTE FUNCTION set_id_quartel_default();
+
+DROP TRIGGER IF EXISTS trg_auditoria_logs_id_quartel ON auditoria_logs;
+CREATE TRIGGER trg_auditoria_logs_id_quartel BEFORE INSERT ON auditoria_logs
+FOR EACH ROW EXECUTE FUNCTION set_id_quartel_default();
+
+DROP TRIGGER IF EXISTS trg_usuarios_id_quartel ON usuarios;
+CREATE TRIGGER trg_usuarios_id_quartel BEFORE INSERT ON usuarios
+FOR EACH ROW EXECUTE FUNCTION set_id_quartel_default();
+
+

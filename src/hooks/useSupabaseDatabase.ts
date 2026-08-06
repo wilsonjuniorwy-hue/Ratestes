@@ -278,7 +278,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
             matricula: 'ARMEIRO',
             nome: 'Totem de Atendimento',
             nome_de_guerra: 'Totem',
-            senha_hash: '5fac61b0fd803321c5831cd12a21649522595554c8a508bd42d4a1b4f09eab36', // hash de 101187
+            senha_hash: '5fac61b0fd803321c5831cd12a21649522595554c8a508bd42d4a1b4f09eab36',
             perfil: 'armeiro_gestor',
             posto_graduacao: 'Totem',
             situacao_cautela: 'apto',
@@ -295,7 +295,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
           matricula: 'ARMEIRO',
           nome: 'Totem de Atendimento',
           nome_de_guerra: 'Totem',
-          senha_hash: '5fac61b0fd803321c5831cd12a21649522595554c8a508bd42d4a1b4f09eab36', // hash de 101187
+          senha_hash: '5fac61b0fd803321c5831cd12a21649522595554c8a508bd42d4a1b4f09eab36',
           perfil: 'armeiro_gestor',
           posto_graduacao: 'Totem',
           situacao_cautela: 'apto',
