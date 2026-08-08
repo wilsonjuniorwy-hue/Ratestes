@@ -5,14 +5,21 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
+const envUrl = import.meta.env.VITE_SUPABASE_URL;
+const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+if (!envUrl || !envKey) {
+  throw new Error('CONFIGURAÇÃO OBRIGATÓRIA FALTANTE: VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY devem estar definidos no arquivo .env.');
+}
+
 const CONFIGS = {
   homologacao: {
-    url: "https://rndyzoyhpmubbbuxtuso.supabase.co",
-    key: "sb_publishable_1PHcHXdcHye3Ent0hq4dLw_YGiRWtU7"
+    url: envUrl,
+    key: envKey
   },
   producao: {
-    url: import.meta.env.VITE_SUPABASE_URL || "https://rwnldjtevkheiwutxhgg.supabase.co",
-    key: import.meta.env.VITE_SUPABASE_ANON_KEY || "sb_publishable_CQWOt6VSUTH7jPdYJXiY2w_IjvhG1Ea"
+    url: envUrl,
+    key: envKey
   }
 };
 

@@ -70,6 +70,13 @@ export function useOfflineDatabase() {
         }
 
         try {
+          await db.execute('ALTER TABLE usuarios ADD COLUMN nome_usuario TEXT DEFAULT NULL;');
+          console.log('SGBD Offline: Coluna nome_usuario adicionada à tabela usuarios.');
+        } catch (_) {
+          // A coluna já existe ou tabela não foi alterada
+        }
+
+        try {
           await db.execute('ALTER TABLE materiais ADD COLUMN data_validade TEXT;');
           console.log('SGBD Offline: Coluna data_validade adicionada à tabela materiais.');
         } catch (_) {
@@ -91,6 +98,16 @@ export function useOfflineDatabase() {
           );
         `);
 
+        // Migrações condicionais na tabela cautelas
+        try { await db.execute('ALTER TABLE cautelas ADD COLUMN is_emergencial INTEGER DEFAULT 0;'); } catch (_) {}
+        try { await db.execute('ALTER TABLE cautelas ADD COLUMN motivo_emergencial TEXT DEFAULT NULL;'); } catch (_) {}
+        try { await db.execute('ALTER TABLE cautelas ADD COLUMN data_devolucao_efetiva TEXT DEFAULT NULL;'); } catch (_) {}
+        try { await db.execute('ALTER TABLE cautelas ADD COLUMN matricula_armeiro_devolucao TEXT DEFAULT NULL;'); } catch (_) {}
+        try { await db.execute('ALTER TABLE cautelas ADD COLUMN observacoes_devolucao TEXT DEFAULT NULL;'); } catch (_) {}
+        try { await db.execute('ALTER TABLE cautelas ADD COLUMN prorrogada INTEGER DEFAULT 0;'); } catch (_) {}
+        try { await db.execute('ALTER TABLE cautelas ADD COLUMN data_prorrogacao TEXT DEFAULT NULL;'); } catch (_) {}
+        try { await db.execute('ALTER TABLE cautelas ADD COLUMN matricula_armeiro_prorrogacao TEXT DEFAULT NULL;'); } catch (_) {}
+
         await db.execute(`
           CREATE TABLE IF NOT EXISTS cautelas (
             id_cautela TEXT PRIMARY KEY,
@@ -98,9 +115,17 @@ export function useOfflineDatabase() {
             matricula_armeiro_retirada TEXT,
             data_retirada TEXT,
             previsao_devolucao TEXT,
+            data_devolucao_efetiva TEXT,
+            matricula_armeiro_devolucao TEXT,
             status_cautela TEXT,
             observacoes_retirada TEXT,
-            id_quartel TEXT
+            observacoes_devolucao TEXT,
+            prorrogada INTEGER DEFAULT 0,
+            data_prorrogacao TEXT,
+            matricula_armeiro_prorrogacao TEXT,
+            id_quartel TEXT,
+            is_emergencial INTEGER DEFAULT 0,
+            motivo_emergencial TEXT
           );
         `);
 

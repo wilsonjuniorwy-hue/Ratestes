@@ -112,9 +112,28 @@ export default function App() {
               setRota(novaRota);
               sessionStorage.setItem('rota', novaRota);
             }
+          } else if (active && sessionStorage.getItem('logging_in') !== 'true') {
+            setAuthenticatedArmeiro(null);
+            setActiveArmeiroMatricula('');
+            setQuartelAtivo(null);
+            setRota('login');
+            sessionStorage.removeItem('activeArmeiroMatricula');
+            sessionStorage.removeItem('authenticatedArmeiro');
+            sessionStorage.removeItem('quartelAtivo');
+            sessionStorage.removeItem('rota');
           }
         } catch (err) {
           console.error('Erro ao restaurar sessão:', err);
+          if (active && sessionStorage.getItem('logging_in') !== 'true') {
+            setAuthenticatedArmeiro(null);
+            setActiveArmeiroMatricula('');
+            setQuartelAtivo(null);
+            setRota('login');
+            sessionStorage.removeItem('activeArmeiroMatricula');
+            sessionStorage.removeItem('authenticatedArmeiro');
+            sessionStorage.removeItem('quartelAtivo');
+            sessionStorage.removeItem('rota');
+          }
         }
       } else {
         if (sessionStorage.getItem('logging_in') !== 'true') {
@@ -366,15 +385,20 @@ export default function App() {
 
   // Função de logout completo
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    setAuthenticatedArmeiro(null);
-    setActiveArmeiroMatricula('');
-    setQuartelAtivo(null);
-    setRota('login');
-    sessionStorage.removeItem('activeArmeiroMatricula');
-    sessionStorage.removeItem('authenticatedArmeiro');
-    sessionStorage.removeItem('quartelAtivo');
-    sessionStorage.removeItem('rota');
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.error('Erro ao encerrar sessão no Supabase Auth:', err);
+    } finally {
+      setAuthenticatedArmeiro(null);
+      setActiveArmeiroMatricula('');
+      setQuartelAtivo(null);
+      setRota('login');
+      sessionStorage.removeItem('activeArmeiroMatricula');
+      sessionStorage.removeItem('authenticatedArmeiro');
+      sessionStorage.removeItem('quartelAtivo');
+      sessionStorage.removeItem('rota');
+    }
   };
 
   if (tauriStatus !== 'authorized') {

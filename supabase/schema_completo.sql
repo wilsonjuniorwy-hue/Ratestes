@@ -33,7 +33,10 @@ CREATE TABLE IF NOT EXISTS usuarios (
   auth_user_id                   UUID UNIQUE,
   id_quartel                     UUID REFERENCES quarteis(id),
   deletado_em                    TIMESTAMPTZ,
-  assinatura_foto                TEXT
+  assinatura_foto                TEXT,
+  tentativas_login               INTEGER DEFAULT 0,
+  bloqueado_ate                  TIMESTAMPTZ,
+  nome_usuario                   TEXT
 );
 
 -- 3. TABELA CATEGORIAS
@@ -80,10 +83,18 @@ CREATE TABLE IF NOT EXISTS materiais (
   quantidade              INTEGER,
   id_arma_vinculada       TEXT,
   quantidade_carregadores INTEGER,
-  id_quartel              UUID REFERENCES quarteis(id),
-  data_validade           DATE,
   deletado_em             TIMESTAMPTZ
 );
+
+-- Seed básico de materiais de apoio (Baterias)
+-- NOTA MULTI-QUARTEL: Ao ativar novos quarteis com materiais reais no futuro,
+-- certifique-se de executar o seed de baterias (BAT-HYTERA / BAT-SEPURA) para o novo id_quartel.
+INSERT INTO materiais (
+  id_material, id_categoria, modelo, fabricante, status_atual, data_aquisicao, controle_quantidade, quantidade, id_quartel
+) VALUES 
+  ('BAT-HYTERA', 'CAT-COMUNICACAO', 'Bateria Hytera', 'Hytera', 'disponivel', CURRENT_DATE, TRUE, 999, (SELECT id FROM quarteis WHERE slug = 'cavalaria' LIMIT 1)),
+  ('BAT-SEPURA', 'CAT-COMUNICACAO', 'Bateria Sepura', 'Sepura', 'disponivel', CURRENT_DATE, TRUE, 999, (SELECT id FROM quarteis WHERE slug = 'cavalaria' LIMIT 1))
+ON CONFLICT (id_material) DO NOTHING;
 
 -- 6. TABELA CAUTELAS
 CREATE TABLE IF NOT EXISTS cautelas (
@@ -101,7 +112,9 @@ CREATE TABLE IF NOT EXISTS cautelas (
   data_prorrogacao              TIMESTAMPTZ,
   matricula_armeiro_prorrogacao TEXT REFERENCES usuarios(matricula),
   id_quartel                    UUID REFERENCES quarteis(id),
-  deletado_em                   TIMESTAMPTZ
+  deletado_em                   TIMESTAMPTZ,
+  is_emergencial                BOOLEAN DEFAULT FALSE,
+  motivo_emergencial            TEXT
 );
 
 -- 7. TABELA CAUTELA_ITENS

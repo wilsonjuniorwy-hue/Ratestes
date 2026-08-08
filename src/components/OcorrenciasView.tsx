@@ -723,6 +723,8 @@ Riacho Fundo I - DF, ${dataMinusculo}.`;
     const activeCautelas = cautelas.filter(c => !c.data_devolucao_efetiva);
 
     materiais.forEach(m => {
+      if (m.deletado_em) return;
+
       const catObj = categorias.find(c => c.id_categoria === m.id_categoria);
       const isBastaoModel = /^B\d+$/i.test(m.modelo.trim()) || 
         /^BASTAO/i.test(m.modelo.trim()) || 
@@ -735,11 +737,15 @@ Riacho Fundo I - DF, ${dataMinusculo}.`;
 
       const isBastao = isBastaoCategory || isBastaoModel || isBastaoId;
 
-      const isRadioHytera = m.fabricante.toUpperCase() === 'HYTERA' || /^HY/i.test(m.modelo.trim());
-      const isRadioSepura = m.fabricante.toUpperCase() === 'SEPURA' || /^SEP/i.test(m.modelo.trim());
-      const isRadioOther = m.id_categoria === 'CAT-COMUNICACAO' ||
-        /^HT/i.test(m.modelo.trim()) ||
-        /^HT/i.test(m.id_material.trim());
+      const isBattery = m.id_material.startsWith('BAT-') || /bateria/i.test(m.modelo);
+      const isRadioHytera = !isBattery && (m.fabricante.toUpperCase() === 'HYTERA' || /^HY/i.test(m.modelo.trim()));
+      const isRadioSepura = !isBattery && (m.fabricante.toUpperCase() === 'SEPURA' || /^SEP/i.test(m.modelo.trim()));
+      const isRadioOther = !isBattery && (
+        /^HT\s/i.test(m.modelo.trim()) ||
+        /^HT-/i.test(m.id_material.trim()) ||
+        /radio\s+ht/i.test(m.modelo) ||
+        /rádio\s+ht/i.test(m.modelo)
+      );
 
       const isColeteImbel = (m.id_categoria === 'CAT-MANUTENCAO' || /colete/i.test(m.modelo)) && 
         (m.fabricante.toUpperCase() === 'IMBEL' || /^300/i.test(m.id_material.trim()) || /imbel/i.test(m.modelo));

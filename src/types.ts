@@ -69,6 +69,7 @@ export interface Material {
   quantidade_carregadores?: number; // Quantidade de carregadores desta arma
   id_quartel?: string;   // UUID do quartel
   data_validade?: string; // Data de validade do item (ex: YYYY-MM-DD)
+  deletado_em?: string | null; // Soft delete (ISO DateTime)
 }
 
 export interface Cautela {

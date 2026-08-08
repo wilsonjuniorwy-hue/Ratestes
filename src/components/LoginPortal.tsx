@@ -226,6 +226,17 @@ export default function LoginPortal({
         return;
       }
 
+      // Verificar se o usuário está temporariamente bloqueado por brute-force
+      if (user.bloqueado_ate) {
+        const bloqueadoAteDate = new Date(user.bloqueado_ate);
+        if (bloqueadoAteDate > new Date()) {
+          const mins = Math.ceil((bloqueadoAteDate.getTime() - Date.now()) / (60 * 1000));
+          setAuthError(`Usuário temporariamente bloqueado por 5 tentativas incorretas. Tente em ${mins} min ou contate o Admin.`);
+          setIsAuthenticating(false);
+          return;
+        }
+      }
+
       // Verificar se um quartel foi selecionado
       if (!selectedQuartel) {
         setAuthError('Selecione o quartel antes de fazer login.');
@@ -352,8 +363,25 @@ export default function LoginPortal({
             return;
           }
         }
+        const novasTentativas = (user.tentativas_login || 0) + 1;
+        let novoBloqueio: string | null = null;
+        let msgErro = 'Senha de acesso incorreta ou usuário não cadastrado no Supabase Auth.';
+        if (novasTentativas >= 5) {
+          const d = new Date();
+          d.setMinutes(d.getMinutes() + 15);
+          novoBloqueio = d.toISOString();
+          msgErro = 'Usuário bloqueado temporariamente por 15 min devido a 5 tentativas de senha incorretas.';
+        }
+
+        supabase.from('usuarios').update({
+          tentativas_login: novasTentativas,
+          bloqueado_ate: novoBloqueio
+        }).eq('matricula', matriculaNorm).then(({ error }) => {
+          if (error) console.error('Erro ao registrar tentativa incorreta de login:', error);
+        });
+
         sessionStorage.removeItem('logging_in');
-        setAuthError('Senha de acesso incorreta ou usuário não cadastrado no Supabase Auth.');
+        setAuthError(msgErro);
         setIsAuthenticating(false);
         return;
       }
@@ -362,10 +390,17 @@ export default function LoginPortal({
       if (authData.user && user.auth_user_id !== authData.user.id) {
         await supabase
           .from('usuarios')
-          .update({ auth_user_id: authData.user.id })
+          .update({ auth_user_id: authData.user.id, tentativas_login: 0, bloqueado_ate: null })
           .eq('matricula', matriculaNorm);
         
         user.auth_user_id = authData.user.id;
+      } else {
+        supabase.from('usuarios').update({
+          tentativas_login: 0,
+          bloqueado_ate: null
+        }).eq('matricula', matriculaNorm).then(({ error }) => {
+          if (error) console.error('Erro ao resetar tentativas de login:', error);
+        });
       }
 
       // Sucesso no login

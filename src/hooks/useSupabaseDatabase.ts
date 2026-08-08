@@ -1169,10 +1169,13 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
       if (motivoEmergencial) cautelaToInsert.motivo_emergencial = motivoEmergencial;
     }
 
-    // Group cart items to handle quantity-based items
+    // Group cart items to handle quantity-based items with .trim() sanitization
     const groupedCart: Record<string, number> = {};
     cartItens.forEach(id => {
-      groupedCart[id] = (groupedCart[id] || 0) + 1;
+      const cleanId = (id || '').trim();
+      if (cleanId) {
+        groupedCart[cleanId] = (groupedCart[cleanId] || 0) + 1;
+      }
     });
 
     const novosItensCautela: CautelaItem[] = Object.entries(groupedCart).map(([idMat, qty], idx) => {
@@ -1180,7 +1183,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
       return {
         id_cautela_item: `ITEM-${Math.floor(100000 + Math.random() * 900000)}`,
         id_cautela: idNewCautela,
-        id_material: idMat,
+        id_material: idMat.trim(),
         quantidade: qty,
         estado_entrega: 'excelente',
         quantidade_carregadores: magQty,
@@ -1193,7 +1196,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
     if (radioBatteries) {
       Object.entries(radioBatteries).forEach(([idMat, bInfo]) => {
         if (cartItens.includes(idMat) && bInfo.qty > 0) {
-          const batId = `BAT-${bInfo.brand.toUpperCase()}`;
+          const batId = `BAT-${bInfo.brand.trim().toUpperCase()}`;
           batteryDeductions[batId] = (batteryDeductions[batId] || 0) + bInfo.qty;
 
           novosItensCautela.push({
@@ -1245,6 +1248,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
       supabase.from('cautela_itens').insert(itensToInsert).then(({ error: errItens }) => {
         if (errItens) {
           console.error('Erro ao salvar itens da cautela no Supabase:', errItens);
+          alert(`ALERTA DE FALHA NO SUPABASE:\nNão foi possível salvar os itens da cautela.\nErro: ${errItens.message}`);
         } else {
           console.log('✔ Cautela e itens salvos com sucesso no Supabase!');
           setTimeout(() => {
@@ -1271,47 +1275,32 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
         [...cautelaItens, ...novosItensCautela]
       );
     } else {
-      // Sync to Supabase - SEQUENTIALLY com tratamento de fallback
-      supabase.from('cautelas').insert(cautelaToInsert).then(({ error: errCautela }) => {
-        if (errCautela) {
-          console.error('Erro ao salvar nova cautela no Supabase:', errCautela);
-          // Fallback se colunas opcionais falharem
-          if (cautelaToInsert.is_emergencial || cautelaToInsert.motivo_emergencial) {
-            const cleanFallback = { ...cautelaToInsert };
-            delete cleanFallback.is_emergencial;
-            delete cleanFallback.motivo_emergencial;
-            supabase.from('cautelas').insert(cleanFallback).then(({ error: errRetry }) => {
-              if (errRetry) {
-                console.error('Erro no fallback de salvamento da cautela:', errRetry);
-              } else {
-                console.log('✔ Cautela salva no Supabase via fallback limpo!');
-                salvarItensNoSupabase();
-              }
-            });
+      // Tentar executar via RPC Atômica no Postgres (fn_efetivar_cautela com trava FOR UPDATE)
+      supabase.rpc('fn_efetivar_cautela', {
+        p_cautela: cautelaToInsert,
+        p_itens: novosItensCautela
+      }).then(({ error: rpcErr }) => {
+        if (rpcErr) {
+          console.error('🚨 [ALERTA DE MIGRAÇÃO OU RPC] Falha na procedure RPC fn_efetivar_cautela:', rpcErr.message);
+          supabase.from('cautelas').insert(cautelaToInsert).then(({ error: errCautela }) => {
+            if (errCautela) {
+              console.error('Erro ao salvar nova cautela no Supabase:', errCautela);
+              alert(`ERRO AO GRAVAR CAUTELA NO BANCO:\n${errCautela.message}`);
+            } else {
+              salvarItensNoSupabase();
+            }
+          });
+          const individualMats = cartItens.filter(id => !materiais.find(m => m.id_material === id)?.controle_quantidade);
+          if (individualMats.length > 0) {
+            supabase.from('materiais').update({ status_atual: 'cautelado' }).in('id_material', individualMats);
+          }
+          if (!isPermanent) {
+            supabase.from('usuarios').update({ situacao_cautela: 'pendente_devolucao' }).eq('matricula', matriculaPolicial);
           }
         } else {
-          salvarItensNoSupabase();
+          console.log('✔ Cautela processada atomicamente via RPC Postgres (fn_efetivar_cautela)!');
         }
       });
-
-      // Update material statuses
-      const individualMats = cartItens.filter(id => !materiais.find(m => m.id_material === id)?.controle_quantidade);
-      if (individualMats.length > 0) {
-        supabase.from('materiais').update({ status_atual: 'cautelado' }).in('id_material', individualMats).then(({ error: errMats }) => {
-          if (errMats) {
-            console.error('Erro ao atualizar status dos materiais da cautela no Supabase:', errMats);
-          }
-        });
-      }
-
-      // Sincronizar status do militar para pendente_devolucao no Supabase (somente se não for permanente)
-      if (!isPermanent) {
-        supabase.from('usuarios').update({ situacao_cautela: 'pendente_devolucao' }).eq('matricula', matriculaPolicial).then(({ error: errUser }) => {
-          if (errUser) {
-            console.error('Erro ao atualizar situação do militar para pendente_devolucao:', errUser);
-          }
-        });
-      }
     }
 
     registrarLogAuditoria(
@@ -1545,55 +1534,58 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
         novosCautelaItens
       );
     } else {
-      // Sincronizar Materiais
-      idsMateriaisDevolvidos.forEach(idMat => {
-        const matObj = materiaisAtualizados.find(m => m.id_material === idMat);
-        if (matObj) {
-          const fieldsToUpdate = matObj.controle_quantidade 
-            ? { quantidade: matObj.quantidade } 
-            : { status_atual: matObj.status_atual };
-            
-          supabase.from('materiais').update(fieldsToUpdate).eq('id_material', idMat).then(({ error }) => {
-            if (error) console.error(`Erro ao atualizar material ${idMat} no Supabase:`, error);
-          });
-        }
-      });
+      // Sincronizar CautelaItens e Cautela via RPC
+      const itensDevolvidosPayload = Array.from(activeItemsMap.values()).map(ci => ({
+        id_cautela_item: ci.id_cautela_item,
+        id_material: ci.id_material,
+        quantidade: ci.quantidade,
+        estado_devolucao: ci.estado_devolucao,
+        consumido: ci.consumido || false
+      }));
+      
+      const statusDevolucao = todosDevolvidos ? 'devolvida' : (prorrogar ? 'prorrogada' : 'ativa');
+      const dataDevolucaoVal = todosDevolvidos ? agora : null;
+      const observacoesDevolucao = updatedCautela!.observacoes_devolucao;
 
-      // Sincronizar CautelaItens (Deletar antigos e inserir novos para esta cautela)
-      supabase.from('cautela_itens').delete().eq('id_cautela', cautId).then(({ error }) => {
-        if (error) {
-          console.error('Erro ao remover itens antigos no Supabase:', error);
-        } else {
-          let itemsToInsert = todosItensDaCautela;
-          if (itemsToInsert.length > 0) {
-            itemsToInsert = itemsToInsert.map((ci: any) => {
-              const copy = { ...ci };
-              if (!copy.id_quartel && quartelId) {
-                copy.id_quartel = quartelId;
-              }
-              return copy;
-            });
-            supabase.from('cautela_itens').insert(itemsToInsert).then(({ error: errIns }) => {
-              if (errIns) console.error('Erro ao reinserir itens atualizados no Supabase:', errIns);
+      supabase.rpc('fn_realizar_devolucao', {
+        p_id_cautela: cautId,
+        p_matricula_armeiro: armeiroResponsavel,
+        p_status_cautela: statusDevolucao,
+        p_data_devolucao_efetiva: dataDevolucaoVal,
+        p_observacoes_devolucao: observacoesDevolucao || null,
+        p_itens_devolvidos: itensDevolvidosPayload
+      }).then(({ error: rpcErr }) => {
+        if (rpcErr) {
+          console.error('🚨 [ALERTA DE MIGRAÇÃO DO BANCO] A procedure RPC fn_realizar_devolucao não está instalada no Supabase! Execute o script supabase/migration_rpc_functions.sql no SQL Editor. Motivo:', rpcErr.message);
+          
+          idsMateriaisDevolvidos.forEach(idMat => {
+            const matObj = materiaisAtualizados.find(m => m.id_material === idMat);
+            if (matObj) {
+              const fieldsToUpdate = matObj.controle_quantidade 
+                ? { quantidade: matObj.quantidade } 
+                : { status_atual: matObj.status_atual };
+                
+              supabase.from('materiais').update(fieldsToUpdate).eq('id_material', idMat).then(({ error }) => {
+                if (error) console.error(`Erro ao atualizar material ${idMat} no Supabase:`, error);
+              });
+            }
+          });
+
+          const cautObj = cautelasAtualizadas.find(c => c.id_cautela === cautId);
+          if (cautObj) {
+            supabase.from('cautelas').update(cautObj).eq('id_cautela', cautId).then(({ error }) => {
+              if (error) console.error('Erro ao atualizar cautela no Supabase:', error);
             });
           }
+          if (todosDevolvidos && !outrasCautelasDiariasAtivas) {
+            supabase.from('usuarios').update({ situacao_cautela: 'apto' }).eq('matricula', policialResponsavel).then(({ error }) => {
+              if (error) console.error('Erro ao reabilitar militar no Supabase:', error);
+            });
+          }
+        } else {
+          console.log('✔ Devolução processada atomicamente via RPC Postgres (fn_realizar_devolucao)!');
         }
       });
-
-      // Sincronizar Cautela
-      const cautObj = cautelasAtualizadas.find(c => c.id_cautela === cautId);
-      if (cautObj) {
-        supabase.from('cautelas').update(cautObj).eq('id_cautela', cautId).then(({ error }) => {
-          if (error) console.error('Erro ao atualizar cautela no Supabase:', error);
-        });
-      }
-
-      // Sincronizar Militar (se todos devolvidos e sem outras cautelas diárias ativas)
-      if (todosDevolvidos && !outrasCautelasDiariasAtivas) {
-        supabase.from('usuarios').update({ situacao_cautela: 'apto' }).eq('matricula', policialResponsavel).then(({ error }) => {
-          if (error) console.error('Erro ao reabilitar militar no Supabase:', error);
-        });
-      }
     }
 
     // Logs de consumo adicionais
@@ -1887,8 +1879,13 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
     try {
       const armeiroSvc = activeArmeiroMatricula || usuarios.find(u => u.perfil === 'armeiro_gestor')?.matricula || 'SYS-AM';
 
-      // 1. Obter todas as cautelas deste policial
+      // 1. Obter todas as cautelas deste policial e verificar se possui cautela ativa/pendente
       const cautelasPolicial = cautelas.filter(c => c.matricula_policial === matricula);
+      const temCautelaAtiva = cautelasPolicial.some(c => c.status_cautela !== 'devolvida' && (c.status_cautela as string) !== 'cancelada');
+      if (temCautelaAtiva) {
+        throw new Error(`Não é possível excluir o policial de matrícula ${matricula} pois ele possui cautela(s) ativa(s) ou pendente(s).`);
+      }
+
       const idsCautelas = cautelasPolicial.map(c => c.id_cautela);
 
       // Se houver cautelas, deletar itens e depois as cautelas
@@ -1996,6 +1993,19 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
   const excluirMaterialTotal = async (idMaterial: string) => {
     try {
       const armeiroSvc = activeArmeiroMatricula || usuarios.find(u => u.perfil === 'armeiro_gestor')?.matricula || 'SYS-AM';
+
+      // 0. Verificar se o material possui alguma cautela ativa/pendente vinculada
+      const cautelaItensDoMaterial = cautelaItens.filter(ci => ci.id_material === idMaterial);
+      const idsCautelasDoMaterial = cautelaItensDoMaterial.map(ci => ci.id_cautela);
+      const temCautelaAtiva = cautelas.some(c => 
+        idsCautelasDoMaterial.includes(c.id_cautela) && 
+        c.status_cautela !== 'devolvida' && 
+        (c.status_cautela as string) !== 'cancelada'
+      );
+
+      if (temCautelaAtiva) {
+        throw new Error(`Não é possível excluir o material ${idMaterial} pois ele está vinculado a uma cautela ativa ou pendente.`);
+      }
 
       // 1. Deletar do Supabase: cautela_itens
       const { error: errItens } = await supabase
