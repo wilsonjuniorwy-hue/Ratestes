@@ -398,7 +398,17 @@ export function BancoDadosView({
       modNorm = `Munição Calibre ${calNorm}`;
       fabNorm = 'CBC';
       specNorm = `Lote de munições calibre ${calNorm}.`;
-      isQty = true;
+      const existingMat = materiais.find(m => m.id_material.trim().toUpperCase() === idNorm);
+      if (existingMat) {
+        const currentQty = existingMat.quantidade || 0;
+        const targetQty = currentQty + newMaterialQuantidade;
+        const confirmed = window.confirm(
+          `CONFIRMAÇÃO DE ACRÉSCIMO DE MUNIÇÃO EM LOTE:\n\nJá existe o lote de munição "${existingMat.modelo}" (Código: ${idNorm}) com ${currentQty} unidades em estoque.\n\nDeseja adicionar +${newMaterialQuantidade} unidades a esse total, atualizando o estoque para ${targetQty} unidades?`
+        );
+        if (!confirmed) {
+          return;
+        }
+      }
     } else {
       idNorm = newMaterialId.trim().toUpperCase();
       if (isGasCategorySelected) {

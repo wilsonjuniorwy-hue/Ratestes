@@ -1332,7 +1332,9 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
     const materiaisAtualizados = materiais.map(m => {
       if (idsMateriaisDevolvidos.includes(m.id_material)) {
         if (m.controle_quantidade) {
-          const qtyToReturn = returnedQuantities?.[m.id_material] ?? 0;
+          const ci = cautelaItens.find(item => item.id_cautela === cautId && item.id_material === m.id_material && !item.estado_devolucao);
+          const defaultQty = ci ? ci.quantidade : 1;
+          const qtyToReturn = returnedQuantities?.[m.id_material] ?? defaultQty;
           return { ...m, quantidade: (m.quantidade || 0) + qtyToReturn };
         }
         return { ...m, status_atual: 'disponivel' as StatusMaterial };
@@ -1535,13 +1537,15 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
       );
     } else {
       // Sincronizar CautelaItens e Cautela via RPC
-      const itensDevolvidosPayload = Array.from(activeItemsMap.values()).map(ci => ({
-        id_cautela_item: ci.id_cautela_item,
-        id_material: ci.id_material,
-        quantidade: ci.quantidade,
-        estado_devolucao: ci.estado_devolucao,
-        consumido: ci.consumido || false
-      }));
+      const itensDevolvidosPayload = Array.from(activeItemsMap.values())
+        .filter(ci => ci.id_cautela === cautId)
+        .map(ci => ({
+          id_cautela_item: ci.id_cautela_item,
+          id_material: ci.id_material,
+          quantidade: ci.quantidade,
+          estado_devolucao: ci.estado_devolucao,
+          consumido: ci.consumido || false
+        }));
       
       const statusDevolucao = todosDevolvidos ? 'devolvida' : (prorrogar ? 'prorrogada' : 'ativa');
       const dataDevolucaoVal = todosDevolvidos ? agora : null;
@@ -1582,8 +1586,14 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
               if (error) console.error('Erro ao reabilitar militar no Supabase:', error);
             });
           }
+          setTimeout(() => {
+            fetchData();
+          }, 500);
         } else {
           console.log('✔ Devolução processada atomicamente via RPC Postgres (fn_realizar_devolucao)!');
+          setTimeout(() => {
+            fetchData();
+          }, 500);
         }
       });
     }
@@ -2211,98 +2221,75 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
       console.log(`SGBD Sync: Encontrados ${fila.length} itens para sincronizar.`);
       
       for (const item of fila) {
+        if ((item.tentativas || 0) >= 3) {
+          console.warn(`SGBD Sync: Item ${item.id} (${item.operacao}) excedeu o limite de 3 tentativas e foi pausado para revisão manual.`);
+          setSyncQueueErrors(prev => ({
+            ...prev,
+            [item.id]: `[Excedeu 3 tentativas] ${item.ultimo_erro || 'Falha recorrente na sincronização'}`
+          }));
+          continue;
+        }
+
         const payload = JSON.parse(item.payload);
-        console.log(`SGBD Sync: Processando item ${item.id} - Operação: ${item.operacao}`);
+        console.log(`SGBD Sync: Processando item ${item.id} - Operação: ${item.operacao} (Tentativa ${ (item.tentativas || 0) + 1 })`);
         
         let success = false;
         
         try {
           if (item.operacao === 'EFETIVAR_CAUTELA') {
-            const { matriculaPolicial, cartItens, observacoes, weaponMagazines, idNewCautela, novosItensCautela } = payload;
+            const { matriculaPolicial, observacoes, idNewCautela, novosItensCautela, novaCautela } = payload;
             
-            const cautelaToInsert = {
+            const cautelaToInsert = payload.cautelaToInsert || {
               id_cautela: idNewCautela,
               matricula_policial: matriculaPolicial,
-              matricula_armeiro_retirada: payload.novaCautela?.matricula_armeiro_retirada || activeArmeiroMatricula || 'SYS-AM',
-              data_retirada: payload.novaCautela?.data_retirada || new Date().toISOString(),
-              previsao_devolucao: payload.novaCautela?.previsao_devolucao || new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString(),
-              status_cautela: 'ativa',
-              observacoes_retirada: observacoes,
+              matricula_armeiro_retirada: novaCautela?.matricula_armeiro_retirada || activeArmeiroMatricula || 'SYS-AM',
+              data_retirada: novaCautela?.data_retirada || new Date().toISOString(),
+              previsao_devolucao: novaCautela?.previsao_devolucao || new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString(),
+              status_cautela: novaCautela?.status_cautela || 'ativa',
+              observacoes_retirada: observacoes || novaCautela?.observacoes_retirada,
               id_quartel: quartelId || undefined
             };
 
-            const { error: errCautela } = await supabase.from('cautelas').insert(cautelaToInsert);
-            if (errCautela) throw errCautela;
-            
-            const itensToInsert = novosItensCautela.map((it: any) => {
-              const itemData = { ...it };
-              if (quartelId) itemData.id_quartel = quartelId;
-              return itemData;
+            const { error: rpcErr } = await supabase.rpc('fn_efetivar_cautela', {
+              p_cautela: cautelaToInsert,
+              p_itens: novosItensCautela
             });
-            const { error: errItens } = await supabase.from('cautela_itens').insert(itensToInsert);
-            if (errItens) throw errItens;
-            
-            const individualMats = cartItens.filter((id: string) => !materiais.find(m => m.id_material === id)?.controle_quantidade);
-            if (individualMats.length > 0) {
-              const { error: errMats } = await supabase.from('materiais').update({ status_atual: 'cautelado' }).in('id_material', individualMats);
-              if (errMats) throw errMats;
-            }
-            
-            const { error: errUser } = await supabase.from('usuarios').update({ situacao_cautela: 'pendente_devolucao' }).eq('matricula', matriculaPolicial);
-            if (errUser) throw errUser;
-            
+
+            if (rpcErr) throw rpcErr;
             success = true;
           } 
           else if (item.operacao === 'EFETIVAR_DEVOLUCAO') {
-            const { cautId, idsMateriaisDevolvidos, prorrogar, returnedQuantities, novosCautelaItens, todosDevolvidos, policialResponsavel, updatedCautela } = payload;
+            const { cautId, prorrogar, novosCautelaItens, todosDevolvidos, policialResponsavel, updatedCautela, armeiroResponsavel, agora } = payload;
             
-            for (const idMat of idsMateriaisDevolvidos) {
-              let matObj = materiais.find(m => m.id_material === idMat);
-              if (!matObj) {
-                console.log(`SGBD Sync: Material ${idMat} não encontrado na memória local. Buscando diretamente do SGBD...`);
-                const { data: dbMat } = await supabase.from('materiais').select('*').eq('id_material', idMat).single();
-                if (dbMat) {
-                  matObj = dbMat;
-                }
+            const activeItemsMap = new Map<string, any>();
+            (novosCautelaItens || []).forEach((ci: any) => {
+              if (ci.id_cautela === cautId) {
+                activeItemsMap.set(ci.id_cautela_item, { ...ci });
               }
+            });
 
-              if (matObj) {
-                const fieldsToUpdate = matObj.controle_quantidade 
-                  ? { quantidade: (matObj.quantidade || 0) + (returnedQuantities?.[idMat] ?? 0) } 
-                  : { status_atual: 'disponivel' };
-                const { error: errMat } = await supabase.from('materiais').update(fieldsToUpdate).eq('id_material', idMat);
-                if (errMat) throw errMat;
-              } else {
-                console.warn(`SGBD Sync: Material ${idMat} não localizado de forma alguma. Executando atualização padrão para 'disponivel'...`);
-                const { error: errMat } = await supabase.from('materiais').update({ status_atual: 'disponivel' }).eq('id_material', idMat);
-                if (errMat) throw errMat;
-              }
-            }
+            const itensDevolvidosPayload = Array.from(activeItemsMap.values()).map((ci: any) => ({
+              id_cautela_item: ci.id_cautela_item,
+              id_material: ci.id_material,
+              quantidade: ci.quantidade,
+              estado_devolucao: ci.estado_devolucao,
+              consumido: ci.consumido || false
+            }));
             
-            const { error: errDel } = await supabase.from('cautela_itens').delete().eq('id_cautela', cautId);
-            if (errDel) throw errDel;
-            
-            let itemsToInsert = novosCautelaItens.filter((ci: any) => ci.id_cautela === cautId);
-            if (itemsToInsert.length > 0) {
-              itemsToInsert = itemsToInsert.map((ci: any) => {
-                const copy = { ...ci };
-                if (!copy.id_quartel && quartelId) {
-                  copy.id_quartel = quartelId;
-                }
-                return copy;
-              });
-              const { error: errIns } = await supabase.from('cautela_itens').insert(itemsToInsert);
-              if (errIns) throw errIns;
-            }
-            
-            const { error: errCaut } = await supabase.from('cautelas').update(updatedCautela).eq('id_cautela', cautId);
-            if (errCaut) throw errCaut;
-            
-            if (todosDevolvidos) {
-              const { error: errUser } = await supabase.from('usuarios').update({ situacao_cautela: 'apto' }).eq('matricula', policialResponsavel);
-              if (errUser) throw errUser;
-            }
-            
+            const statusDevolucao = todosDevolvidos ? 'devolvida' : (prorrogar ? 'prorrogada' : 'ativa');
+            const dataDevolucaoVal = todosDevolvidos ? (agora || new Date().toISOString()) : null;
+            const armeiroRespVal = armeiroResponsavel || activeArmeiroMatricula || 'SYS-AM';
+
+            const { error: rpcErr } = await supabase.rpc('fn_realizar_devolucao', {
+              p_id_cautela: cautId,
+              p_matricula_armeiro: armeiroRespVal,
+              p_status_cautela: statusDevolucao,
+              p_data_devolucao_efetiva: dataDevolucaoVal,
+              p_observacoes_devolucao: updatedCautela?.observacoes_devolucao || null,
+              p_itens_devolvidos: itensDevolvidosPayload
+            });
+
+            if (rpcErr) throw rpcErr;
             success = true;
           }
           else if (item.operacao === 'SALVAR_OCORRENCIA') {
@@ -2355,7 +2342,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
           }
           
           if (success) {
-            console.log(`SGBD Sync: Item ${item.id} processado com sucesso. Removendo da fila...`);
+            console.log(`SGBD Sync: Item ${item.id} processado com sucesso via RPC/operações atômicas. Removendo da fila...`);
             await offlineDb.removerTransacaoFila(item.id);
             setSyncQueueErrors(prev => {
               const copy = { ...prev };
@@ -2365,12 +2352,12 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
           }
         } catch (opError: any) {
           const errMsg = opError?.message || String(opError);
-          console.error(`SGBD Sync: Erro ao sincronizar item ${item.id}:`, opError);
+          console.error(`SGBD Sync: Erro ao sincronizar item ${item.id} (incrementando contagem de erro):`, opError);
+          await offlineDb.incrementarTentativaFila(item.id, errMsg);
           setSyncQueueErrors(prev => ({
             ...prev,
             [item.id]: errMsg
           }));
-          break;
         }
       }
       

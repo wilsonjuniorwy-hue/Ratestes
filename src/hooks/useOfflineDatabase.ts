@@ -134,9 +134,14 @@ export function useOfflineDatabase() {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             timestamp TEXT NOT NULL,
             operacao TEXT NOT NULL,
-            payload TEXT NOT NULL
+            payload TEXT NOT NULL,
+            tentativas INTEGER DEFAULT 0,
+            ultimo_erro TEXT DEFAULT NULL
           );
         `);
+
+        try { await db.execute('ALTER TABLE fila_sincronizacao ADD COLUMN tentativas INTEGER DEFAULT 0;'); } catch (_) {}
+        try { await db.execute('ALTER TABLE fila_sincronizacao ADD COLUMN ultimo_erro TEXT DEFAULT NULL;'); } catch (_) {}
 
         await db.execute(`
           CREATE TABLE IF NOT EXISTS cautela_itens (
@@ -436,7 +441,7 @@ export function useOfflineDatabase() {
     }
   };
 
-  const obterFilaSincronizacao = async (): Promise<Array<{ id: number; timestamp: string; operacao: string; payload: string }>> => {
+  const obterFilaSincronizacao = async (): Promise<Array<{ id: number; timestamp: string; operacao: string; payload: string; tentativas?: number; ultimo_erro?: string }>> => {
     if (!isDbReady) return [];
     if (!isTauri) {
       const raw = localStorage.getItem('offline_fila_sincronizacao');
@@ -448,6 +453,37 @@ export function useOfflineDatabase() {
     } catch (err) {
       console.error('SGBD Offline: Erro ao ler fila de sincronização:', err);
       return [];
+    }
+  };
+
+  const incrementarTentativaFila = async (id: number, erroMsg: string) => {
+    if (!isDbReady) return;
+    if (!isTauri) {
+      const raw = localStorage.getItem('offline_fila_sincronizacao');
+      if (raw) {
+        const fila = JSON.parse(raw);
+        const novaFila = fila.map((item: any) => {
+          if (item.id === id) {
+            return {
+              ...item,
+              tentativas: (item.tentativas || 0) + 1,
+              ultimo_erro: erroMsg
+            };
+          }
+          return item;
+        });
+        localStorage.setItem('offline_fila_sincronizacao', JSON.stringify(novaFila));
+      }
+      return;
+    }
+
+    try {
+      await dbInstance.execute(
+        'UPDATE fila_sincronizacao SET tentativas = COALESCE(tentativas, 0) + 1, ultimo_erro = ? WHERE id = ?',
+        [erroMsg, id]
+      );
+    } catch (err) {
+      console.error('SGBD Offline: Erro ao incrementar tentativas da transação:', err);
     }
   };
 
@@ -497,6 +533,7 @@ export function useOfflineDatabase() {
     obterCautelaItensLocal,
     enfileirarTransacaoOffline,
     obterFilaSincronizacao,
+    incrementarTentativaFila,
     removerTransacaoFila,
     limparFilaSincronizacao
   };
