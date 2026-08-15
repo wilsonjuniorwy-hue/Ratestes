@@ -436,13 +436,9 @@ export function useMockDatabase() {
     }
 
     const materiaisAtualizados = materiais.map(m => {
-      if (batteryDeductions[m.id_material] && m.controle_quantidade) {
-        const newQty = Math.max(0, (m.quantidade || 0) - batteryDeductions[m.id_material]);
-        return { ...m, quantidade: newQty };
-      }
       if (cartItens.includes(m.id_material)) {
         if (m.controle_quantidade) {
-          return m; // Quantity-based materials remain available in stock list
+          return m; // Quantity-based materials remain available in stock list, total remains invariant
         }
         return { ...m, status_atual: 'cautelado' as StatusMaterial };
       }
@@ -487,12 +483,15 @@ export function useMockDatabase() {
     const armeiroResponsavel = usuarios.find(u => u.perfil === 'armeiro_gestor')?.matricula || 'SYS-AM';
     const agora = new Date().toISOString();
 
-    // 1. Atualizar materiais correspondentes no estoque (somente quantidade devolvida para controle_quantidade)
+    // 1. Atualizar materiais correspondentes no estoque (somente deduz se consumido em serviço)
     const materiaisAtualizados = materiais.map(m => {
       if (idsMateriaisDevolvidos.includes(m.id_material)) {
         if (m.controle_quantidade) {
-          const qtyToReturn = returnedQuantities?.[m.id_material] ?? 0;
-          return { ...m, quantidade: (m.quantidade || 0) + qtyToReturn };
+          const qtyConsumed = consumedQuantities?.[m.id_material] ?? 0;
+          if (qtyConsumed > 0) {
+            return { ...m, quantidade: Math.max(0, (m.quantidade || 0) - qtyConsumed) };
+          }
+          return m;
         }
         return { ...m, status_atual: 'disponivel' as StatusMaterial };
       }

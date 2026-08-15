@@ -1243,13 +1243,9 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
     }
 
     const materiaisAtualizados = materiais.map(m => {
-      if (batteryDeductions[m.id_material] && m.controle_quantidade) {
-        const newQty = Math.max(0, (m.quantidade || 0) - batteryDeductions[m.id_material]);
-        return { ...m, quantidade: newQty };
-      }
       if (cartItens.includes(m.id_material)) {
         if (m.controle_quantidade) {
-          return m; // Quantity-based remains active in list
+          return m; // Quantity-based remains active in list, total quantity remains invariant
         }
         return { ...m, status_atual: 'cautelado' as StatusMaterial };
       }
@@ -1377,14 +1373,15 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
     const armeiroResponsavel = activeArmeiroMatricula || usuarios.find(u => u.perfil === 'armeiro_gestor')?.matricula || 'SYS-AM';
     const agora = new Date().toISOString();
 
-    // 1. Atualizar materiais correspondentes no estoque (somente quantidade devolvida para controle_quantidade)
+    // 1. Atualizar materiais correspondentes no estoque (somente deduz se consumido em serviço)
     const materiaisAtualizados = materiais.map(m => {
       if (idsMateriaisDevolvidos.includes(m.id_material)) {
         if (m.controle_quantidade) {
-          const ci = cautelaItens.find(item => item.id_cautela === cautId && item.id_material === m.id_material && !item.estado_devolucao);
-          const defaultQty = ci ? ci.quantidade : 1;
-          const qtyToReturn = returnedQuantities?.[m.id_material] ?? defaultQty;
-          return { ...m, quantidade: (m.quantidade || 0) + qtyToReturn };
+          const qtyConsumed = (consumedQuantities && consumedQuantities[m.id_material]) || 0;
+          if (qtyConsumed > 0) {
+            return { ...m, quantidade: Math.max(0, (m.quantidade || 0) - qtyConsumed) };
+          }
+          return m;
         }
         return { ...m, status_atual: 'disponivel' as StatusMaterial };
       }
@@ -1614,13 +1611,18 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
           idsMateriaisDevolvidos.forEach(idMat => {
             const matObj = materiaisAtualizados.find(m => m.id_material === idMat);
             if (matObj) {
-              const fieldsToUpdate = matObj.controle_quantidade 
-                ? { quantidade: matObj.quantidade } 
-                : { status_atual: matObj.status_atual };
-                
-              supabase.from('materiais').update(fieldsToUpdate).eq('id_material', idMat).then(({ error }) => {
-                if (error) console.error(`Erro ao atualizar material ${idMat} no Supabase:`, error);
-              });
+              if (matObj.controle_quantidade) {
+                const qtyConsumed = (consumedQuantities && consumedQuantities[idMat]) || 0;
+                if (qtyConsumed > 0) {
+                  supabase.from('materiais').update({ quantidade: matObj.quantidade }).eq('id_material', idMat).then(({ error }) => {
+                    if (error) console.error(`Erro ao atualizar material ${idMat} no Supabase:`, error);
+                  });
+                }
+              } else {
+                supabase.from('materiais').update({ status_atual: matObj.status_atual }).eq('id_material', idMat).then(({ error }) => {
+                  if (error) console.error(`Erro ao atualizar material ${idMat} no Supabase:`, error);
+                });
+              }
             }
           });
 
@@ -1991,7 +1993,6 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
 
       if (materialIdsToRelease.length > 0) {
         const individualMats = materiais.filter(m => materialIdsToRelease.includes(m.id_material) && !m.controle_quantidade);
-        const qtyMats = materiais.filter(m => materialIdsToRelease.includes(m.id_material) && m.controle_quantidade);
 
         if (individualMats.length > 0) {
           const { error: errMats } = await supabase
@@ -1999,19 +2000,6 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
             .update({ status_atual: 'disponivel' })
             .in('id_material', individualMats.map(m => m.id_material));
           if (errMats) console.error('Erro ao retornar materiais individuais ao estoque:', errMats);
-        }
-
-        for (const mat of qtyMats) {
-          const qtyToReturn = itemsInActiveCautelas
-            .filter(ci => ci.id_material === mat.id_material)
-            .reduce((sum, ci) => sum + ci.quantidade, 0);
-          
-          const newQty = (mat.quantidade || 0) + qtyToReturn;
-          const { error: errQty } = await supabase
-            .from('materiais')
-            .update({ quantidade: newQty })
-            .eq('id_material', mat.id_material);
-          if (errQty) console.error(`Erro ao retornar quantidade de ${mat.id_material}:`, errQty);
         }
       }
 
@@ -2021,15 +2009,8 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
       setCautelaItens(prev => prev.filter(ci => !idsCautelas.includes(ci.id_cautela)));
       if (materialIdsToRelease.length > 0) {
         setMateriais(prev => prev.map(m => {
-          if (materialIdsToRelease.includes(m.id_material)) {
-            if (!m.controle_quantidade) {
-              return { ...m, status_atual: 'disponivel' };
-            } else {
-              const qtyToReturn = itemsInActiveCautelas
-                .filter(ci => ci.id_material === m.id_material)
-                .reduce((sum, ci) => sum + ci.quantidade, 0);
-              return { ...m, quantidade: (m.quantidade || 0) + qtyToReturn };
-            }
+          if (materialIdsToRelease.includes(m.id_material) && !m.controle_quantidade) {
+            return { ...m, status_atual: 'disponivel' };
           }
           return m;
         }));
@@ -2108,25 +2089,16 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
       const itensDaCautela = cautelaItens.filter(ci => ci.id_cautela === idCautela);
       const isAtiva = cautelaObj.status_cautela !== 'devolvida';
 
-      // 1. Restaurar o inventário dos materiais associados se a cautela ainda estava ativa
+      // 1. Restaurar o status dos materiais individuais associados se a cautela ainda estava ativa
       if (isAtiva && itensDaCautela.length > 0) {
         for (const item of itensDaCautela) {
           const mat = materiais.find(m => m.id_material === item.id_material);
-          if (mat) {
-            if (!mat.controle_quantidade) {
-              const { error: errMat } = await supabase
-                .from('materiais')
-                .update({ status_atual: 'disponivel' })
-                .eq('id_material', item.id_material);
-              if (errMat) console.error(`Erro ao restaurar status do material ${item.id_material}:`, errMat);
-            } else {
-              const newQty = (mat.quantidade || 0) + item.quantidade;
-              const { error: errQty } = await supabase
-                .from('materiais')
-                .update({ quantidade: newQty })
-                .eq('id_material', item.id_material);
-              if (errQty) console.error(`Erro ao reintegrar quantidade de munição ${item.id_material}:`, errQty);
-            }
+          if (mat && !mat.controle_quantidade) {
+            const { error: errMat } = await supabase
+              .from('materiais')
+              .update({ status_atual: 'disponivel' })
+              .eq('id_material', item.id_material);
+            if (errMat) console.error(`Erro ao restaurar status do material ${item.id_material}:`, errMat);
           }
         }
       }
@@ -2165,12 +2137,8 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
       if (isAtiva && itensDaCautela.length > 0) {
         setMateriais(prev => prev.map(m => {
           const item = itensDaCautela.find(ci => ci.id_material === m.id_material);
-          if (item) {
-            if (!m.controle_quantidade) {
-              return { ...m, status_atual: 'disponivel' };
-            } else {
-              return { ...m, quantidade: (m.quantidade || 0) + item.quantidade };
-            }
+          if (item && !m.controle_quantidade) {
+            return { ...m, status_atual: 'disponivel' };
           }
           return m;
         }));

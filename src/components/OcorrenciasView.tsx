@@ -364,8 +364,11 @@ Riacho Fundo I - DF, ${dataMinusculo}.`;
           nome: pol?.nome || 'Desconhecido',
           nome_de_guerra: pol?.nome_de_guerra || pol?.nome || 'Desconhecido',
           materiais: items,
-          hora_cautela: new Date(c.data_retirada).toLocaleString(),
-          hora_devolucao: c.data_devolucao_efetiva ? new Date(c.data_devolucao_efetiva).toLocaleString() : 'Pendente'
+          hora_cautela: new Date(c.data_retirada).toLocaleString('pt-BR'),
+          is_emergencial: c.is_emergencial,
+          hora_devolucao: c.data_devolucao_efetiva ? new Date(c.data_devolucao_efetiva).toLocaleString('pt-BR') : null,
+          matricula_armeiro_retirada: c.matricula_armeiro_retirada,
+          matricula_armeiro_devolucao: c.matricula_armeiro_devolucao
         };
       });
   }, [cautelas, usuarios, cautelaItens, materiais, startDateStr, endDateStr, selectedReportTab, isReportsModalOpen]);
@@ -1831,12 +1834,25 @@ ${estoqueObservacao.trim() || 'Sem divergências ou alterações físicas relata
                                   <td className="p-3 font-semibold text-slate-300">{mov.matricula}</td>
                                   <td className="p-3 font-sans text-slate-200">{mov.nome} ({mov.nome_de_guerra})</td>
                                   <td className="p-3 font-sans text-slate-300 max-w-xs truncate" title={mov.materiais}>{mov.materiais}</td>
-                                  <td className="p-3 text-slate-455">{mov.hora_cautela}</td>
+                                  <td className="p-3 text-slate-455">
+                                    <div>{mov.hora_cautela}</div>
+                                    <div className="text-[9px] text-cyan-400 font-bold uppercase">
+                                      {mov.is_emergencial ? 'Autorizado emergencialmente' : 'Assinado eletronicamente'}
+                                    </div>
+                                  </td>
                                   <td className="p-3">
-                                    {mov.hora_devolucao === 'Pendente' ? (
-                                      <span className="text-amber-500 text-[10px] font-bold uppercase">Pendente</span>
+                                    {mov.hora_devolucao ? (
+                                      <div>
+                                        <span className="text-emerald-400">{mov.hora_devolucao}</span>
+                                        <div className="text-[9px] text-emerald-500/90 font-bold uppercase">Assinado eletronicamente</div>
+                                        {mov.matricula_armeiro_devolucao && (
+                                          <div className="text-[8px] text-slate-400 font-mono">
+                                            Matrícula: {mov.matricula_armeiro_devolucao.replace(/^PM-?/i, '').replace(/^ARM-?/i, '').replace(/^A(\d+)/i, '$1')}
+                                          </div>
+                                        )}
+                                      </div>
                                     ) : (
-                                      <span className="text-emerald-400">{mov.hora_devolucao}</span>
+                                      <span className="text-amber-500 text-[10px] font-bold uppercase">Pendente</span>
                                     )}
                                   </td>
                                 </tr>

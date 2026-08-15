@@ -1,23 +1,11 @@
 -- ============================================================
--- MIGRAÇÃO COMPLETA: Colunas Faltantes + Procedures RPC Atômicas
--- Data: 2026-08-08
--- Execute este script inteiro no SQL Editor do Supabase (Staging / Production)
+-- MIGRAÇÃO DE CORREÇÃO: Estoque Total Invariante e RPCs Atômicas
+-- Data: 2026-08-15
+-- Execute este script no SQL Editor do Supabase (Staging e Produção)
 -- ============================================================
 
 -- ------------------------------------------------------------
--- PASSO 1: ADICIONAR COLUNAS FALTANTES (SE NÃO EXISTIREM)
--- ------------------------------------------------------------
-ALTER TABLE usuarios 
-  ADD COLUMN IF NOT EXISTS tentativas_login INTEGER DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS bloqueado_ate TIMESTAMPTZ,
-  ADD COLUMN IF NOT EXISTS nome_usuario TEXT;
-
-ALTER TABLE cautelas 
-  ADD COLUMN IF NOT EXISTS is_emergencial BOOLEAN DEFAULT FALSE,
-  ADD COLUMN IF NOT EXISTS motivo_emergencial TEXT;
-
--- ------------------------------------------------------------
--- PASSO 2: RPC PARA EFETIVAR CAUTELA ATÔMICA
+-- PASSO 1: ATUALIZAR RPC PARA EFETIVAR CAUTELA (SEM DEDUZIR TOTAL)
 -- ------------------------------------------------------------
 CREATE OR REPLACE FUNCTION fn_efetivar_cautela(
   p_cautela jsonb,
@@ -132,7 +120,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY INVOKER;
 
 -- ------------------------------------------------------------
--- PASSO 3: RPC PARA REALIZAR DEVOLUÇÃO ATÔMICA
+-- PASSO 2: ATUALIZAR RPC PARA REALIZAR DEVOLUÇÃO ATÔMICA
 -- ------------------------------------------------------------
 CREATE OR REPLACE FUNCTION fn_realizar_devolucao(
   p_id_cautela text,
@@ -202,8 +190,13 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY INVOKER;
 
--- ------------------------------------------------------------
--- PASSO 4: PERMISSÕES DE EXECUÇÃO RESTRITAS (GRANT EXECUTE)
--- ------------------------------------------------------------
 GRANT EXECUTE ON FUNCTION fn_efetivar_cautela(jsonb, jsonb) TO authenticated;
 GRANT EXECUTE ON FUNCTION fn_realizar_devolucao(text, text, text, timestamptz, text, jsonb) TO authenticated;
+
+-- ------------------------------------------------------------
+-- PASSO 3: RESTAURAÇÃO IDEMPOTENTE DOS TOTAIS DE ESTOQUE
+-- ------------------------------------------------------------
+UPDATE materiais SET quantidade = 339 WHERE id_material = 'MUN-9MM' AND quantidade = 309;
+UPDATE materiais SET quantidade = 47  WHERE id_material = 'BAT-HYTERA' AND quantidade = 37;
+UPDATE materiais SET quantidade = 37  WHERE id_material = 'GL 108 MAX' AND quantidade = 36;
+UPDATE materiais SET quantidade = 201 WHERE id_material = '0' AND quantidade = 200;

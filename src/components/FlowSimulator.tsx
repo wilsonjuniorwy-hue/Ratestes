@@ -217,14 +217,24 @@ export default function FlowSimulator({
   const [selectedOcorrenciaPrint, setSelectedOcorrenciaPrint] = useState<OcorrenciaRelatorio | null>(null);
   const [printReportData, setPrintReportData] = useState<any>(null);
 
+  // Função auxiliar para higienizar matrícula para exibição limpa em relatórios (removendo prefixos A, ARM-, PM-)
+  const limparMatricula = (m?: string): string => {
+    if (!m) return '';
+    let clean = m.trim().toUpperCase();
+    clean = clean.replace(/^PM-?/i, '');
+    clean = clean.replace(/^ARM-?/i, '');
+    if (clean.length > 1 && clean.startsWith('A') && !isNaN(Number(clean.substring(1)))) {
+      clean = clean.substring(1);
+    }
+    return clean;
+  };
+
   // Auxiliar para localizar armeiro responsável pelo relatório
   const getArmeiroUser = (targetMatricula?: string) => {
     if (!db?.usuarios || db.usuarios.length === 0) return null;
 
     const normalizeMat = (m?: string) => {
       let clean = (m || '').trim().toUpperCase();
-      // Remove prefixo 'A' numérico de matrícula administrativa (ex: A12345 -> 12345)
-      // mas só se o que sobrar for numérico, para não truncar nomes que começam com 'A'
       if (clean.length > 1 && clean.startsWith('A') && !isNaN(Number(clean.substring(1)))) {
         clean = clean.substring(1);
       }
@@ -271,11 +281,21 @@ export default function FlowSimulator({
     const armeiroUser = getArmeiroUser(targetMatricula);
     const armeiroNomeCompleto = armeiroUser ? `${formatPostoGraduacaoSigla(armeiroUser.posto_graduacao)} ${armeiroUser.nome_de_guerra || armeiroUser.nome}` : fallbackTitle;
     const cleanMat = armeiroUser 
-      ? (armeiroUser.matricula.toUpperCase().startsWith('A') ? armeiroUser.matricula.substring(1) : armeiroUser.matricula) 
-      : (targetMatricula ? (targetMatricula.toUpperCase().startsWith('A') ? targetMatricula.substring(1) : targetMatricula) : 'N/A');
+      ? limparMatricula(armeiroUser.matricula) 
+      : (targetMatricula ? limparMatricula(targetMatricula) : 'N/A');
 
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: '50px', pageBreakInside: 'avoid' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: '40px', pageBreakInside: 'avoid' }}>
+        {/* Mensagem Institucional de Assinatura Eletrônica */}
+        <div style={{ textAlign: 'center', marginBottom: '16px', borderTop: '1px dashed #666', paddingTop: '10px', width: '90%' }}>
+          <div style={{ fontSize: '8.5pt', fontWeight: 'bold', color: '#111', textTransform: 'uppercase' }}>
+            Documento assinado eletronicamente pelo usuário mediante senha pessoal e intransferível.
+          </div>
+          <div style={{ fontSize: '7.5pt', color: '#444', marginTop: '2px', fontStyle: 'italic' }}>
+            Conforme Lei Federal nº 14.063/2020 e normas de segurança orgânica da PMDF.
+          </div>
+        </div>
+
         {armeiroUser?.assinatura_foto ? (
           <div style={{ marginBottom: '4px', textAlign: 'center' }}>
             <img 
@@ -285,7 +305,7 @@ export default function FlowSimulator({
             />
           </div>
         ) : (
-          <div style={{ height: '30px' }} />
+          <div style={{ height: '25px' }} />
         )}
         <div style={{ textAlign: 'center', width: '60%' }}>
           <div style={{ borderTop: '1.5px solid #000', paddingTop: '5px', fontSize: '9pt', fontWeight: 'bold' }}>
@@ -712,7 +732,7 @@ export default function FlowSimulator({
                 <tr key={c.id_cautela}>
                   <td>{c.id_cautela}</td>
                   <td>
-                    {formatPostoGraduacaoSigla(pol?.posto_graduacao)} {pol?.nome_de_guerra || pol?.nome} ({c.matricula_policial})
+                    {formatPostoGraduacaoSigla(pol?.posto_graduacao)} {pol?.nome_de_guerra || pol?.nome} ({limparMatricula(c.matricula_policial)})
                   </td>
                   <td>
                     {cItens.map(ci => {
@@ -721,17 +741,26 @@ export default function FlowSimulator({
                     }).join(', ')}
                   </td>
                   <td>
-                    {new Date(c.data_retirada).toLocaleDateString()} {new Date(c.data_retirada).toLocaleTimeString()}
-                    <br />Armeiro: {c.matricula_armeiro_retirada}
+                    <div>{new Date(c.data_retirada).toLocaleDateString('pt-BR')} {new Date(c.data_retirada).toLocaleTimeString('pt-BR')}</div>
+                    <div style={{ fontWeight: 'bold', fontSize: '7.5pt', marginTop: '2px' }}>
+                      {c.is_emergencial ? 'Autorizado emergencialmente' : 'Assinado eletronicamente'}
+                    </div>
                   </td>
                   <td>
                     {c.data_devolucao_efetiva ? (
                       <>
-                        {new Date(c.data_devolucao_efetiva).toLocaleDateString()} {new Date(c.data_devolucao_efetiva).toLocaleTimeString()}
-                        <br />Armeiro: {c.matricula_armeiro_devolucao}
+                        <div>{new Date(c.data_devolucao_efetiva).toLocaleDateString('pt-BR')} {new Date(c.data_devolucao_efetiva).toLocaleTimeString('pt-BR')}</div>
+                        <div style={{ fontWeight: 'bold', fontSize: '7.5pt', marginTop: '2px' }}>
+                          Assinado eletronicamente
+                        </div>
+                        {c.matricula_armeiro_devolucao && (
+                          <div style={{ fontSize: '7.5pt', color: '#333' }}>
+                            Matrícula: {limparMatricula(c.matricula_armeiro_devolucao)}
+                          </div>
+                        )}
                       </>
                     ) : (
-                      'Em aberto'
+                      <span style={{ fontStyle: 'italic' }}>Em aberto</span>
                     )}
                   </td>
                   <td>{c.status_cautela.toUpperCase()}</td>
@@ -775,7 +804,7 @@ export default function FlowSimulator({
                    <td>
                     {(() => {
                       const exec = db.usuarios.find(u => u.matricula === log.matricula_executor);
-                      return exec ? `${formatPostoGraduacaoSigla(exec.posto_graduacao)} ${exec.nome_de_guerra || exec.nome} (${log.matricula_executor})` : log.matricula_executor;
+                      return exec ? `${formatPostoGraduacaoSigla(exec.posto_graduacao)} ${exec.nome_de_guerra || exec.nome} (${limparMatricula(log.matricula_executor)})` : limparMatricula(log.matricula_executor);
                     })()}
                   </td>
                   <td>{log.detalhes}</td>
@@ -810,7 +839,7 @@ export default function FlowSimulator({
                   {selectedOcorrenciaPrint.tipo.toUpperCase().replace('_', ' ')}
                 </td>
                 <td style={{ border: '1px solid #000', padding: '8px', fontWeight: 'bold' }}>Armeiro Relator:</td>
-                <td style={{ border: '1px solid #000', padding: '8px' }}>{selectedOcorrenciaPrint.matricula_armeiro}</td>
+                <td style={{ border: '1px solid #000', padding: '8px' }}>{limparMatricula(selectedOcorrenciaPrint.matricula_armeiro)}</td>
               </tr>
               <tr>
                 <td style={{ border: '1px solid #000', padding: '8px', fontWeight: 'bold' }}>Assunto / Título:</td>
@@ -946,11 +975,32 @@ export default function FlowSimulator({
                     <tbody>
                       {printReportData.data.movimentacoes.map((mov: any, index: number) => (
                         <tr key={index}>
-                          <td>{mov.matricula}</td>
+                          <td style={{ fontWeight: 'bold' }}>{limparMatricula(mov.matricula)}</td>
                           <td>{mov.nome_de_guerra || mov.nome}</td>
                           <td>{mov.materiais}</td>
-                          <td>{mov.hora_cautela}</td>
-                          <td>{mov.hora_devolucao}</td>
+                          <td>
+                            <div>{mov.hora_cautela}</div>
+                            <div style={{ fontWeight: 'bold', fontSize: '7.5pt', marginTop: '2px' }}>
+                              {mov.is_emergencial ? 'Autorizado emergencialmente' : 'Assinado eletronicamente'}
+                            </div>
+                          </td>
+                          <td>
+                            {mov.hora_devolucao ? (
+                              <>
+                                <div>{mov.hora_devolucao}</div>
+                                <div style={{ fontWeight: 'bold', fontSize: '7.5pt', marginTop: '2px' }}>
+                                  Assinado eletronicamente
+                                </div>
+                                {mov.matricula_armeiro_devolucao && (
+                                  <div style={{ fontSize: '7.5pt', color: '#333' }}>
+                                    Matrícula: {limparMatricula(mov.matricula_armeiro_devolucao)}
+                                  </div>
+                                )}
+                              </>
+                            ) : (
+                              <span style={{ fontStyle: 'italic' }}>Pendente</span>
+                            )}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -976,7 +1026,7 @@ export default function FlowSimulator({
                     <tbody>
                       {printReportData.data.pendentes.map((pend: any, index: number) => (
                         <tr key={index}>
-                          <td>{pend.matricula}</td>
+                          <td>{limparMatricula(pend.matricula)}</td>
                           <td>{pend.nome_de_guerra || pend.nome}</td>
                           <td>{pend.materiais}</td>
                           <td>{pend.previsao}</td>
@@ -1007,7 +1057,7 @@ export default function FlowSimulator({
                     <tbody>
                       {printReportData.data.armasParticularesMov.map((mov: any, index: number) => (
                         <tr key={index}>
-                          <td>{mov.matricula}</td>
+                          <td>{limparMatricula(mov.matricula)}</td>
                           <td>{mov.nome_de_guerra || mov.nome}</td>
                           <td>{mov.modelo_serie}</td>
                           <td style={{ fontWeight: 'bold' }}>{mov.tipo_mov}</td>
@@ -1077,7 +1127,7 @@ export default function FlowSimulator({
                 <tbody>
                   {printReportData.data.armas.map((arma: any, index: number) => (
                     <tr key={index}>
-                      <td>{arma.matricula}</td>
+                      <td>{limparMatricula(arma.matricula)}</td>
                       <td>{arma.nome}</td>
                       <td>{arma.modelo} {arma.fabricante ? `[${arma.fabricante}]` : ''} {arma.calibre ? `(Cal. ${arma.calibre})` : ''} {arma.numero_serie ? `[SN: ${arma.numero_serie}]` : ''}</td>
                       <td>{arma.data_deposito}</td>
@@ -1109,7 +1159,7 @@ export default function FlowSimulator({
                   {printReportData.data.itens && printReportData.data.itens.map((item: any, index: number) => (
                     <tr key={index}>
                       <td style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{item.id_cautela}</td>
-                      <td>{item.matricula}</td>
+                      <td>{limparMatricula(item.matricula)}</td>
                       <td style={{ fontWeight: 'bold' }}>{item.policial}</td>
                       <td style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{item.id_material}</td>
                       <td>{item.categoria}</td>
