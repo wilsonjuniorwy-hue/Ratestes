@@ -51,7 +51,7 @@ interface TotemViewProps {
     radioBatteries?: Record<string, { brand: 'Hytera' | 'Sepura'; qty: number }>,
     isEmergencial?: boolean,
     motivoEmergencial?: string
-  ) => Cautela | null;
+  ) => Promise<Cautela | null> | Cautela | null;
   cadastrarPolicial: (novoPolicial: Usuario) => Promise<{ success: boolean; error?: string }>;
 
   isPermanentMode?: boolean;
@@ -100,6 +100,7 @@ export function TotemView({
   const [confirmarCautelaPin, setConfirmarCautelaPin] = React.useState('');
   const [pinError, setPinError] = React.useState('');
   const [motivoEmergencialInput, setMotivoEmergencialInput] = React.useState('');
+  const [isSubmittingCautela, setIsSubmittingCautela] = React.useState(false);
   const [isSearchModalOpen, setIsSearchModalOpen] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState('');
   const [forcePermitirMaisItens, setForcePermitirMaisItens] = React.useState(false);
@@ -468,7 +469,8 @@ export function TotemView({
   };
 
   // ---- EFETIVAR CAUTELA ----
-  const handleEfetivarCautela = () => {
+  const handleEfetivarCautela = async () => {
+    if (isSubmittingCautela) return;
     if (!loggedUser || cartItens.length === 0) return;
 
     // Se for cautela emergencial, ignora verificação de PIN da senha do policial
@@ -487,22 +489,29 @@ export function TotemView({
         finalObs = finalObs ? `${finalObs} | [Baterias HT: ${batteryNotes.join(', ')}]` : `[Baterias HT: ${batteryNotes.join(', ')}]`;
       }
 
-      const newCautela = processEfetivarCautela(
-        loggedUser.matricula, 
-        cartItens, 
-        finalObs, 
-        cartWeaponMagazines, 
-        isPermanentMode, 
-        cartRadioBatteries,
-        true,
-        motivoEmergencialInput
-      );
-      if (newCautela) {
-        setGeneratedCautela(newCautela);
-        setConfirmarCautelaPin('');
-        setIsSearchModalOpen(false);
-        setSearchQuery('');
-        setPolicialStep('sucesso');
+      setIsSubmittingCautela(true);
+      try {
+        const newCautela = await processEfetivarCautela(
+          loggedUser.matricula, 
+          cartItens, 
+          finalObs, 
+          cartWeaponMagazines, 
+          isPermanentMode, 
+          cartRadioBatteries,
+          true,
+          motivoEmergencialInput
+        );
+        if (newCautela) {
+          setGeneratedCautela(newCautela);
+          setConfirmarCautelaPin('');
+          setIsSearchModalOpen(false);
+          setSearchQuery('');
+          setPolicialStep('sucesso');
+        }
+      } catch (err) {
+        console.error('Erro ao efetivar cautela emergencial:', err);
+      } finally {
+        setIsSubmittingCautela(false);
       }
       return;
     }
@@ -512,9 +521,12 @@ export function TotemView({
       return;
     }
 
-    comparePassword(confirmarCautelaPin, loggedUser.senha_hash).then(({ matches }) => {
+    try {
+      setIsSubmittingCautela(true);
+      const { matches } = await comparePassword(confirmarCautelaPin, loggedUser.senha_hash);
       if (!matches) {
         setPinError('Inconsistência cadastral. Senha de assinatura digital incorreta.');
+        setIsSubmittingCautela(false);
         return;
       }
 
@@ -534,7 +546,7 @@ export function TotemView({
         finalObs = finalObs ? `${finalObs} | [Baterias HT: ${batteryNotes.join(', ')}]` : `[Baterias HT: ${batteryNotes.join(', ')}]`;
       }
 
-      const newCautela = processEfetivarCautela(
+      const newCautela = await processEfetivarCautela(
         loggedUser.matricula, 
         cartItens, 
         finalObs, 
@@ -551,7 +563,11 @@ export function TotemView({
         setSearchQuery('');
         setPolicialStep('sucesso');
       }
-    });
+    } catch (err) {
+      console.error('Erro ao efetivar cautela:', err);
+    } finally {
+      setIsSubmittingCautela(false);
+    }
   };
 
   // ---- LOGOUT POLICIAL ----
@@ -1317,12 +1333,16 @@ export function TotemView({
                   <button
                     id="btn-finalize-cautela"
                     onClick={handleEfetivarCautela}
-                    className={isEmergencyMode
-                      ? "bg-red-600 hover:bg-red-550 text-white font-bold py-2.5 px-5 rounded-lg text-xs flex items-center gap-1.5 transition-all shadow-md uppercase tracking-wider cursor-pointer glow-red"
-                      : "bg-blue-600 hover:bg-blue-500 text-white font-bold py-2.5 px-5 rounded-lg text-xs flex items-center gap-1.5 transition-all shadow-md uppercase tracking-wider cursor-pointer glow-blue"
+                    disabled={isSubmittingCautela}
+                    className={isSubmittingCautela
+                      ? "opacity-60 cursor-not-allowed bg-slate-700 text-slate-300 font-bold py-2.5 px-5 rounded-lg text-xs flex items-center gap-1.5 transition-all shadow-md uppercase tracking-wider"
+                      : (isEmergencyMode
+                        ? "bg-red-600 hover:bg-red-550 text-white font-bold py-2.5 px-5 rounded-lg text-xs flex items-center gap-1.5 transition-all shadow-md uppercase tracking-wider cursor-pointer glow-red"
+                        : "bg-blue-600 hover:bg-blue-500 text-white font-bold py-2.5 px-5 rounded-lg text-xs flex items-center gap-1.5 transition-all shadow-md uppercase tracking-wider cursor-pointer glow-blue"
+                      )
                     }
                   >
-                    <span>{isEmergencyMode ? 'Efetivar Cautela Emergencial' : 'Assinar & Cautelar'}</span>
+                    <span>{isSubmittingCautela ? 'Gravando Cautela...' : (isEmergencyMode ? 'Efetivar Cautela Emergencial' : 'Assinar & Cautelar')}</span>
                     <ChevronRight className="h-4.5 w-4.5" />
                   </button>
                 </div>
@@ -1722,15 +1742,15 @@ export function TotemView({
                       <button
                         type="button"
                         onClick={handleEfetivarCautela}
-                        disabled={cartItens.length === 0}
+                        disabled={cartItens.length === 0 || isSubmittingCautela}
                         className={`w-full font-bold font-mono py-3 rounded-lg text-xs flex items-center justify-center gap-1.5 transition-all uppercase tracking-wider ${
-                          cartItens.length > 0
+                          cartItens.length > 0 && !isSubmittingCautela
                             ? 'bg-cyan-600 hover:bg-cyan-550 text-white cursor-pointer shadow-md glow-cyan font-black'
-                            : 'bg-slate-955 border border-slate-850 text-slate-650 cursor-not-allowed'
+                            : 'bg-slate-955 border border-slate-850 text-slate-650 cursor-not-allowed opacity-60'
                         }`}
                       >
                         <FileCheck2 className="h-4 w-4" />
-                        <span>Confirmar & Cautelar</span>
+                        <span>{isSubmittingCautela ? 'Gravando Cautela...' : 'Confirmar & Cautelar'}</span>
                       </button>
                     </div>
                   )}

@@ -25,9 +25,40 @@ const defaultModelosArmas = [
   { modelo: 'Espingarda Calibre 12', calibre: '12' }
 ];
 
+let _idCounterSupabase = 0;
+const gerarIdUnico = (prefix: string = 'ITEM'): string => {
+  _idCounterSupabase = (_idCounterSupabase + 1) % 1000000;
+  const timestamp = Date.now().toString(36).toUpperCase();
+  const counterHex = _idCounterSupabase.toString(36).toUpperCase().padStart(4, '0');
+  const rand = Math.floor(100000 + Math.random() * 900000);
+  return `${prefix}-${timestamp}-${counterHex}-${rand}`;
+};
+
 export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?: string | null, enabled: boolean = true) {
   const offlineDb = useOfflineDatabase();
   const [isOnline, setIsOnline] = useState(typeof window !== 'undefined' ? window.navigator.onLine : true);
+
+  const gerarProximoIdCautela = async (): Promise<string> => {
+    if (isOnline) {
+      for (let tentativa = 1; tentativa <= 3; tentativa++) {
+        try {
+          const { data, error } = await supabase.rpc('proximo_id_cautela');
+          if (!error && data && typeof data === 'string' && data.startsWith('CAUT-')) {
+            return data;
+          }
+          console.warn(`Tentativa ${tentativa} de obter proximo_id_cautela via RPC falhou:`, error?.message);
+        } catch (e: any) {
+          console.warn(`Exceção na tentativa ${tentativa} de obter proximo_id_cautela:`, e?.message);
+        }
+      }
+    }
+    // Fallback de alta entropia com timestamp + aleatório caso offline ou falha de RPC
+    const agora = new Date();
+    const ano = agora.getFullYear();
+    const timestamp = Date.now().toString(36).toUpperCase();
+    const rand = Math.floor(1000 + Math.random() * 9000);
+    return `CAUT-${timestamp}-${rand}-${ano}`;
+  };
 
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [materiais, setMateriais] = useState<Material[]>([]);
@@ -365,7 +396,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
   const registrarLogAuditoria = (executor: string, tipo: AuditoriaLog['tipo_evento'], detalhes: string, overrideQuartelId?: string | null) => {
     const targetQuartelId = overrideQuartelId !== undefined ? overrideQuartelId : (quartelId || null);
     const novoLog: AuditoriaLog = {
-      id_log: `LOG-${Math.floor(100000 + Math.random() * 900000)}`,
+      id_log: gerarIdUnico('LOG'),
       data_hora: new Date().toISOString(),
       matricula_executor: executor,
       tipo_evento: tipo,
@@ -892,7 +923,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
     const armeiroSvc = activeArmeiroMatricula || usuarios.find(u => u.perfil === 'armeiro_gestor')?.matricula || 'SYS-AM';
 
     const novaOco: OcorrenciaRelatorio = {
-      id_ocorrencia: `OCO-${Math.floor(100000 + Math.random() * 900000)}`,
+      id_ocorrencia: gerarIdUnico('OCO'),
       data_hora: new Date().toISOString(),
       titulo: titulo,
       tipo: tipo,
@@ -1122,7 +1153,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
   };
 
   // ---- EFETIVAR CAUTELA ----
-  const processEfetivarCautela = (
+  const processEfetivarCautela = async (
     matriculaPolicial: string, 
     cartItens: string[], 
     observacoes: string,
@@ -1131,11 +1162,11 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
     radioBatteries?: Record<string, { brand: 'Hytera' | 'Sepura'; qty: number }>,
     isEmergencial?: boolean,
     motivoEmergencial?: string
-  ) => {
+  ): Promise<Cautela | null> => {
     const user = usuarios.find(u => u.matricula === matriculaPolicial);
     if (!user) return null;
 
-    const idNewCautela = `CAUT-${Math.floor(1000 + Math.random() * 9000)}-2026`;
+    let idNewCautela = await gerarProximoIdCautela();
     const armeiroSvcMatricula = activeArmeiroMatricula || usuarios.find(u => u.perfil === 'armeiro_gestor')?.matricula || user.matricula;
 
     const novaCautela: Cautela = {
@@ -1178,10 +1209,10 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
       }
     });
 
-    const novosItensCautela: CautelaItem[] = Object.entries(groupedCart).map(([idMat, qty], idx) => {
+    const novosItensCautela: CautelaItem[] = Object.entries(groupedCart).map(([idMat, qty]) => {
       const magQty = (weaponMagazines && weaponMagazines[idMat]) || 0;
       return {
-        id_cautela_item: `ITEM-${Math.floor(100000 + Math.random() * 900000)}`,
+        id_cautela_item: gerarIdUnico('ITEM'),
         id_cautela: idNewCautela,
         id_material: idMat.trim(),
         quantidade: qty,
@@ -1200,7 +1231,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
           batteryDeductions[batId] = (batteryDeductions[batId] || 0) + bInfo.qty;
 
           novosItensCautela.push({
-            id_cautela_item: `ITEM-BAT-${Math.floor(100000 + Math.random() * 900000)}`,
+            id_cautela_item: gerarIdUnico('ITEM-BAT'),
             id_cautela: idNewCautela,
             id_material: batId,
             quantidade: bInfo.qty,
@@ -1233,31 +1264,6 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
       return u;
     });
 
-    // Update local state
-    setCautelas(prev => [novaCautela, ...prev]);
-    setCautelaItens(prev => [...prev, ...novosItensCautela]);
-    setMateriais(materiaisAtualizados);
-    setUsuarios(usuariosAtualizados);
-
-    const salvarItensNoSupabase = () => {
-      const itensToInsert = novosItensCautela.map(item => {
-        const itemData: any = { ...item };
-        if (quartelId) itemData.id_quartel = quartelId;
-        return itemData;
-      });
-      supabase.from('cautela_itens').insert(itensToInsert).then(({ error: errItens }) => {
-        if (errItens) {
-          console.error('Erro ao salvar itens da cautela no Supabase:', errItens);
-          alert(`ALERTA DE FALHA NO SUPABASE:\nNão foi possível salvar os itens da cautela.\nErro: ${errItens.message}`);
-        } else {
-          console.log('✔ Cautela e itens salvos com sucesso no Supabase!');
-          setTimeout(() => {
-            fetchData();
-          }, 2000);
-        }
-      });
-    };
-
     if (!isOnline) {
       enfileirarEAtualizar('EFETIVAR_CAUTELA', { 
         matriculaPolicial, 
@@ -1276,37 +1282,80 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
       );
     } else {
       // Tentar executar via RPC Atômica no Postgres (fn_efetivar_cautela com trava FOR UPDATE)
-      supabase.rpc('fn_efetivar_cautela', {
+      const { error: rpcErr } = await supabase.rpc('fn_efetivar_cautela', {
         p_cautela: cautelaToInsert,
         p_itens: novosItensCautela
-      }).then(({ error: rpcErr }) => {
-        if (rpcErr) {
-          console.error('🚨 [ALERTA DE MIGRAÇÃO OU RPC] Falha na procedure RPC fn_efetivar_cautela:', rpcErr.message);
-          supabase.from('cautelas').insert(cautelaToInsert).then(({ error: errCautela }) => {
-            if (errCautela) {
-              console.error('Erro ao salvar nova cautela no Supabase:', errCautela);
-              alert(`ERRO AO GRAVAR CAUTELA NO BANCO:\n${errCautela.message}`);
-            } else {
-              salvarItensNoSupabase();
-            }
-          });
-          const individualMats = cartItens.filter(id => !materiais.find(m => m.id_material === id)?.controle_quantidade);
-          if (individualMats.length > 0) {
-            supabase.from('materiais').update({ status_atual: 'cautelado' }).in('id_material', individualMats);
-          }
-          if (!isPermanent) {
-            supabase.from('usuarios').update({ situacao_cautela: 'pendente_devolucao' }).eq('matricula', matriculaPolicial);
-          }
-        } else {
-          console.log('✔ Cautela processada atomicamente via RPC Postgres (fn_efetivar_cautela)!');
-        }
       });
+
+      if (rpcErr) {
+        console.warn('🚨 [FALLBACK OU RETRY] Falha na procedure RPC fn_efetivar_cautela, realizando inserção com proteção:', rpcErr.message);
+        
+        let insertSuccess = false;
+        let lastError: any = null;
+
+        for (let retry = 1; retry <= 3; retry++) {
+          const { error: errCautela } = await supabase.from('cautelas').insert(cautelaToInsert);
+          if (!errCautela) {
+            insertSuccess = true;
+            break;
+          }
+          lastError = errCautela;
+          console.warn(`Tentativa ${retry} de salvar cautela direta falhou:`, errCautela.message);
+
+          if (errCautela.code === '23505' || errCautela.message?.includes('cautelas_pkey')) {
+            const retryId = await gerarProximoIdCautela();
+            idNewCautela = retryId;
+            cautelaToInsert.id_cautela = retryId;
+            novaCautela.id_cautela = retryId;
+            novosItensCautela.forEach(item => { item.id_cautela = retryId; });
+          }
+        }
+
+        if (!insertSuccess) {
+          console.error('Erro definitivo ao salvar nova cautela no Supabase:', lastError);
+          alert(`ERRO AO GRAVAR CAUTELA NO BANCO:\n${lastError?.message || 'Falha de comunicação com o banco de dados.'}`);
+          return null;
+        }
+
+        // Inserir itens da cautela
+        const itensToInsert = novosItensCautela.map(item => {
+          const itemData: any = { ...item };
+          if (quartelId) itemData.id_quartel = quartelId;
+          return itemData;
+        });
+
+        const { error: errItens } = await supabase.from('cautela_itens').insert(itensToInsert);
+        if (errItens) {
+          console.error('Erro ao salvar itens da cautela no Supabase:', errItens);
+          alert(`ALERTA DE FALHA NO SUPABASE:\nNão foi possível salvar os itens da cautela.\nErro: ${errItens.message}`);
+        } else {
+          console.log('✔ Cautela e itens salvos com sucesso no Supabase!');
+          setTimeout(() => { fetchData(); }, 1500);
+        }
+
+        const individualMats = cartItens.filter(id => !materiais.find(m => m.id_material === id)?.controle_quantidade);
+        if (individualMats.length > 0) {
+          await supabase.from('materiais').update({ status_atual: 'cautelado' }).in('id_material', individualMats);
+        }
+        if (!isPermanent) {
+          await supabase.from('usuarios').update({ situacao_cautela: 'pendente_devolucao' }).eq('matricula', matriculaPolicial);
+        }
+      } else {
+        console.log('✔ Cautela processada atomicamente via RPC Postgres (fn_efetivar_cautela)!');
+        setTimeout(() => { fetchData(); }, 1500);
+      }
     }
+
+    // Update local state
+    setCautelas(prev => [novaCautela, ...prev]);
+    setCautelaItens(prev => [...prev, ...novosItensCautela]);
+    setMateriais(materiaisAtualizados);
+    setUsuarios(usuariosAtualizados);
 
     registrarLogAuditoria(
       armeiroSvcMatricula, 
       'registro_cautela', 
-      `Cautela ${idNewCautela} autorizada pelo armeiro para o policial ${user.posto_graduacao || ''} ${user.nome_de_guerra || user.nome} (Matrícula: ${matriculaPolicial}). Itens: ${Object.entries(groupedCart).map(([id, qty]) => `${id} (x${qty})`).join(', ')}.`
+      `Cautela ${novaCautela.id_cautela} autorizada pelo armeiro para o policial ${user.posto_graduacao || ''} ${user.nome_de_guerra || user.nome} (Matrícula: ${matriculaPolicial}). Itens: ${Object.entries(groupedCart).map(([id, qty]) => `${id} (x${qty})`).join(', ')}.`
     );
 
     return novaCautela;
@@ -1363,7 +1412,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
         ? (consumedQuantities[idMat] ?? 0)
         : 0;
 
-      const condition = claimConditions?.[idMat] || 'bom';
+      const condition = claimConditions?.[idMat] || 'em_condicoes_de_uso';
       const totalProcessed = qtyToReturn + qtyConsumed;
 
       if (totalProcessed >= ci.quantidade) {
@@ -1373,7 +1422,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
             quantidade: qtyToReturn,
             estado_devolucao: condition
           });
-          const newId = `ITEM-CONS-${Math.floor(Math.random() * 100000)}`;
+          const newId = gerarIdUnico('ITEM-CONS');
           activeItemsMap.set(newId, {
             id_cautela_item: newId,
             id_cautela: cautId,
@@ -1403,7 +1452,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
         });
 
         if (qtyToReturn > 0) {
-          const newIdDev = `ITEM-DEV-${Math.floor(Math.random() * 100000)}`;
+          const newIdDev = gerarIdUnico('ITEM-DEV');
           activeItemsMap.set(newIdDev, {
             id_cautela_item: newIdDev,
             id_cautela: cautId,
@@ -1416,7 +1465,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
         }
 
         if (qtyConsumed > 0) {
-          const newIdCons = `ITEM-CONS-${Math.floor(Math.random() * 100000)}`;
+          const newIdCons = gerarIdUnico('ITEM-CONS');
           activeItemsMap.set(newIdCons, {
             id_cautela_item: newIdCons,
             id_cautela: cautId,

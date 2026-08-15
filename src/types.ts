@@ -23,7 +23,7 @@ export type SituacaoMilitar = 'apto' | 'suspenso' | 'pendente_devolucao' | 'rest
 export type StatusMaterial = 'disponivel' | 'cautelado' | 'manutencao' | 'condenado' | 'indisponivel' | 'danificado' | 'retirado';
 
 // --- Condição de Conservação do Item ---
-export type CondicaoUso = 'excelente' | 'bom' | 'regular' | 'avariado';
+export type CondicaoUso = 'em_condicoes_de_uso' | 'avariado' | 'excelente' | 'bom' | 'regular';
 
 // --- Status da Cautela ---
 export type StatusCautela = 'ativa' | 'devolvida' | 'atrasada' | 'prorrogada' | 'permanente';

@@ -7,6 +7,15 @@ import { useState, useEffect } from 'react';
 import { Usuario, Categoria, Material, Cautela, CautelaItem, AuditoriaLog, OcorrenciaRelatorio, SituacaoMilitar, StatusMaterial, CondicaoUso } from '../types';
 import { mockUsuarios, mockCategorias, mockMateriais, mockCautelas, mockCautelaItens, mockAuditoriaLogs, mockOcorrencias } from '../mockData';
 
+let _idCounterMock = 0;
+const gerarIdUnico = (prefix: string = 'ITEM'): string => {
+  _idCounterMock = (_idCounterMock + 1) % 1000000;
+  const timestamp = Date.now().toString(36).toUpperCase();
+  const counterHex = _idCounterMock.toString(36).toUpperCase().padStart(4, '0');
+  const rand = Math.floor(100000 + Math.random() * 900000);
+  return `${prefix}-${timestamp}-${counterHex}-${rand}`;
+};
+
 export function useMockDatabase() {
   // ---- ESTADOS COMPARTILHADOS SIMULANDO O SGBD RELACIONAL ----
   const [usuarios, setUsuarios] = useState<Usuario[]>(() => {
@@ -368,7 +377,11 @@ export function useMockDatabase() {
     const user = usuarios.find(u => u.matricula === matriculaPolicial);
     if (!user) return null;
 
-    const idNewCautela = `CAUT-${Math.floor(1000 + Math.random() * 9000)}-2026`;
+    const agora = new Date();
+    const ano = agora.getFullYear();
+    const timestamp = Date.now().toString(36).toUpperCase();
+    const rand = Math.floor(1000 + Math.random() * 9000);
+    const idNewCautela = `CAUT-${timestamp}-${rand}-${ano}`;
     const armeiroSvc = usuarios.find(u => u.perfil === 'armeiro_gestor') || user;
 
     const novaCautela: Cautela = {
@@ -391,10 +404,10 @@ export function useMockDatabase() {
       groupedCart[id] = (groupedCart[id] || 0) + 1;
     });
 
-    const novosItensCautela: CautelaItem[] = Object.entries(groupedCart).map(([idMat, qty], idx) => {
+    const novosItensCautela: CautelaItem[] = Object.entries(groupedCart).map(([idMat, qty]) => {
       const magQty = (weaponMagazines && weaponMagazines[idMat]) || 0;
       return {
-        id_cautela_item: `ITEM-NEW-${idx}-${Math.floor(Math.random() * 10000)}`,
+        id_cautela_item: gerarIdUnico('ITEM'),
         id_cautela: idNewCautela,
         id_material: idMat,
         quantidade: qty,
@@ -412,7 +425,7 @@ export function useMockDatabase() {
           batteryDeductions[batId] = (batteryDeductions[batId] || 0) + bInfo.qty;
 
           novosItensCautela.push({
-            id_cautela_item: `ITEM-BAT-${Math.floor(Math.random() * 100000)}`,
+            id_cautela_item: gerarIdUnico('ITEM-BAT'),
             id_cautela: idNewCautela,
             id_material: batId,
             quantidade: bInfo.qty,
@@ -512,7 +525,7 @@ export function useMockDatabase() {
         ? (consumedQuantities[idMat] ?? 0)
         : 0;
 
-      const condition = claimConditions?.[idMat] || 'bom';
+      const condition = claimConditions?.[idMat] || 'em_condicoes_de_uso';
       const totalProcessed = qtyToReturn + qtyConsumed;
 
       if (totalProcessed >= ci.quantidade) {
@@ -525,7 +538,7 @@ export function useMockDatabase() {
             estado_devolucao: condition
           });
           // Cria um novo para o consumido
-          const newId = `ITEM-CONS-${Math.floor(Math.random() * 100000)}`;
+          const newId = gerarIdUnico('ITEM-CONS');
           activeItemsMap.set(newId, {
             id_cautela_item: newId,
             id_cautela: cautId,
@@ -559,7 +572,7 @@ export function useMockDatabase() {
 
         // Cria item devolvido se maior que 0
         if (qtyToReturn > 0) {
-          const newIdDev = `ITEM-DEV-${Math.floor(Math.random() * 100000)}`;
+          const newIdDev = gerarIdUnico('ITEM-DEV');
           activeItemsMap.set(newIdDev, {
             id_cautela_item: newIdDev,
             id_cautela: cautId,
@@ -572,7 +585,7 @@ export function useMockDatabase() {
 
         // Cria item consumido se maior que 0
         if (qtyConsumed > 0) {
-          const newIdCons = `ITEM-CONS-${Math.floor(Math.random() * 100000)}`;
+          const newIdCons = gerarIdUnico('ITEM-CONS');
           activeItemsMap.set(newIdCons, {
             id_cautela_item: newIdCons,
             id_cautela: cautId,

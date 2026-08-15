@@ -35,6 +35,16 @@ interface ArmeiroViewProps {
   handlePrintRelatorio?: (reportData: any) => void;
 }
 
+export function getRotuloEstadoDevolucao(item?: { estado_devolucao?: string; consumido?: boolean }): string {
+  if (!item) return 'EM CONDIÇÕES DE USO';
+  if (item.consumido) return 'CONSUMIDO EM SERVIÇO';
+  if (item.estado_devolucao === 'avariado') return 'AVARIADO';
+  if (item.estado_devolucao === 'em_condicoes_de_uso' || item.estado_devolucao === 'bom' || item.estado_devolucao === 'excelente') {
+    return 'EM CONDIÇÕES DE USO';
+  }
+  return (item.estado_devolucao || 'EM CONDIÇÕES DE USO').replace(/_/g, ' ').toUpperCase();
+}
+
 export function ArmeiroView({
   usuarios,
   materiais,
@@ -912,7 +922,7 @@ export function ArmeiroView({
                                 <p>Saída: {new Date(caut.data_retirada).toLocaleTimeString()} (Armeiro: {caut.matricula_armeiro_retirada})</p>
                                 {caut.data_devolucao_efetiva ? (
                                   <p className="text-emerald-450 font-bold uppercase tracking-wider text-[9px] mt-1 bg-emerald-950/20 px-2 py-0.5 border border-emerald-900/30 rounded w-fit">
-                                    Devolução: {new Date(caut.data_devolucao_efetiva).toLocaleString()} | Laudo: {(itemDtl?.estado_devolucao || 'bom').toUpperCase()}
+                                    Devolução: {new Date(caut.data_devolucao_efetiva).toLocaleString()} | Laudo: {getRotuloEstadoDevolucao(itemDtl)}
                                   </p>
                                 ) : (
                                   <p className="text-red-400 font-bold uppercase tracking-wider text-[9px] mt-1 bg-red-955/20 px-2 py-0.5 border border-red-900/30 rounded w-fit animate-pulse">
@@ -1209,7 +1219,7 @@ export function ArmeiroView({
                                             processDevolucao(
                                               item.cautela.id_cautela,
                                               [item.id_material],
-                                              { [item.id_material]: 'bom' },
+                                              { [item.id_material]: 'em_condicoes_de_uso' },
                                               'Baixa expressa de carga pessoal permanente pelo armeiro.',
                                               false,
                                               { [item.id_material]: item.quantidade },
@@ -1345,7 +1355,7 @@ export function ArmeiroView({
                               const matches = cautelaItens.filter(ci => ci.id_cautela === c.id_cautela && !ci.estado_devolucao);
                               setItemsToReturn(matches.map(m => m.id_material));
                               const initial: Record<string, CondicaoUso> = {};
-                              matches.forEach(m => { initial[m.id_material] = 'bom'; });
+                              matches.forEach(m => { initial[m.id_material] = 'em_condicoes_de_uso'; });
                               setClaimConditions(initial);
                               setDevolucaoSuccessMsg('');
                               setDevolucaoErrorMsg('');
@@ -1545,16 +1555,14 @@ export function ArmeiroView({
                                         <div className="space-y-0.5">
                                           <span className="text-[8px] text-slate-500 font-mono font-bold block uppercase tracking-wide">Laudo Físico:</span>
                                           <select
-                                            value={claimConditions[ci.id_material] || 'bom'}
+                                            value={claimConditions[ci.id_material] || 'em_condicoes_de_uso'}
                                             onChange={(e) => setClaimConditions(prev => ({
                                               ...prev,
                                               [ci.id_material]: e.target.value as CondicaoUso
                                             }))}
                                             className="bg-[#0a1120] border border-slate-850 rounded px-2 py-1 text-[10px] font-mono text-slate-350 focus:outline-none cursor-pointer"
                                           >
-                                            <option value="excelente">Excelente</option>
-                                            <option value="bom">Bom (Comum)</option>
-                                            <option value="regular">Regular</option>
+                                            <option value="em_condicoes_de_uso">Em condições de uso</option>
                                             <option value="avariado">Avariado</option>
                                           </select>
                                         </div>
