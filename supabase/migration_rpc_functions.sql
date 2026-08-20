@@ -129,7 +129,7 @@ BEGIN
 
   RETURN jsonb_build_object('success', true, 'id_cautela', p_cautela->>'id_cautela');
 END;
-$$ LANGUAGE plpgsql SECURITY INVOKER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 -- ------------------------------------------------------------
 -- PASSO 3: RPC PARA REALIZAR DEVOLUÇÃO ATÔMICA
@@ -200,10 +200,10 @@ BEGIN
 
   RETURN jsonb_build_object('success', true, 'id_cautela', p_id_cautela);
 END;
-$$ LANGUAGE plpgsql SECURITY INVOKER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 -- ------------------------------------------------------------
 -- PASSO 4: PERMISSÕES DE EXECUÇÃO RESTRITAS (GRANT EXECUTE)
 -- ------------------------------------------------------------
-GRANT EXECUTE ON FUNCTION fn_efetivar_cautela(jsonb, jsonb) TO authenticated;
-GRANT EXECUTE ON FUNCTION fn_realizar_devolucao(text, text, text, timestamptz, text, jsonb) TO authenticated;
+GRANT EXECUTE ON FUNCTION fn_efetivar_cautela(jsonb, jsonb) TO authenticated, anon;
+GRANT EXECUTE ON FUNCTION fn_realizar_devolucao(text, text, text, timestamptz, text, jsonb) TO authenticated, anon;

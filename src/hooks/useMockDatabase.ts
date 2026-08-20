@@ -483,15 +483,11 @@ export function useMockDatabase() {
     const armeiroResponsavel = usuarios.find(u => u.perfil === 'armeiro_gestor')?.matricula || 'SYS-AM';
     const agora = new Date().toISOString();
 
-    // 1. Atualizar materiais correspondentes no estoque (somente deduz se consumido em serviço)
+    // 1. Atualizar materiais correspondentes no estoque (lotes permanecem com carga total invariante)
     const materiaisAtualizados = materiais.map(m => {
       if (idsMateriaisDevolvidos.includes(m.id_material)) {
         if (m.controle_quantidade) {
-          const qtyConsumed = consumedQuantities?.[m.id_material] ?? 0;
-          if (qtyConsumed > 0) {
-            return { ...m, quantidade: Math.max(0, (m.quantidade || 0) - qtyConsumed) };
-          }
-          return m;
+          return m; // Carga total permanece invariante
         }
         return { ...m, status_atual: 'disponivel' as StatusMaterial };
       }
@@ -602,7 +598,7 @@ export function useMockDatabase() {
 
     // 3. Verificar se TODOS os itens desta cautela foram devolvidos
     const todosItensDaCautela = novosCautelaItens.filter(ci => ci.id_cautela === cautId);
-    const todosDevolvidos = todosItensDaCautela.every(ci => ci.estado_devolucao !== undefined);
+    const todosDevolvidos = todosItensDaCautela.every(ci => !!ci.estado_devolucao);
 
     // 4. Calcular nova previsão de devolução (+48h) quando prorrogar
     const novaPrevisao = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();

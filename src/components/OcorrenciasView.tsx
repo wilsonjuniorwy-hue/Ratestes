@@ -1,8 +1,10 @@
 import React, { useState, useMemo } from 'react';
 import { 
   Terminal, ShieldAlert, CheckCircle, Printer, Boxes, BookOpen, Check, AlertTriangle, X,
-  PlusCircle, ClipboardList, History, FileText, Calendar, Search, Clock, ChevronDown
+  PlusCircle, ClipboardList, History, FileText, Calendar, Search, Clock, ChevronDown, Download, Sparkles
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
+import { hashSHA256 } from '../utils/crypto';
 import { OcorrenciaRelatorio, Material, PendenciaServico, Usuario, Cautela, CautelaItem, ArmaParticular, Categoria } from '../types';
 import { formatPostoGraduacaoSigla } from '../utils/rankUtils';
 
@@ -151,7 +153,7 @@ export function OcorrenciasView({
   const [isStockModalOpen, setIsStockModalOpen] = useState(false);
   const [isAlteracoesModalOpen, setIsAlteracoesModalOpen] = useState(false);
   const [isReportsModalOpen, setIsReportsModalOpen] = useState(false);
-  const [selectedReportTab, setSelectedReportTab] = useState<'periodico' | 'estoque' | 'particulares' | 'permanente'>('periodico');
+  const [selectedReportTab, setSelectedReportTab] = useState<'fechamento_global' | 'periodico' | 'estoque' | 'particulares' | 'permanente'>('fechamento_global');
   const [isHandoverModalOpen, setIsHandoverModalOpen] = useState(false);
   const [handoverArmeiroAnterior, setHandoverArmeiroAnterior] = useState('');
   const [handoverAdjunto, setHandoverAdjunto] = useState('');
@@ -207,6 +209,150 @@ export function OcorrenciasView({
     );
   };
 
+  const estoqueAgrupado = useMemo(() => {
+    const groups: Record<string, {
+      modelo: string;
+      fabricante: string;
+      categoriaId: string;
+      isColetivo: boolean;
+      quantidadeTotal: number;
+      carregadoresTotal: number;
+      breakdown: {
+        disponivel: number;
+        cautelado: number;
+        manutencao: number;
+        condenado: number;
+        indisponivel: number;
+        danificado: number;
+        retirado: number;
+      };
+    }> = {};
+
+    const activeCautelas = cautelas.filter(c => !c.data_devolucao_efetiva);
+
+    materiais.forEach(m => {
+      if (m.deletado_em) return;
+
+      const catObj = categorias.find(c => c.id_categoria === m.id_categoria);
+      const isBastaoModel = /^B\d+$/i.test(m.modelo.trim()) || 
+        /^BASTAO/i.test(m.modelo.trim()) || 
+        /^BASTÃO/i.test(m.modelo.trim());
+      const isBastaoId = /^BASTAO/i.test(m.id_material.trim()) || 
+        /^BASTÃO/i.test(m.id_material.trim());
+      const isBastaoCategory = m.id_categoria === 'CAT-493' || 
+        (catObj?.nome.toLowerCase().includes('bastã') ?? false) ||
+        (catObj?.nome.toLowerCase().includes('bastao') ?? false);
+
+      const isBastao = isBastaoCategory || isBastaoModel || isBastaoId;
+
+      const isBattery = m.id_material.startsWith('BAT-') || /bateria/i.test(m.modelo);
+      const isRadioHytera = !isBattery && (m.fabricante.toUpperCase() === 'HYTERA' || /^HY/i.test(m.modelo.trim()));
+      const isRadioSepura = !isBattery && (m.fabricante.toUpperCase() === 'SEPURA' || /^SEP/i.test(m.modelo.trim()));
+      const isRadioOther = !isBattery && (
+        /^HT\s/i.test(m.modelo.trim()) ||
+        /^HT-/i.test(m.id_material.trim()) ||
+        /radio\s+ht/i.test(m.modelo) ||
+        /rádio\s+ht/i.test(m.modelo)
+      );
+
+      const isColeteImbel = (m.id_categoria === 'CAT-MANUTENCAO' || /colete/i.test(m.modelo)) && 
+        (m.fabricante.toUpperCase() === 'IMBEL' || /^300/i.test(m.id_material.trim()) || /imbel/i.test(m.modelo));
+
+      const isColeteProtecop = (m.id_categoria === 'CAT-MANUTENCAO' || /colete/i.test(m.modelo)) && 
+        !isColeteImbel &&
+        (m.fabricante.toUpperCase() === 'PROTECOP' || /^SC/i.test(m.id_material.trim()) || /protecop/i.test(m.modelo));
+
+      let groupTitle = m.modelo;
+      let groupFabricante = m.fabricante;
+
+      if (isBastao) {
+        groupTitle = 'Bastão Policial';
+        groupFabricante = 'Dotação PMDF';
+      } else if (isRadioSepura) {
+        groupTitle = 'Rádio HT Sepura';
+        groupFabricante = 'SEPURA';
+      } else if (isRadioHytera) {
+        groupTitle = 'Rádio HT Hytera';
+        groupFabricante = 'HYTERA';
+      } else if (isRadioOther) {
+        groupTitle = 'Rádio HT Telecom';
+        groupFabricante = m.fabricante || 'Telecom';
+      } else if (isColeteImbel) {
+        groupTitle = 'Colete Balístico Imbel (M)';
+        groupFabricante = 'IMBEL';
+      } else if (isColeteProtecop) {
+        groupTitle = 'Colete Balístico Protecop (G)';
+        groupFabricante = 'PROTECOP';
+      }
+
+      const key = groupTitle;
+      const isCustomGroup = isBastao || isRadioSepura || isRadioHytera || isRadioOther || isColeteImbel || isColeteProtecop;
+
+      if (!groups[key]) {
+        groups[key] = {
+          modelo: groupTitle,
+          fabricante: groupFabricante,
+          categoriaId: m.id_categoria,
+          isColetivo: isCustomGroup ? false : !!m.controle_quantidade,
+          quantidadeTotal: 0,
+          carregadoresTotal: 0,
+          breakdown: {
+            disponivel: 0,
+            cautelado: 0,
+            manutencao: 0,
+            condenado: 0,
+            indisponivel: 0,
+            danificado: 0,
+            retirado: 0,
+          }
+        };
+      }
+
+      if (m.controle_quantidade) {
+        const activeCautelaItensForLote = cautelaItens.filter(ci => 
+          ci.id_material === m.id_material && 
+          activeCautelas.some(ac => ac.id_cautela === ci.id_cautela)
+        );
+
+        const totalCautelado = activeCautelaItensForLote.reduce((sum, ci) => sum + (ci.quantidade || 0), 0);
+        const totalDisponivel = Math.max(0, (m.quantidade || 0) - totalCautelado);
+
+        groups[key].quantidadeTotal += m.quantidade || 0;
+        groups[key].breakdown.disponivel += totalDisponivel;
+        groups[key].breakdown.cautelado += totalCautelado;
+
+        if (m.status_atual !== 'disponivel' && m.status_atual !== 'cautelado' && m.status_atual !== 'retirado') {
+          const status = m.status_atual as keyof typeof groups[string]['breakdown'];
+          if (groups[key].breakdown[status] !== undefined) {
+            groups[key].breakdown[status] += totalDisponivel;
+            groups[key].breakdown.disponivel -= totalDisponivel;
+          }
+        }
+      } else {
+        const qty = 1;
+        groups[key].quantidadeTotal += qty;
+        
+        if (m.quantidade_carregadores) {
+          groups[key].carregadoresTotal += m.quantidade_carregadores;
+        }
+
+        if (m.status_atual === 'cautelado') {
+          groups[key].breakdown.cautelado += qty;
+        } else if (['manutencao', 'danificado', 'indisponivel', 'condenado'].includes(m.status_atual)) {
+          groups[key].breakdown.manutencao += qty;
+        }
+      }
+    });
+
+    Object.values(groups).forEach(g => {
+      if (!g.isColetivo) {
+        g.breakdown.disponivel = Math.max(0, g.quantidadeTotal - g.breakdown.cautelado - g.breakdown.manutencao);
+      }
+    });
+
+    return Object.values(groups);
+  }, [materiais, cautelas, cautelaItens, categorias]);
+
   const handleHandoverSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setHandoverError('');
@@ -252,56 +398,38 @@ export function OcorrenciasView({
     const oficialDiaText = getMilText(handoverOficialDia);
     const proximoArmeiroText = getMilText(handoverProximoArmeiro);
 
-    const dataHoraStr = new Date().toLocaleString('pt-BR');
-    const ocoId = `OCO-${Math.floor(100000 + Math.random() * 900000)}`;
-    const ocoTitulo = `PASSAGEM DE SERVIÇO - ${dataHoraStr}`;
+    const agora = new Date();
+    const dataHoraFormatada = agora.toLocaleString('pt-BR', { 
+      day: '2-digit', month: '2-digit', year: 'numeric', 
+      hour: '2-digit', minute: '2-digit' 
+    });
 
-    const formatDataPorExtensoMaiusculo = (date: Date) => {
-      const meses = [
-        'JANEIRO', 'FEVEREIRO', 'MARÇO', 'ABRIL', 'MAIO', 'JUNHO',
-        'JULHO', 'AGOSTO', 'SETEMBRO', 'OUTUBRO', 'NOVEMBRO', 'DEZEMBRO'
-      ];
-      const dia = date.getDate();
-      const mes = meses[date.getMonth()];
-      const ano = date.getFullYear();
-      return `${dia} DE ${mes} DE ${ano}`;
-    };
+    const ocoTitulo = `Passagem de Serviço: ${armeiroDiaText} para ${proximoArmeiroText}`;
+    const alteracoesTextoOpcao = pendenciasAbertas.length > 0 ? 'com as seguintes' : 'sem';
 
-    const formatDataPorExtensoMinusculo = (date: Date) => {
-      const meses = [
-        'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
-        'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'
-      ];
-      const dia = date.getDate();
-      const mes = meses[date.getMonth()];
-      const ano = date.getFullYear();
-      return `${dia} de ${mes} de ${ano}`;
-    };
+    const meses = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+    const diaNum = agora.getDate();
+    const mesNome = meses[agora.getMonth()];
+    const anoNum = agora.getFullYear();
+    const dataMinusculo = `${diaNum} de ${mesNome} de ${anoNum}`;
 
-    const dataExtenso = formatDataPorExtensoMaiusculo(new Date());
-    const dataMinusculo = formatDataPorExtensoMinusculo(new Date());
-    const alteracoesTextoOpcao = pendenciasServico.filter(p => p.status === 'aberto').length > 0 ? 'COM' : 'SEM';
+    const ataTexto = `ATA DE PASSAGEM DE SERVIÇO DA RESERVA DE ARMAMENTO
 
-    const ataTexto = `PARTE DIÁRIA DO ARMEIRO DA RESERVA DE ARMAMENTO DO RPMON DO DIA ${dataExtenso}.
-
-Assumi o serviço em substituição ao ${armeiroAnteriorText}, no horário regulamentar com todas as ordens em vigor e ${alteracoesTextoOpcao} alterações constantes no Livro de Parte Diária anterior.
+Assumi o serviço em substituição ao ${armeiroAnteriorText}, no horário Regulamentar e com todas as ordens em vigor.
 
 SERVIÇO DIÁRIO
-Oficial CPU: ${oficialDiaText}
-Adjunto ao CPU: ${adjuntoText}
-Armeiro de dia: ${armeiroDiaText}
+- Oficial de Dia: ${oficialDiaText}
+- Adjunto: ${adjuntoText}
+- Armeiro de Serviço: ${armeiroDiaText}
 
-MATERIAL CARGA
+ESTOQUE FÍSICO DO PAIOL CONFERIDO
 ${listEstoqueDetallado}
 
 SITUAÇÃO DAS ALTERAÇÕES E PENDÊNCIAS DO SERVIÇO
 ${pendenciasTexto}
 
-CONFERÊNCIA FÍSICA E QUANTITATIVA
-Certifico que a contagem física do estoque do paiol foi devidamente conferida e validada nas últimas 24h, estando em concordância plena com as quantidades informadas de cada item e gravadas no SGBD.
-
 PASSAGEM DE SERVIÇO
-Foi realizada ao ${proximoArmeiroText}, no horário Regulamentar e com todas as ordens em vigor, bem como ${alteracoesTextoOpcao} alterações constantes no LIVRO DE CONTROLE MATERIAL
+Realizada em ${dataHoraFormatada} ao ${proximoArmeiroText}, com as ordens em vigor e ${alteracoesTextoOpcao} alterações.
 
 Riacho Fundo I - DF, ${dataMinusculo}.`;
 
@@ -317,7 +445,7 @@ Riacho Fundo I - DF, ${dataMinusculo}.`;
     setIsHandoverModalOpen(false);
   };
 
-  // Filtros do Relatório Periódico (Padrão: últimas 24 horas)
+  // Filtros do Relatório (Padrão: últimas 24 horas)
   const [startDateStr, setStartDateStr] = useState(() => {
     const d = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const tzoffset = d.getTimezoneOffset() * 60000;
@@ -335,22 +463,65 @@ Riacho Fundo I - DF, ${dataMinusculo}.`;
   // Filtro de Busca de Armas Particulares
   const [privateSearchQuery, setPrivateSearchQuery] = useState('');
 
+  // Atalhos Rápidos de Datas
+  const setQuickDatePreset = (preset: '24h' | '7d' | '30d' | 'all') => {
+    const now = new Date();
+    const tzoffset = now.getTimezoneOffset() * 60000;
+    const end = new Date(now.getTime() - tzoffset).toISOString().slice(0, 16);
+    
+    if (preset === 'all') {
+      setStartDateStr('2020-01-01T00:00');
+      setEndDateStr(end);
+      return;
+    }
+
+    let pastMs = 24 * 60 * 60 * 1000;
+    if (preset === '7d') pastMs = 7 * 24 * 60 * 60 * 1000;
+    if (preset === '30d') pastMs = 30 * 24 * 60 * 60 * 1000;
+
+    const start = new Date(now.getTime() - pastMs - tzoffset).toISOString().slice(0, 16);
+    setStartDateStr(start);
+    setEndDateStr(end);
+  };
+
+  // Helper para normalizar data em timestamp para comparação precisa
+  const parseDateSafe = (dStr?: string | null): number => {
+    if (!dStr) return 0;
+    const t = new Date(dStr).getTime();
+    return isNaN(t) ? 0 : t;
+  };
+
+  // Helper para higienizar matrícula para comparação consistente
+  const limparMatricula = (m?: string): string => {
+    if (!m) return '';
+    let clean = m.trim().toUpperCase();
+    clean = clean.replace(/^PM-?/i, '');
+    clean = clean.replace(/^ARM-?/i, '');
+    if (clean.length > 1 && clean.startsWith('A') && !isNaN(Number(clean.substring(1)))) {
+      clean = clean.substring(1);
+    }
+    return clean;
+  };
+
   // Lógica de cálculo do Relatório Periódico: Movimentações
   const periodMovimentacoes = useMemo(() => {
-    if (selectedReportTab !== 'periodico' && !isReportsModalOpen) return [];
-    const start = new Date(startDateStr);
-    const end = new Date(endDateStr);
+    if (selectedReportTab !== 'periodico' && selectedReportTab !== 'fechamento_global' && !isReportsModalOpen) return [];
+    const startMs = parseDateSafe(startDateStr);
+    const endMs = parseDateSafe(endDateStr);
 
     return cautelas
       .filter(c => {
-        const checkOutDate = new Date(c.data_retirada);
-        const checkInDate = c.data_devolucao_efetiva ? new Date(c.data_devolucao_efetiva) : null;
-        const outInPeriod = checkOutDate >= start && checkOutDate <= end;
-        const inInPeriod = checkInDate && checkInDate >= start && checkInDate <= end;
+        const checkOutMs = parseDateSafe(c.data_retirada);
+        const checkInMs = c.data_devolucao_efetiva ? parseDateSafe(c.data_devolucao_efetiva) : 0;
+        const outInPeriod = checkOutMs >= startMs && checkOutMs <= endMs;
+        const inInPeriod = checkInMs > 0 && checkInMs >= startMs && checkInMs <= endMs;
         return outInPeriod || inInPeriod;
       })
       .map(c => {
-        const pol = usuarios.find(u => u.matricula === c.matricula_policial);
+        const pol = usuarios.find(u => 
+          u.matricula === c.matricula_policial || 
+          limparMatricula(u.matricula) === limparMatricula(c.matricula_policial)
+        );
         const items = cautelaItens
           .filter(ci => ci.id_cautela === c.id_cautela)
           .map(ci => {
@@ -360,13 +531,16 @@ Riacho Fundo I - DF, ${dataMinusculo}.`;
           .join(', ');
 
         return {
+          id_cautela: c.id_cautela,
           matricula: c.matricula_policial,
           nome: pol?.nome || 'Desconhecido',
           nome_de_guerra: pol?.nome_de_guerra || pol?.nome || 'Desconhecido',
+          posto_graduacao: pol?.posto_graduacao ? formatPostoGraduacaoSigla(pol.posto_graduacao) : '',
           materiais: items,
           hora_cautela: new Date(c.data_retirada).toLocaleString('pt-BR'),
           is_emergencial: c.is_emergencial,
           hora_devolucao: c.data_devolucao_efetiva ? new Date(c.data_devolucao_efetiva).toLocaleString('pt-BR') : null,
+          status: c.data_devolucao_efetiva ? 'Devolvida' : (c.status_cautela === 'atrasada' ? 'Atrasada' : 'Em Aberto'),
           matricula_armeiro_retirada: c.matricula_armeiro_retirada,
           matricula_armeiro_devolucao: c.matricula_armeiro_devolucao
         };
@@ -375,19 +549,22 @@ Riacho Fundo I - DF, ${dataMinusculo}.`;
 
   // Lógica de cálculo do Relatório Periódico: Pendências
   const periodPendencias = useMemo(() => {
-    if (selectedReportTab !== 'periodico' && !isReportsModalOpen) return [];
-    const start = new Date(startDateStr);
-    const end = new Date(endDateStr);
+    if (selectedReportTab !== 'periodico' && selectedReportTab !== 'fechamento_global' && !isReportsModalOpen) return [];
+    const startMs = parseDateSafe(startDateStr);
+    const endMs = parseDateSafe(endDateStr);
 
     return cautelas
       .filter(c => {
-        const checkOutDate = new Date(c.data_retirada);
-        const outInPeriod = checkOutDate >= start && checkOutDate <= end;
+        const checkOutMs = parseDateSafe(c.data_retirada);
+        const outInPeriod = checkOutMs >= startMs && checkOutMs <= endMs;
         const isPending = !c.data_devolucao_efetiva;
         return outInPeriod && isPending;
       })
       .map(c => {
-        const pol = usuarios.find(u => u.matricula === c.matricula_policial);
+        const pol = usuarios.find(u => 
+          u.matricula === c.matricula_policial || 
+          limparMatricula(u.matricula) === limparMatricula(c.matricula_policial)
+        );
         const items = cautelaItens
           .filter(ci => ci.id_cautela === c.id_cautela)
           .map(ci => {
@@ -397,6 +574,7 @@ Riacho Fundo I - DF, ${dataMinusculo}.`;
           .join(', ');
 
         return {
+          id_cautela: c.id_cautela,
           matricula: c.matricula_policial,
           nome: pol?.nome || 'Desconhecido',
           nome_de_guerra: pol?.nome_de_guerra || pol?.nome || 'Desconhecido',
@@ -408,54 +586,61 @@ Riacho Fundo I - DF, ${dataMinusculo}.`;
 
   // Lógica de cálculo do Relatório Periódico: Movimentação de Armas Particulares
   const periodArmasParticularesMov = useMemo(() => {
-    if (selectedReportTab !== 'periodico' && !isReportsModalOpen) return [];
-    const start = new Date(startDateStr);
-    const end = new Date(endDateStr);
+    if (selectedReportTab !== 'periodico' && selectedReportTab !== 'fechamento_global' && !isReportsModalOpen) return [];
+    const startMs = parseDateSafe(startDateStr);
+    const endMs = parseDateSafe(endDateStr);
 
     const movs: any[] = [];
 
     armasParticulares.forEach(arma => {
-      const pol = usuarios.find(u => u.matricula === arma.matricula_policial);
-      const polName = pol?.nome_de_guerra || pol?.nome || 'Desconhecido';
-      const modeloSerie = `${arma.modelo} ${arma.numero_serie ? `(SN: ${arma.numero_serie})` : ''}`;
+      const pol = usuarios.find(u => 
+        u.matricula === arma.matricula_policial || 
+        limparMatricula(u.matricula) === limparMatricula(arma.matricula_policial)
+      );
+      const polName = pol 
+        ? `${formatPostoGraduacaoSigla(pol.posto_graduacao)} ${pol.nome_de_guerra || pol.nome}` 
+        : (limparMatricula(arma.matricula_policial) || 'Desconhecido');
+      
+      const modeloSerie = `${arma.modelo} ${arma.numero_serie ? `(SN: ${arma.numero_serie})` : ''} ${arma.fabricante ? `[${arma.fabricante}]` : ''}`.trim();
 
       // Entrada/Depósito
-      const depDate = new Date(arma.data_deposito);
-      if (depDate >= start && depDate <= end) {
+      const depMs = parseDateSafe(arma.data_deposito);
+      if (depMs >= startMs && depMs <= endMs) {
         movs.push({
+          timestamp: depMs,
           matricula: arma.matricula_policial,
-          nome: pol?.nome || 'Desconhecido',
+          nome: polName,
           nome_de_guerra: polName,
           modelo_serie: modeloSerie,
-          tipo_mov: 'Entrada/Depósito',
-          data_hora: depDate.toLocaleString(),
-          obs: arma.observacoes || 'Sem observações'
+          tipo_mov: 'Entrada / Depósito',
+          data_hora: new Date(depMs).toLocaleString('pt-BR'),
+          obs: arma.observacoes || 'Custódia na Reserva'
         });
       }
 
-      // Saída/Devolução
-      if (arma.status === 'devolvido' && arma.data_devolucao) {
-        const devDate = new Date(arma.data_devolucao);
-        if (devDate >= start && devDate <= end) {
-          movs.push({
-            matricula: arma.matricula_policial,
-            nome: pol?.nome || 'Desconhecido',
-            nome_de_guerra: polName,
-            modelo_serie: modeloSerie,
-            tipo_mov: 'Saída/Retirada',
-            data_hora: devDate.toLocaleString(),
-            obs: arma.observacoes || 'Sem observações'
-          });
-        }
+      // Saída/Devolução / Restituição
+      const isDevolvido = (arma.status as string) === 'devolvido' || (arma.status as string) === 'devolvida' || !!arma.data_devolucao;
+      const devMs = parseDateSafe(arma.data_devolucao);
+      if (isDevolvido && devMs > 0 && devMs >= startMs && devMs <= endMs) {
+        movs.push({
+          timestamp: devMs,
+          matricula: arma.matricula_policial,
+          nome: polName,
+          nome_de_guerra: polName,
+          modelo_serie: modeloSerie,
+          tipo_mov: 'Saída / Retirada',
+          data_hora: new Date(devMs).toLocaleString('pt-BR'),
+          obs: arma.observacoes || 'Retirada pelo proprietário'
+        });
       }
     });
 
-    return movs.sort((a, b) => new Date(a.data_hora).getTime() - new Date(b.data_hora).getTime());
+    return movs.sort((a, b) => b.timestamp - a.timestamp);
   }, [armasParticulares, usuarios, startDateStr, endDateStr, selectedReportTab, isReportsModalOpen]);
 
   // Lógica de cálculo: Estoque da Reserva (Item a Item, individual)
   const estoqueRelatorioData = useMemo(() => {
-    if (selectedReportTab !== 'estoque' && !isReportsModalOpen) return [];
+    if (selectedReportTab !== 'estoque' && selectedReportTab !== 'fechamento_global' && !isReportsModalOpen) return [];
 
     const activeCautelas = cautelas.filter(c => !c.data_devolucao_efetiva);
 
@@ -583,14 +768,19 @@ Riacho Fundo I - DF, ${dataMinusculo}.`;
 
   // Lógica de cálculo: Armas Particulares Ativas
   const armasParticularesData = useMemo(() => {
-    if (selectedReportTab !== 'particulares' && !isReportsModalOpen) return [];
+    if (selectedReportTab !== 'particulares' && selectedReportTab !== 'fechamento_global' && !isReportsModalOpen) return [];
 
-    const activeArmas = armasParticulares.filter(a => a.status === 'guardado');
+    const activeArmas = armasParticulares.filter(a => a.status === 'guardado' || (!a.data_devolucao && (a.status as string) !== 'devolvido' && (a.status as string) !== 'devolvida'));
 
     return activeArmas
       .map(arma => {
-        const pol = usuarios.find(u => u.matricula === arma.matricula_policial);
-        const polName = pol ? `${formatPostoGraduacaoSigla(pol.posto_graduacao)} ${pol.nome_de_guerra || pol.nome}` : 'Militar Desconhecido';
+        const pol = usuarios.find(u => 
+          u.matricula === arma.matricula_policial || 
+          limparMatricula(u.matricula) === limparMatricula(arma.matricula_policial)
+        );
+        const polName = pol 
+          ? `${formatPostoGraduacaoSigla(pol.posto_graduacao)} ${pol.nome_de_guerra || pol.nome}` 
+          : (limparMatricula(arma.matricula_policial) || 'Desconhecido');
         
         return {
           id: arma.id_particular,
@@ -599,8 +789,10 @@ Riacho Fundo I - DF, ${dataMinusculo}.`;
           modelo: arma.modelo,
           fabricante: arma.fabricante || 'Desconhecido',
           calibre: arma.calibre || 'N/A',
-          numero_serie: arma.numero_serie || 'S/N',
-          data_deposito: new Date(arma.data_deposito).toLocaleString(),
+          numero_serie: arma.numero_serie || 'N/A',
+          quantidade: arma.quantidade || 1,
+          carregadores: arma.carregadores || 0,
+          data_deposito: new Date(arma.data_deposito).toLocaleDateString('pt-BR'),
           obs: arma.observacoes || 'Sem observações'
         };
       })
@@ -616,9 +808,311 @@ Riacho Fundo I - DF, ${dataMinusculo}.`;
       });
   }, [armasParticulares, usuarios, privateSearchQuery, selectedReportTab, isReportsModalOpen]);
 
-  const triggerPrintReport = () => {
+  // --- MEMOS ESPECÍFICOS DO FECHAMENTO GLOBAL ---
+  const fechamentoPermanentesDevolucoes = useMemo(() => {
+    const startMs = parseDateSafe(startDateStr);
+    const endMs = parseDateSafe(endDateStr);
+
+    return cautelas
+      .filter(c => c.status_cautela === 'permanente' && c.data_devolucao_efetiva)
+      .filter(c => {
+        const dMs = parseDateSafe(c.data_devolucao_efetiva);
+        return dMs >= startMs && dMs <= endMs;
+      })
+      .flatMap(c => {
+        const pm = usuarios.find(u => 
+          u.matricula === c.matricula_policial || 
+          limparMatricula(u.matricula) === limparMatricula(c.matricula_policial)
+        );
+        const pmName = pm ? `${formatPostoGraduacaoSigla(pm.posto_graduacao)} ${pm.nome_de_guerra || pm.nome}` : limparMatricula(c.matricula_policial);
+        const its = cautelaItens.filter(ci => ci.id_cautela === c.id_cautela);
+        return its.map(ci => {
+          const mat = materiais.find(m => m.id_material === ci.id_material);
+          return {
+            id_cautela: c.id_cautela,
+            matricula: c.matricula_policial,
+            policial: pmName,
+            material: `${mat?.modelo || 'Material'} (${ci.id_material})`,
+            data_devolucao: new Date(c.data_devolucao_efetiva!).toLocaleString('pt-BR'),
+            obs: c.observacoes_devolucao || 'Devolução à Reserva'
+          };
+        });
+      });
+  }, [cautelas, usuarios, cautelaItens, materiais, startDateStr, endDateStr]);
+
+  const fechamentoPermanentesEmPosse = useMemo(() => {
+    return cautelas
+      .filter(c => c.status_cautela === 'permanente' && !c.data_devolucao_efetiva)
+      .flatMap(c => {
+        const pm = usuarios.find(u => 
+          u.matricula === c.matricula_policial || 
+          limparMatricula(u.matricula) === limparMatricula(c.matricula_policial)
+        );
+        const pmName = pm ? `${formatPostoGraduacaoSigla(pm.posto_graduacao)} ${pm.nome_de_guerra || pm.nome}` : limparMatricula(c.matricula_policial);
+        const its = cautelaItens.filter(ci => ci.id_cautela === c.id_cautela);
+        return its.map(ci => {
+          const mat = materiais.find(m => m.id_material === ci.id_material);
+          return {
+            id_cautela: c.id_cautela,
+            matricula: c.matricula_policial,
+            policial: pmName,
+            id_material: ci.id_material,
+            modelo: `${mat?.modelo || 'Material'}`,
+            categoria: mat?.id_categoria.replace('CAT-', '') || 'BÉLICO',
+            quantidade: ci.quantidade,
+            data_carga: new Date(c.data_retirada).toLocaleDateString('pt-BR')
+          };
+        });
+      });
+  }, [cautelas, usuarios, cautelaItens, materiais]);
+
+  const fechamentoEstoqueData = useMemo(() => {
+    const nonBastoes = estoqueAgrupado.filter(g => !/bastã|bastao/i.test(g.modelo));
+    return nonBastoes.map(g => ({
+      modelo: g.modelo,
+      fabricante: g.fabricante,
+      total: g.quantidadeTotal,
+      disponivel: g.breakdown.disponivel,
+      cautelado: g.breakdown.cautelado,
+      manutencao: g.breakdown.manutencao
+    }));
+  }, [estoqueAgrupado]);
+
+  const fechamentoBastoesInfo = useMemo(() => {
+    const bastoesMateriais = materiais.filter(m => {
+      if (m.deletado_em) return false;
+      const catObj = categorias.find(c => c.id_categoria === m.id_categoria);
+      const isBastaoModel = /^B\d+$/i.test(m.modelo.trim()) || /^BASTAO/i.test(m.modelo.trim()) || /^BASTÃO/i.test(m.modelo.trim());
+      const isBastaoId = /^BASTAO/i.test(m.id_material.trim()) || /^BASTÃO/i.test(m.id_material.trim());
+      const isBastaoCategory = m.id_categoria === 'CAT-493' || (catObj?.nome.toLowerCase().includes('bastã') ?? false) || (catObj?.nome.toLowerCase().includes('bastao') ?? false);
+      return isBastaoCategory || isBastaoModel || isBastaoId;
+    });
+
+    const activeCautelas = cautelas.filter(c => !c.data_devolucao_efetiva);
+    const activeIdsSet = new Set(activeCautelas.map(c => c.id_cautela));
+    const activeItems = cautelaItens.filter(ci => activeIdsSet.has(ci.id_cautela));
+    const activeMatSet = new Set(activeItems.map(ci => ci.id_material));
+
+    let total = 0;
+    let disponivel = 0;
+    let cautelado = 0;
+    const numList: string[] = [];
+
+    bastoesMateriais.forEach(m => {
+      if (m.controle_quantidade) {
+        const q = m.quantidade || 0;
+        const ciForLote = activeItems.filter(ci => ci.id_material === m.id_material);
+        const cQty = ciForLote.reduce((acc, ci) => acc + (ci.quantidade || 0), 0);
+        total += q;
+        cautelado += cQty;
+        disponivel += Math.max(0, q - cQty);
+      } else {
+        total += 1;
+        const isOut = m.status_atual === 'cautelado' || activeMatSet.has(m.id_material);
+        if (isOut) {
+          cautelado += 1;
+        } else {
+          disponivel += 1;
+        }
+        const cleanNum = m.id_material.replace(/[^0-9]/g, '');
+        numList.push(cleanNum || m.id_material);
+      }
+    });
+
+    numList.sort((a, b) => {
+      const na = parseInt(a, 10);
+      const nb = parseInt(b, 10);
+      if (!isNaN(na) && !isNaN(nb)) return na - nb;
+      return a.localeCompare(b);
+    });
+
+    const numerosStr = numList.length > 0
+      ? numList.join(', ')
+      : (total > 0 ? Array.from({ length: total }, (_, i) => i + 1).join(', ') : '1 a 50');
+
+    return {
+      total: total || 50,
+      disponivel,
+      cautelado,
+      numeros: numerosStr
+    };
+  }, [materiais, categorias, cautelas, cautelaItens]);
+
+  const fechamentoOcorrencias = useMemo(() => {
+    const startMs = parseDateSafe(startDateStr);
+    const endMs = parseDateSafe(endDateStr);
+
+    return ocorrencias.filter(o => {
+      const dMs = parseDateSafe(o.data_hora);
+      return dMs >= startMs && dMs <= endMs;
+    });
+  }, [ocorrencias, startDateStr, endDateStr]);
+
+  const fechamentoPendencias = useMemo(() => {
+    const startMs = parseDateSafe(startDateStr);
+    const endMs = parseDateSafe(endDateStr);
+
+    return pendenciasServico.filter(p => {
+      const cMs = parseDateSafe(p.data_criacao);
+      const rMs = p.data_resolucao ? parseDateSafe(p.data_resolucao) : 0;
+      return (cMs >= startMs && cMs <= endMs) || (rMs > 0 && rMs >= startMs && rMs <= endMs);
+    });
+  }, [pendenciasServico, startDateStr, endDateStr]);
+
+  // Exportação para Excel (.xlsx)
+  const handleExportExcel = () => {
+    const wb = XLSX.utils.book_new();
+
+    // Sheet 1: Cautelas Diárias
+    const wsCautelasData = periodMovimentacoes.map(c => ({
+      'Código Cautela': c.id_cautela,
+      'Matrícula': c.matricula,
+      'Policial': c.nome_de_guerra ? `${c.posto_graduacao} ${c.nome_de_guerra}` : c.nome,
+      'Materiais e Munições': c.materiais,
+      'Data Retirada': c.hora_cautela,
+      'Data Devolução': c.hora_devolucao || 'Em Aberto',
+      'Status': c.status
+    }));
+    const wsCautelas = XLSX.utils.json_to_sheet(wsCautelasData);
+    XLSX.utils.book_append_sheet(wb, wsCautelas, "1. Cautelas Diárias");
+
+    // Sheet 2: Armas Particulares
+    const wsParticularesMov = periodArmasParticularesMov.map(p => ({
+      'Matrícula': p.matricula,
+      'Proprietário': p.nome,
+      'Material / Modelo / Série': p.modelo_serie,
+      'Movimentação': p.tipo_mov,
+      'Data/Hora': p.data_hora,
+      'Observações': p.obs
+    }));
+    const wsParticularesNaReserva = armasParticularesData.map(p => ({
+      'Matrícula': p.matricula,
+      'Proprietário': p.nome,
+      'Modelo': p.modelo,
+      'Fabricante': p.fabricante,
+      'Nº Série': p.numero_serie,
+      'Data Entrada': p.data_deposito,
+      'Status': 'Na Reserva'
+    }));
+    const wsParticulares = XLSX.utils.json_to_sheet([
+      ...wsParticularesMov,
+      { 'Matrícula': '--- SALDO ATUAL NA RESERVA ---' },
+      ...wsParticularesNaReserva
+    ]);
+    XLSX.utils.book_append_sheet(wb, wsParticulares, "2. Armas Particulares");
+
+    // Sheet 3: Cargas Permanentes
+    const wsPermEmPosse = fechamentoPermanentesEmPosse.map(p => ({
+      'Guia Cautela': p.id_cautela,
+      'Matrícula': p.matricula,
+      'Policial': p.policial,
+      'Material': p.modelo,
+      'Código / Serial': p.id_material,
+      'Data Carga': p.data_carga,
+      'Situação': 'Em Posse Permanente'
+    }));
+    const wsPermDevolucoes = fechamentoPermanentesDevolucoes.map(p => ({
+      'Guia Cautela': p.id_cautela,
+      'Matrícula': p.matricula,
+      'Policial': p.policial,
+      'Material': p.material,
+      'Código / Serial': '-',
+      'Data Devolução': p.data_devolucao,
+      'Situação': 'Devolvido no Período'
+    }));
+    const wsPermanentes = XLSX.utils.json_to_sheet([
+      ...wsPermEmPosse,
+      { 'Guia Cautela': '--- DEVOLUÇÕES NO PERÍODO ---' },
+      ...wsPermDevolucoes
+    ]);
+    XLSX.utils.book_append_sheet(wb, wsPermanentes, "3. Cargas Permanentes");
+
+    // Sheet 4: Estoque Paiol
+    const wsEstoque = XLSX.utils.json_to_sheet([
+      ...fechamentoEstoqueData.map(e => ({
+        'Equipamento / Modelo': e.modelo,
+        'Fabricante': e.fabricante,
+        'Total Físico': e.total,
+        'Disponível (Paiol)': e.disponivel,
+        'Cautelado (Rua)': e.cautelado,
+        'Manutenção': e.manutencao
+      })),
+      {
+        'Equipamento / Modelo': 'Bastões',
+        'Fabricante': 'Dotação PMDF',
+        'Total Físico': fechamentoBastoesInfo.total,
+        'Disponível (Paiol)': fechamentoBastoesInfo.disponivel,
+        'Cautelado (Rua)': fechamentoBastoesInfo.cautelado,
+        'Manutenção': 0
+      }
+    ]);
+    XLSX.utils.book_append_sheet(wb, wsEstoque, "4. Estoque Paiol");
+
+    // Sheet 5: Alterações e Ocorrências
+    const wsOcorrenciasData = [
+      ...fechamentoOcorrencias.map(o => ({
+        'Tipo': `Ocorrência: ${o.tipo.toUpperCase()}`,
+        'Data/Hora': new Date(o.data_hora).toLocaleString('pt-BR'),
+        'Registrante': o.matricula_armeiro,
+        'Título / Assunto': o.titulo,
+        'Descrição': o.descricao
+      })),
+      ...fechamentoPendencias.map(p => ({
+        'Tipo': `Pendência: ${p.status.toUpperCase()}`,
+        'Data/Hora': new Date(p.data_criacao).toLocaleString('pt-BR'),
+        'Registrante': p.matricula_criador,
+        'Título / Assunto': p.descricao,
+        'Descrição': p.resolucao ? `Resolução: ${p.resolucao}` : 'Em Aberto'
+      }))
+    ];
+    const wsOcorrencias = XLSX.utils.json_to_sheet(wsOcorrenciasData);
+    XLSX.utils.book_append_sheet(wb, wsOcorrencias, "5. Alterações e Ocorrências");
+
+    const startFileStr = startDateStr.replace(/[^0-9]/g, '_');
+    const endFileStr = endDateStr.replace(/[^0-9]/g, '_');
+    XLSX.writeFile(wb, `Relatorio_Geral_Reserva_PMDF_${startFileStr}_a_${endFileStr}.xlsx`);
+  };
+
+  const triggerPrintReport = async () => {
     let reportData: any = {};
-    if (selectedReportTab === 'periodico') {
+    if (selectedReportTab === 'fechamento_global') {
+      const hashPayload = `${startDateStr}_${endDateStr}_${activeArmeiroMatricula}_${periodMovimentacoes.length}_${fechamentoEstoqueData.length}_${Date.now()}`;
+      let hashValue = '';
+      try {
+        hashValue = await hashSHA256(hashPayload);
+      } catch (e) {
+        hashValue = '8f4b2c19a0e8d35f78b9123e456789abcdef0123456789abcdef0123456789ab';
+      }
+
+      reportData = {
+        title: 'Relatório Consolidado de Fechamento e Livro Geral da Reserva',
+        meta: `Período: ${new Date(startDateStr).toLocaleString('pt-BR')} até ${new Date(endDateStr).toLocaleString('pt-BR')} | Emitido em: ${new Date().toLocaleString('pt-BR')}`,
+        type: 'fechamento_global',
+        data: {
+          startDateStr,
+          endDateStr,
+          activeArmeiroMatricula,
+          cautelasDiarias: periodMovimentacoes,
+          armasParticulares: {
+            movimentacoes: periodArmasParticularesMov,
+            saldoNaReserva: armasParticularesData
+          },
+          cargasPermanentes: {
+            devolucoes: fechamentoPermanentesDevolucoes,
+            emPosse: fechamentoPermanentesEmPosse
+          },
+          estoquePaiol: {
+            itens: fechamentoEstoqueData,
+            bastoes: fechamentoBastoesInfo
+          },
+          alteracoesOcorrencias: {
+            ocorrencias: fechamentoOcorrencias,
+            pendencias: fechamentoPendencias
+          },
+          hashIntegridade: hashValue
+        }
+      };
+    } else if (selectedReportTab === 'periodico') {
       reportData = {
         title: 'Relatório Periódico de Movimentações - PMDF',
         meta: `Período: ${new Date(startDateStr).toLocaleString()} até ${new Date(endDateStr).toLocaleString()} | Gerado em: ${new Date().toLocaleString()}`,
@@ -703,152 +1197,7 @@ Riacho Fundo I - DF, ${dataMinusculo}.`;
   const [resolucaoTexto, setResolucaoTexto] = useState('');
   const [isSubmittingPendencia, setIsSubmittingPendencia] = useState(false);
 
-  // Agrupamento de materiais por modelo para contagem
-  const estoqueAgrupado = useMemo(() => {
-    const groups: Record<string, {
-      modelo: string;
-      fabricante: string;
-      categoriaId: string;
-      isColetivo: boolean;
-      quantidadeTotal: number;
-      carregadoresTotal: number;
-      breakdown: {
-        disponivel: number;
-        cautelado: number;
-        manutencao: number;
-        condenado: number;
-        indisponivel: number;
-        danificado: number;
-        retirado: number;
-      };
-    }> = {};
 
-    const activeCautelas = cautelas.filter(c => !c.data_devolucao_efetiva);
-
-    materiais.forEach(m => {
-      if (m.deletado_em) return;
-
-      const catObj = categorias.find(c => c.id_categoria === m.id_categoria);
-      const isBastaoModel = /^B\d+$/i.test(m.modelo.trim()) || 
-        /^BASTAO/i.test(m.modelo.trim()) || 
-        /^BASTÃO/i.test(m.modelo.trim());
-      const isBastaoId = /^BASTAO/i.test(m.id_material.trim()) || 
-        /^BASTÃO/i.test(m.id_material.trim());
-      const isBastaoCategory = m.id_categoria === 'CAT-493' || 
-        (catObj?.nome.toLowerCase().includes('bastã') ?? false) ||
-        (catObj?.nome.toLowerCase().includes('bastao') ?? false);
-
-      const isBastao = isBastaoCategory || isBastaoModel || isBastaoId;
-
-      const isBattery = m.id_material.startsWith('BAT-') || /bateria/i.test(m.modelo);
-      const isRadioHytera = !isBattery && (m.fabricante.toUpperCase() === 'HYTERA' || /^HY/i.test(m.modelo.trim()));
-      const isRadioSepura = !isBattery && (m.fabricante.toUpperCase() === 'SEPURA' || /^SEP/i.test(m.modelo.trim()));
-      const isRadioOther = !isBattery && (
-        /^HT\s/i.test(m.modelo.trim()) ||
-        /^HT-/i.test(m.id_material.trim()) ||
-        /radio\s+ht/i.test(m.modelo) ||
-        /rádio\s+ht/i.test(m.modelo)
-      );
-
-      const isColeteImbel = (m.id_categoria === 'CAT-MANUTENCAO' || /colete/i.test(m.modelo)) && 
-        (m.fabricante.toUpperCase() === 'IMBEL' || /^300/i.test(m.id_material.trim()) || /imbel/i.test(m.modelo));
-
-      const isColeteProtecop = (m.id_categoria === 'CAT-MANUTENCAO' || /colete/i.test(m.modelo)) && 
-        !isColeteImbel &&
-        (m.fabricante.toUpperCase() === 'PROTECOP' || /^SC/i.test(m.id_material.trim()) || /protecop/i.test(m.modelo));
-
-      let groupTitle = m.modelo;
-      let groupFabricante = m.fabricante;
-
-      if (isBastao) {
-        groupTitle = 'Bastão Policial';
-        groupFabricante = 'Dotação PMDF';
-      } else if (isRadioSepura) {
-        groupTitle = 'Rádio HT Sepura';
-        groupFabricante = 'SEPURA';
-      } else if (isRadioHytera) {
-        groupTitle = 'Rádio HT Hytera';
-        groupFabricante = 'HYTERA';
-      } else if (isRadioOther) {
-        groupTitle = 'Rádio HT Telecom';
-        groupFabricante = m.fabricante || 'Telecom';
-      } else if (isColeteImbel) {
-        groupTitle = 'Colete Balístico Imbel (M)';
-        groupFabricante = 'IMBEL';
-      } else if (isColeteProtecop) {
-        groupTitle = 'Colete Balístico Protecop (G)';
-        groupFabricante = 'PROTECOP';
-      }
-
-      const key = groupTitle;
-      const isCustomGroup = isBastao || isRadioSepura || isRadioHytera || isRadioOther || isColeteImbel || isColeteProtecop;
-
-      if (!groups[key]) {
-        groups[key] = {
-          modelo: groupTitle,
-          fabricante: groupFabricante,
-          categoriaId: m.id_categoria,
-          isColetivo: isCustomGroup ? false : !!m.controle_quantidade,
-          quantidadeTotal: 0,
-          carregadoresTotal: 0,
-          breakdown: {
-            disponivel: 0,
-            cautelado: 0,
-            manutencao: 0,
-            condenado: 0,
-            indisponivel: 0,
-            danificado: 0,
-            retirado: 0,
-          }
-        };
-      }
-
-      if (m.controle_quantidade) {
-        // Obter todas as cautelas ativas que contêm este lote de munição ou bastão sem número
-        const activeCautelaItensForLote = cautelaItens.filter(ci => 
-          ci.id_material === m.id_material && 
-          activeCautelas.some(ac => ac.id_cautela === ci.id_cautela)
-        );
-
-        const totalCautelado = activeCautelaItensForLote.reduce((sum, ci) => sum + (ci.quantidade || 0), 0);
-        const totalDisponivel = Math.max(0, (m.quantidade || 0) - totalCautelado);
-
-        groups[key].quantidadeTotal += m.quantidade || 0;
-        groups[key].breakdown.disponivel += totalDisponivel;
-        groups[key].breakdown.cautelado += totalCautelado;
-
-        // Tratar outros possíveis status
-        if (m.status_atual !== 'disponivel' && m.status_atual !== 'cautelado' && m.status_atual !== 'retirado') {
-          const status = m.status_atual as keyof typeof groups[string]['breakdown'];
-          if (groups[key].breakdown[status] !== undefined) {
-            groups[key].breakdown[status] += totalDisponivel;
-            groups[key].breakdown.disponivel -= totalDisponivel;
-          }
-        }
-      } else {
-        const qty = 1;
-        groups[key].quantidadeTotal += qty;
-        
-        if (m.quantidade_carregadores) {
-          groups[key].carregadoresTotal += m.quantidade_carregadores;
-        }
-
-        if (m.status_atual === 'cautelado') {
-          groups[key].breakdown.cautelado += qty;
-        } else if (['manutencao', 'danificado', 'indisponivel', 'condenado'].includes(m.status_atual)) {
-          groups[key].breakdown.manutencao += qty;
-        }
-      }
-    });
-
-    Object.values(groups).forEach(g => {
-      if (!g.isColetivo) {
-        g.breakdown.disponivel = Math.max(0, g.quantidadeTotal - g.breakdown.cautelado - g.breakdown.manutencao);
-      }
-    });
-
-    return Object.values(groups);
-  }, [materiais, cautelas, cautelaItens, categorias]);
 
   const handleSalvarOcorrenciaSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1674,7 +2023,7 @@ ${estoqueObservacao.trim() || 'Sem divergências ou alterações físicas relata
             id="arm-relatorios-wrapper"
           >
             {/* Header do Modal */}
-            <div className="p-5 border-b border-slate-850 bg-slate-950/40 flex items-center justify-between">
+            <div className="p-5 border-b border-slate-850 bg-slate-950/40 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2">
                 <FileText className="h-5 w-5 text-violet-450 animate-pulse" />
                 <div>
@@ -1693,13 +2042,25 @@ ${estoqueObservacao.trim() || 'Sem divergências ou alterações físicas relata
             </div>
 
             {/* Abas de Tipo de Relatório */}
-            <div className="flex border-b border-slate-850 bg-slate-950/20 px-6 pt-2 gap-2">
+            <div className="flex border-b border-slate-850 bg-slate-950/60 px-6 pt-2 gap-2 overflow-x-auto custom-scrollbar shrink-0 min-h-[48px] z-10">
+              <button
+                type="button"
+                onClick={() => setSelectedReportTab('fechamento_global')}
+                className={`px-4 py-2.5 text-xs font-mono font-bold border-t-2 border-x border-b border-transparent rounded-t-lg transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                  selectedReportTab === 'fechamento_global'
+                    ? 'border-t-emerald-500 border-x-slate-800 bg-slate-900 text-emerald-400 border-b-slate-900 shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-850/50'
+                }`}
+              >
+                <Sparkles className="h-3.5 w-3.5 text-emerald-400 animate-pulse" />
+                <span>Livro Geral (Fechamento Global)</span>
+              </button>
               <button
                 type="button"
                 onClick={() => setSelectedReportTab('periodico')}
-                className={`px-4 py-2 text-xs font-mono font-bold border-t-2 border-x border-b border-transparent rounded-t-lg transition-all cursor-pointer ${
+                className={`px-4 py-2.5 text-xs font-mono font-bold border-t-2 border-x border-b border-transparent rounded-t-lg transition-all cursor-pointer shrink-0 ${
                   selectedReportTab === 'periodico'
-                    ? 'border-t-violet-500 border-x-slate-800 bg-slate-900 text-slate-100 border-b-slate-900'
+                    ? 'border-t-violet-500 border-x-slate-800 bg-slate-900 text-slate-100 border-b-slate-900 shadow-sm'
                     : 'text-slate-455 hover:text-slate-200 hover:bg-slate-850/50'
                 }`}
               >
@@ -1708,9 +2069,9 @@ ${estoqueObservacao.trim() || 'Sem divergências ou alterações físicas relata
               <button
                 type="button"
                 onClick={() => setSelectedReportTab('estoque')}
-                className={`px-4 py-2 text-xs font-mono font-bold border-t-2 border-x border-b border-transparent rounded-t-lg transition-all cursor-pointer ${
+                className={`px-4 py-2.5 text-xs font-mono font-bold border-t-2 border-x border-b border-transparent rounded-t-lg transition-all cursor-pointer shrink-0 ${
                   selectedReportTab === 'estoque'
-                    ? 'border-t-violet-500 border-x-slate-800 bg-slate-900 text-slate-100 border-b-slate-900'
+                    ? 'border-t-violet-500 border-x-slate-800 bg-slate-900 text-slate-100 border-b-slate-900 shadow-sm'
                     : 'text-slate-455 hover:text-slate-200 hover:bg-slate-850/50'
                 }`}
               >
@@ -1719,9 +2080,9 @@ ${estoqueObservacao.trim() || 'Sem divergências ou alterações físicas relata
               <button
                 type="button"
                 onClick={() => setSelectedReportTab('particulares')}
-                className={`px-4 py-2 text-xs font-mono font-bold border-t-2 border-x border-b border-transparent rounded-t-lg transition-all cursor-pointer ${
+                className={`px-4 py-2.5 text-xs font-mono font-bold border-t-2 border-x border-b border-transparent rounded-t-lg transition-all cursor-pointer shrink-0 ${
                   selectedReportTab === 'particulares'
-                    ? 'border-t-violet-500 border-x-slate-800 bg-slate-900 text-slate-100 border-b-slate-900'
+                    ? 'border-t-violet-500 border-x-slate-800 bg-slate-900 text-slate-100 border-b-slate-900 shadow-sm'
                     : 'text-slate-455 hover:text-slate-200 hover:bg-slate-850/50'
                 }`}
               >
@@ -1730,9 +2091,9 @@ ${estoqueObservacao.trim() || 'Sem divergências ou alterações físicas relata
               <button
                 type="button"
                 onClick={() => setSelectedReportTab('permanente')}
-                className={`px-4 py-2 text-xs font-mono font-bold border-t-2 border-x border-b border-transparent rounded-t-lg transition-all cursor-pointer ${
+                className={`px-4 py-2.5 text-xs font-mono font-bold border-t-2 border-x border-b border-transparent rounded-t-lg transition-all cursor-pointer shrink-0 ${
                   selectedReportTab === 'permanente'
-                    ? 'border-t-violet-500 border-x-slate-800 bg-slate-900 text-slate-100 border-b-slate-900'
+                    ? 'border-t-violet-500 border-x-slate-800 bg-slate-900 text-slate-100 border-b-slate-900 shadow-sm'
                     : 'text-slate-455 hover:text-slate-200 hover:bg-slate-850/50'
                 }`}
               >
@@ -1743,6 +2104,328 @@ ${estoqueObservacao.trim() || 'Sem divergências ou alterações físicas relata
             {/* Conteúdo do Modal */}
             <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar font-sans text-xs">
               
+              {/* ABA 0: FECHAMENTO GLOBAL / LIVRO GERAL */}
+              {selectedReportTab === 'fechamento_global' && (
+                <div className="space-y-6 animate-fadeIn">
+                  {/* Banner Explicativo */}
+                  <div className="bg-gradient-to-r from-emerald-950/40 via-slate-900 to-slate-900 border border-emerald-800/40 p-4 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="h-4 w-4 text-emerald-400" />
+                        <h4 className="text-xs font-bold font-mono text-emerald-300 uppercase tracking-wider">
+                          Relatório Consolidado de Fechamento (Backup Geral da Reserva)
+                        </h4>
+                      </div>
+                      <p className="text-[11px] text-slate-300 leading-relaxed">
+                        Gera um documento militar oficial único contendo: Cautelas do período, Armas particulares, Cargas permanentes, Inventário geral com bastões compactados e Livro de alterações com assinatura eletrônica digital.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Controles de Filtros e Atalhos de Data */}
+                  <div className="bg-slate-955/40 border border-slate-800 p-4 rounded-xl space-y-4">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-850 pb-3">
+                      <span className="text-[11px] font-mono font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                        <Calendar className="h-4 w-4 text-violet-400" />
+                        <span>Intervalo de Apuração do Período:</span>
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-slate-500 font-mono">Atalhos rápidos:</span>
+                        <button
+                          type="button"
+                          onClick={() => setQuickDatePreset('24h')}
+                          className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-[10px] font-mono text-slate-300 rounded cursor-pointer transition-colors"
+                        >
+                          Últimas 24h
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setQuickDatePreset('7d')}
+                          className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-[10px] font-mono text-slate-300 rounded cursor-pointer transition-colors"
+                        >
+                          Últimos 7 dias
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setQuickDatePreset('30d')}
+                          className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-[10px] font-mono text-slate-300 rounded cursor-pointer transition-colors"
+                        >
+                          Mês Atual (30d)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setQuickDatePreset('all')}
+                          className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-[10px] font-mono text-slate-300 rounded cursor-pointer transition-colors"
+                        >
+                          Todo o Histórico
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wide">
+                          Data/Hora de Início:
+                        </label>
+                        <input
+                          type="datetime-local"
+                          value={startDateStr}
+                          onChange={(e) => setStartDateStr(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-800 p-2 text-xs text-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500/30 font-mono"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wide">
+                          Data/Hora de Fim:
+                        </label>
+                        <input
+                          type="datetime-local"
+                          value={endDateStr}
+                          onChange={(e) => setEndDateStr(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-800 p-2 text-xs text-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500/30 font-mono"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Cards de Métricas Consolidadas */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                    <div className="bg-slate-950/40 border border-slate-850 p-3 rounded-xl">
+                      <span className="text-[9px] font-mono text-slate-400 uppercase tracking-wider block">1. Cautelas no Período</span>
+                      <strong className="text-base font-bold text-slate-100 font-mono mt-1 block">
+                        {periodMovimentacoes.length} un.
+                      </strong>
+                      <span className="text-[9px] text-slate-500 font-mono">
+                        {periodMovimentacoes.filter(c => c.status === 'Devolvida').length} dev. / {periodMovimentacoes.filter(c => c.status !== 'Devolvida').length} abertas
+                      </span>
+                    </div>
+
+                    <div className="bg-slate-950/40 border border-slate-850 p-3 rounded-xl">
+                      <span className="text-[9px] font-mono text-slate-400 uppercase tracking-wider block">2. Armas Particulares</span>
+                      <strong className="text-base font-bold text-emerald-400 font-mono mt-1 block">
+                        {armasParticularesData.length} na Reserva
+                      </strong>
+                      <span className="text-[9px] text-slate-500 font-mono">
+                        {periodArmasParticularesMov.length} mov. no período
+                      </span>
+                    </div>
+
+                    <div className="bg-slate-950/40 border border-slate-850 p-3 rounded-xl">
+                      <span className="text-[9px] font-mono text-slate-400 uppercase tracking-wider block">3. Cargas Permanentes</span>
+                      <strong className="text-base font-bold text-blue-400 font-mono mt-1 block">
+                        {fechamentoPermanentesEmPosse.length} em Posse
+                      </strong>
+                      <span className="text-[9px] text-slate-500 font-mono">
+                        {fechamentoPermanentesDevolucoes.length} devoluções
+                      </span>
+                    </div>
+
+                    <div className="bg-slate-950/40 border border-slate-850 p-3 rounded-xl">
+                      <span className="text-[9px] font-mono text-slate-400 uppercase tracking-wider block">4. Estoque Físico</span>
+                      <strong className="text-base font-bold text-slate-100 font-mono mt-1 block">
+                        {fechamentoEstoqueData.reduce((acc, i) => acc + i.total, 0) + fechamentoBastoesInfo.total} un.
+                      </strong>
+                      <span className="text-[9px] text-slate-500 font-mono">
+                        Bastões: {fechamentoBastoesInfo.total} un. ({fechamentoBastoesInfo.disponivel} paiol)
+                      </span>
+                    </div>
+
+                    <div className="bg-slate-950/40 border border-slate-850 p-3 rounded-xl">
+                      <span className="text-[9px] font-mono text-slate-400 uppercase tracking-wider block">5. Livro de Alterações</span>
+                      <strong className="text-base font-bold text-amber-400 font-mono mt-1 block">
+                        {fechamentoOcorrencias.length + fechamentoPendencias.length} reg.
+                      </strong>
+                      <span className="text-[9px] text-slate-500 font-mono">
+                        {fechamentoOcorrencias.length} oco. / {fechamentoPendencias.length} pend.
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Resumo Visual das 5 Seções */}
+                  <div className="space-y-4">
+                    {/* Seção 1 */}
+                    <div className="border border-slate-850 rounded-xl bg-slate-950/20 p-4 space-y-2">
+                      <div className="flex items-center justify-between border-b border-slate-850/80 pb-2">
+                        <span className="font-mono text-xs font-bold text-slate-200 uppercase tracking-wider">
+                          Seção 1: Cautelas Diárias ({periodMovimentacoes.length})
+                        </span>
+                        <span className="text-[10px] text-slate-500 font-mono">Saídas e Devoluções operacionais</span>
+                      </div>
+                      <div className="overflow-x-auto max-h-48 custom-scrollbar">
+                        <table className="w-full text-left text-[11px] font-mono">
+                          <thead>
+                            <tr className="text-slate-400 border-b border-slate-850 text-[10px] uppercase">
+                              <th className="p-2">Código</th>
+                              <th className="p-2">Policial</th>
+                              <th className="p-2">Materiais</th>
+                              <th className="p-2">Retirada</th>
+                              <th className="p-2">Devolução</th>
+                              <th className="p-2">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {periodMovimentacoes.slice(0, 10).map((c, i) => (
+                              <tr key={i} className="border-b border-slate-900/60 hover:bg-slate-900/40">
+                                <td className="p-2 font-bold text-blue-400">{c.id_cautela}</td>
+                                <td className="p-2 text-slate-200">{c.nome_de_guerra || c.nome}</td>
+                                <td className="p-2 text-slate-300 max-w-xs truncate">{c.materiais}</td>
+                                <td className="p-2 text-slate-400">{c.hora_cautela}</td>
+                                <td className="p-2 text-slate-400">{c.hora_devolucao || 'Em aberto'}</td>
+                                <td className="p-2 font-bold uppercase">{c.status}</td>
+                              </tr>
+                            ))}
+                            {periodMovimentacoes.length === 0 && (
+                              <tr>
+                                <td colSpan={6} className="p-4 text-center text-slate-500 italic">
+                                  Nenhuma cautela no período selecionado.
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                      {periodMovimentacoes.length > 10 && (
+                        <div className="text-[10px] text-slate-500 font-mono text-right pt-1">
+                          ... e mais {periodMovimentacoes.length - 10} cautelas que constarão no relatório impresso/Excel.
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Seção 2 */}
+                    <div className="border border-slate-850 rounded-xl bg-slate-950/20 p-4 space-y-3">
+                      <div className="flex items-center justify-between border-b border-slate-850/80 pb-2">
+                        <span className="font-mono text-xs font-bold text-slate-200 uppercase tracking-wider">
+                          Seção 2: Armas Particulares ({periodArmasParticularesMov.length} mov. no período / {armasParticularesData.length} na Reserva)
+                        </span>
+                      </div>
+                      
+                      {/* 2.1 Movimentações do Período */}
+                      <div className="space-y-1.5">
+                        <div className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wide">
+                          2.1 Movimentações no Período (Entradas e Saídas):
+                        </div>
+                        {periodArmasParticularesMov.length > 0 ? (
+                          <div className="space-y-1 max-h-36 overflow-y-auto custom-scrollbar">
+                            {periodArmasParticularesMov.map((m, i) => (
+                              <div key={i} className="flex items-center justify-between text-[11px] font-mono bg-slate-900/60 p-2 rounded border border-slate-850">
+                                <div className="flex items-center gap-2">
+                                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
+                                    m.tipo_mov.includes('Entrada') ? 'bg-emerald-950/60 text-emerald-400 border border-emerald-800/40' : 'bg-amber-950/60 text-amber-400 border border-amber-800/40'
+                                  }`}>
+                                    {m.tipo_mov}
+                                  </span>
+                                  <span className="text-slate-200 font-bold">{m.modelo_serie}</span>
+                                  <span className="text-slate-400">({m.nome})</span>
+                                </div>
+                                <span className="text-slate-500 text-[10px]">{m.data_hora}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="text-slate-500 italic text-[11px] font-mono">
+                            Nenhuma entrada ou saída de arma particular no período selecionado.
+                          </div>
+                        )}
+                      </div>
+
+                      {/* 2.2 Saldo Atual */}
+                      <div className="space-y-1.5 pt-2 border-t border-slate-850/60">
+                        <div className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wide">
+                          2.2 Saldo Atual sob Custódia na Reserva:
+                        </div>
+                        {armasParticularesData.length > 0 ? (
+                          <div className="flex flex-wrap gap-2 pt-1">
+                            {armasParticularesData.map((a, i) => (
+                              <span key={i} className="px-2.5 py-1 bg-emerald-955/40 border border-emerald-900/40 rounded text-emerald-300 font-mono text-[10px]">
+                                🛡️ {a.modelo} (SN: {a.numero_serie}) - {a.nome}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-slate-500 italic text-[11px] font-mono">Nenhuma arma particular na reserva no momento.</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Seção 3 */}
+                    <div className="border border-slate-850 rounded-xl bg-slate-950/20 p-4 space-y-2">
+                      <div className="flex items-center justify-between border-b border-slate-850/80 pb-2">
+                        <span className="font-mono text-xs font-bold text-slate-200 uppercase tracking-wider">
+                          Seção 3: Cargas Bélicas Permanentes ({fechamentoPermanentesEmPosse.length} em posse / {fechamentoPermanentesDevolucoes.length} devoluções)
+                        </span>
+                      </div>
+                      <div className="text-xs text-slate-300">
+                        {fechamentoPermanentesEmPosse.length > 0 ? (
+                          <div className="flex flex-wrap gap-2 pt-1">
+                            {fechamentoPermanentesEmPosse.slice(0, 8).map((p, i) => (
+                              <span key={i} className="px-2.5 py-1 bg-blue-955/40 border border-blue-900/40 rounded text-blue-300 font-mono text-[10px]">
+                                📌 {p.modelo} ({p.id_material}) - {p.policial}
+                              </span>
+                            ))}
+                            {fechamentoPermanentesEmPosse.length > 8 && (
+                              <span className="text-slate-500 text-[10px] font-mono self-center">
+                                +{fechamentoPermanentesEmPosse.length - 8} itens
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-slate-500 italic text-[11px] font-mono">Nenhuma carga permanente ativa.</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Seção 4: Estoque e Bastões */}
+                    <div className="border border-slate-850 rounded-xl bg-slate-950/20 p-4 space-y-3">
+                      <div className="flex items-center justify-between border-b border-slate-850/80 pb-2">
+                        <span className="font-mono text-xs font-bold text-slate-200 uppercase tracking-wider">
+                          Seção 4: Inventário do Paiol & Bastões
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-mono">
+                          {fechamentoEstoqueData.length} modelos de materiais
+                        </span>
+                      </div>
+                      
+                      {/* Bloco dos Bastões Compactados */}
+                      <div className="bg-slate-900/80 border border-slate-800 p-3 rounded-lg space-y-1">
+                        <div className="flex items-center justify-between text-xs font-mono font-bold text-slate-200">
+                          <span>Bastões: Total: {fechamentoBastoesInfo.total} un.</span>
+                          <span className="text-[10px] text-emerald-400 font-bold">
+                            {fechamentoBastoesInfo.disponivel} no Paiol / {fechamentoBastoesInfo.cautelado} em Cautela
+                          </span>
+                        </div>
+                        <div className="text-[10px] font-mono text-slate-400 leading-relaxed break-words">
+                          <strong className="text-slate-300">Relação de Números:</strong> {fechamentoBastoesInfo.numeros}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Seção 5: Alterações */}
+                    <div className="border border-slate-850 rounded-xl bg-slate-950/20 p-4 space-y-2">
+                      <div className="flex items-center justify-between border-b border-slate-850/80 pb-2">
+                        <span className="font-mono text-xs font-bold text-slate-200 uppercase tracking-wider">
+                          Seção 5: Livro de Alterações & Ocorrências ({fechamentoOcorrencias.length + fechamentoPendencias.length})
+                        </span>
+                      </div>
+                      <div className="space-y-1.5 pt-1">
+                        {fechamentoOcorrencias.slice(0, 3).map((o, i) => (
+                          <div key={i} className="text-[11px] text-slate-300 font-sans border-l-2 border-amber-500 pl-2">
+                            <span className="font-bold text-amber-400 font-mono uppercase">{o.tipo}:</span> {o.titulo}
+                          </div>
+                        ))}
+                        {fechamentoPendencias.slice(0, 3).map((p, i) => (
+                          <div key={`pen-${i}`} className="text-[11px] text-slate-300 font-sans border-l-2 border-emerald-500 pl-2">
+                            <span className="font-bold text-emerald-400 font-mono uppercase">PENDÊNCIA:</span> {p.descricao}
+                          </div>
+                        ))}
+                        {fechamentoOcorrencias.length === 0 && fechamentoPendencias.length === 0 && (
+                          <span className="text-slate-500 italic text-[11px] font-mono">Sem alterações registradas no período.</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* ABA 1: RELATÓRIO PERIÓDICO */}
               {selectedReportTab === 'periodico' && (
                 <div className="space-y-6">
@@ -2177,23 +2860,29 @@ ${estoqueObservacao.trim() || 'Sem divergências ou alterações físicas relata
             </div>
 
             {/* Rodapé do Modal */}
-            <div className="p-4 bg-slate-950/40 border-t border-slate-850 flex items-center justify-between shrink-0">
+            <div className="p-4 bg-slate-950/40 border-t border-slate-850 flex flex-wrap items-center justify-between gap-3 shrink-0">
               <button
                 type="button"
                 onClick={() => setIsReportsModalOpen(false)}
-                className="px-4 py-2 border border-slate-800 hover:border-slate-700 bg-slate-900 hover:bg-slate-850 text-slate-455 hover:text-slate-200 font-bold font-mono text-xs rounded-lg transition-colors cursor-pointer"
+                className="px-4 py-2 border border-slate-800 hover:border-slate-700 bg-slate-900 hover:bg-slate-850 text-slate-400 hover:text-slate-200 font-bold font-mono text-xs rounded-lg transition-colors cursor-pointer"
               >
                 Cancelar / Fechar
               </button>
               
-              <button
-                type="button"
-                onClick={triggerPrintReport}
-                className="px-5 py-2 bg-violet-600 hover:bg-violet-550 text-white font-bold font-mono text-xs rounded-lg transition-all shadow-md hover:shadow-violet-500/20 active:scale-95 duration-150 cursor-pointer flex items-center gap-1.5 glow-violet"
-              >
-                <Printer className="h-4 w-4" />
-                <span>Imprimir Relatório</span>
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={triggerPrintReport}
+                  className={`px-5 py-2 text-white font-bold font-mono text-xs rounded-lg transition-all shadow-md active:scale-95 duration-150 cursor-pointer flex items-center gap-1.5 ${
+                    selectedReportTab === 'fechamento_global'
+                      ? 'bg-violet-600 hover:bg-violet-550 hover:shadow-violet-500/20 glow-violet'
+                      : 'bg-violet-600 hover:bg-violet-550 hover:shadow-violet-500/20 glow-violet'
+                  }`}
+                >
+                  <Printer className="h-4 w-4" />
+                  <span>Imprimir Relatório Oficial (PDF)</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>

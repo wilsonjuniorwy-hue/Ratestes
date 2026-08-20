@@ -1373,15 +1373,11 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
     const armeiroResponsavel = activeArmeiroMatricula || usuarios.find(u => u.perfil === 'armeiro_gestor')?.matricula || 'SYS-AM';
     const agora = new Date().toISOString();
 
-    // 1. Atualizar materiais correspondentes no estoque (somente deduz se consumido em serviço)
+    // 1. Atualizar materiais correspondentes no estoque (lotes permanecem com carga total invariante)
     const materiaisAtualizados = materiais.map(m => {
       if (idsMateriaisDevolvidos.includes(m.id_material)) {
         if (m.controle_quantidade) {
-          const qtyConsumed = (consumedQuantities && consumedQuantities[m.id_material]) || 0;
-          if (qtyConsumed > 0) {
-            return { ...m, quantidade: Math.max(0, (m.quantidade || 0) - qtyConsumed) };
-          }
-          return m;
+          return m; // Carga total permanece invariante (gestão exclusivamente manual)
         }
         return { ...m, status_atual: 'disponivel' as StatusMaterial };
       }
@@ -1610,19 +1606,10 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
           
           idsMateriaisDevolvidos.forEach(idMat => {
             const matObj = materiaisAtualizados.find(m => m.id_material === idMat);
-            if (matObj) {
-              if (matObj.controle_quantidade) {
-                const qtyConsumed = (consumedQuantities && consumedQuantities[idMat]) || 0;
-                if (qtyConsumed > 0) {
-                  supabase.from('materiais').update({ quantidade: matObj.quantidade }).eq('id_material', idMat).then(({ error }) => {
-                    if (error) console.error(`Erro ao atualizar material ${idMat} no Supabase:`, error);
-                  });
-                }
-              } else {
-                supabase.from('materiais').update({ status_atual: matObj.status_atual }).eq('id_material', idMat).then(({ error }) => {
-                  if (error) console.error(`Erro ao atualizar material ${idMat} no Supabase:`, error);
-                });
-              }
+            if (matObj && !matObj.controle_quantidade) {
+              supabase.from('materiais').update({ status_atual: matObj.status_atual }).eq('id_material', idMat).then(({ error }) => {
+                if (error) console.error(`Erro ao atualizar material ${idMat} no Supabase:`, error);
+              });
             }
           });
 

@@ -117,7 +117,7 @@ BEGIN
 
   RETURN jsonb_build_object('success', true, 'id_cautela', p_cautela->>'id_cautela');
 END;
-$$ LANGUAGE plpgsql SECURITY INVOKER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 -- ------------------------------------------------------------
 -- PASSO 2: ATUALIZAR RPC PARA REALIZAR DEVOLUÇÃO ATÔMICA
@@ -188,15 +188,29 @@ BEGIN
 
   RETURN jsonb_build_object('success', true, 'id_cautela', p_id_cautela);
 END;
-$$ LANGUAGE plpgsql SECURITY INVOKER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
-GRANT EXECUTE ON FUNCTION fn_efetivar_cautela(jsonb, jsonb) TO authenticated;
-GRANT EXECUTE ON FUNCTION fn_realizar_devolucao(text, text, text, timestamptz, text, jsonb) TO authenticated;
+GRANT EXECUTE ON FUNCTION fn_efetivar_cautela(jsonb, jsonb) TO authenticated, anon;
+GRANT EXECUTE ON FUNCTION fn_realizar_devolucao(text, text, text, timestamptz, text, jsonb) TO authenticated, anon;
 
 -- ------------------------------------------------------------
--- PASSO 3: RESTAURAÇÃO IDEMPOTENTE DOS TOTAIS DE ESTOQUE
+-- PASSO 3: RESTAURAÇÃO COMPLETA DOS TOTAIS DE ESTOQUE (CARGA TOTAL OFICIAL)
 -- ------------------------------------------------------------
-UPDATE materiais SET quantidade = 339 WHERE id_material = 'MUN-9MM' AND quantidade = 309;
-UPDATE materiais SET quantidade = 47  WHERE id_material = 'BAT-HYTERA' AND quantidade = 37;
-UPDATE materiais SET quantidade = 37  WHERE id_material = 'GL 108 MAX' AND quantidade = 36;
-UPDATE materiais SET quantidade = 201 WHERE id_material = '0' AND quantidade = 200;
+UPDATE materiais SET quantidade = 47  WHERE id_material = 'BAT-HYTERA';
+UPDATE materiais SET quantidade = 52  WHERE id_material = 'BAT-SEPURA';
+UPDATE materiais SET quantidade = 339 WHERE id_material = 'MUN-9MM';
+UPDATE materiais SET quantidade = 180 WHERE id_material = 'MUN-556';
+UPDATE materiais SET quantidade = 177 WHERE id_material = 'MUN-40';
+UPDATE materiais SET quantidade = 47  WHERE id_material = 'MUN-123T';
+UPDATE materiais SET quantidade = 213 WHERE id_material = 'MUN-12ELASTOMERO';
+UPDATE materiais SET quantidade = 37  WHERE id_material = 'GL 108 MAX';
+UPDATE materiais SET quantidade = 644 WHERE id_material = 'GL 108';
+UPDATE materiais SET quantidade = 201 WHERE id_material = '0';
+UPDATE materiais SET quantidade = 19  WHERE id_material = '03';
+UPDATE materiais SET quantidade = 20  WHERE id_material = '04';
+UPDATE materiais SET quantidade = 20  WHERE id_material = '15';
+UPDATE materiais SET quantidade = 19  WHERE id_material = '01';
+UPDATE materiais SET quantidade = 24  WHERE id_material = '10';
+UPDATE materiais SET quantidade = 67  WHERE id_material = '00';
+UPDATE materiais SET quantidade = 68  WHERE id_material = '09';
+UPDATE materiais SET quantidade = 50  WHERE id_material = 'TREINO';

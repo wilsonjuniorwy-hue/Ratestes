@@ -225,7 +225,7 @@ export function BancoDadosView({
     if (!mat.controle_quantidade) return null;
     const cautelasAtivasIds = new Set(cautelas.filter(c => c.status_cautela !== 'devolvida').map(c => c.id_cautela));
     const totalCautelado = cautelaItens
-      .filter(ci => ci.id_material === mat.id_material && ci.estado_devolucao === undefined && cautelasAtivasIds.has(ci.id_cautela))
+      .filter(ci => ci.id_material === mat.id_material && !ci.estado_devolucao && cautelasAtivasIds.has(ci.id_cautela))
       .reduce((sum, item) => sum + item.quantidade, 0);
     return Math.max(0, (mat.quantidade || 0) - totalCautelado);
   };
@@ -341,7 +341,7 @@ export function BancoDadosView({
     if (!mat) return;
 
     const hasActiveCautelas = cautelas.some(c => c.status_cautela !== 'devolvida' && 
-      cautelaItens.some(ci => ci.id_cautela === c.id_cautela && ci.id_material === idMaterial && ci.estado_devolucao === undefined)
+      cautelaItens.some(ci => ci.id_cautela === c.id_cautela && ci.id_material === idMaterial && !ci.estado_devolucao)
     );
 
     let confirmMsg = `Deseja realmente excluir permanentemente o material ${mat.modelo} (S/N: ${mat.id_material}) do estoque do paiol?`;
@@ -1566,7 +1566,9 @@ export function BancoDadosView({
                                   <span className={`text-xs font-mono font-black ${qtyDisp && qtyDisp > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                                     {qtyDisp} / {totalQty} un
                                   </span>
-                                  <span className="text-[8px] font-mono text-slate-500 uppercase tracking-wide">disponíveis</span>
+                                  <span className="text-[8px] font-mono text-slate-400 uppercase tracking-wide">
+                                    Disp: <strong className="text-emerald-400">{qtyDisp}</strong> | Rua: <strong className="text-blue-400">{Math.max(0, (totalQty || 0) - (qtyDisp || 0))}</strong>
+                                  </span>
                                 </div>
                               ) : isCautelado || isRetirado ? (
                                 <span className={`text-[8px] font-mono font-black uppercase px-2.5 py-1 rounded border ${

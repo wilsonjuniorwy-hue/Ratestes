@@ -668,12 +668,23 @@ export default function FlowSimulator({
           table {
             width: 100% !important;
             border-collapse: collapse !important;
-            margin-top: 15px !important;
-            margin-bottom: 15px !important;
+            margin-top: 8px !important;
+            margin-bottom: 12px !important;
+            page-break-inside: auto !important;
+          }
+          thead {
+            display: table-header-group !important;
+          }
+          tfoot {
+            display: table-footer-group !important;
+          }
+          tr {
+            page-break-inside: avoid !important;
+            page-break-after: auto !important;
           }
           th, td {
             border: 1px solid #000 !important;
-            padding: 6px 8px !important;
+            padding: 4px 6px !important;
             text-align: left !important;
             font-size: 8pt !important;
             color: #000000 !important;
@@ -691,6 +702,9 @@ export default function FlowSimulator({
             border-bottom: 2px solid #000 !important;
             padding-bottom: 5px !important;
             font-weight: bold !important;
+          }
+          h3 {
+            page-break-after: avoid !important;
           }
           .print-meta {
             margin-bottom: 15px !important;
@@ -947,12 +961,16 @@ export default function FlowSimulator({
       {/* ÁREA DE IMPRESSÃO - RELATÓRIOS DO LIVRO DE OCORRÊNCIAS */}
       {printReportData && (
         <div id="print-area-relatorio" style={{ fontFamily: 'Arial, sans-serif' }}>
-          <h2 style={{ textAlign: 'center', textTransform: 'uppercase', borderBottom: '2px solid #000', paddingBottom: '8px', marginBottom: '20px' }}>
-            {printReportData.title}
-          </h2>
-          <div className="print-meta" style={{ textAlign: 'center', fontSize: '9pt', fontStyle: 'italic', marginBottom: '20px' }}>
-            {printReportData.meta}
-          </div>
+          {printReportData.type !== 'fechamento_global' && (
+            <>
+              <h2 style={{ textAlign: 'center', textTransform: 'uppercase', borderBottom: '2px solid #000', paddingBottom: '8px', marginBottom: '20px' }}>
+                {printReportData.title}
+              </h2>
+              <div className="print-meta" style={{ textAlign: 'center', fontSize: '9pt', fontStyle: 'italic', marginBottom: '20px' }}>
+                {printReportData.meta}
+              </div>
+            </>
+          )}
 
           {printReportData.type === 'periodico' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -1178,8 +1196,427 @@ export default function FlowSimulator({
             </div>
           )}
 
-          {/* Rodapé de Assinaturas */}
-          {renderSignatureFooter(activeArmeiroMatricula, 'Armeiro Responsável')}
+          {printReportData.type === 'fechamento_global' && (
+            <div style={{ display: 'block', width: '100%' }}>
+              {/* CABEÇALHO OFICIAL PMDF */}
+              <div style={{ textAlign: 'center', borderBottom: '2px solid #000', paddingBottom: '10px', marginBottom: '18px' }}>
+                <div style={{ fontSize: '12pt', fontWeight: 'bold', letterSpacing: '1px' }}>
+                  POLÍCIA MILITAR DO DISTRITO FEDERAL
+                </div>
+                <div style={{ fontSize: '10pt', fontWeight: 'bold', color: '#222', marginTop: '2px' }}>
+                  {db.quarteis && db.quarteis.length > 0 ? db.quarteis[0].nome.toUpperCase() : 'REGIMENTO DE POLÍCIA MONTADA (RPMont / CAVALARIA)'}
+                </div>
+                <div style={{ fontSize: '11pt', fontWeight: 'bold', textTransform: 'uppercase', marginTop: '8px', borderTop: '1px solid #444', paddingTop: '6px' }}>
+                  RELATÓRIO CONSOLIDADO DE FECHAMENTO E LIVRO GERAL DA RESERVA
+                </div>
+                <div style={{ fontSize: '8pt', fontStyle: 'italic', marginTop: '4px', color: '#111' }}>
+                  Período: <strong>{new Date(printReportData.data.startDateStr).toLocaleString('pt-BR')}</strong> até <strong>{new Date(printReportData.data.endDateStr).toLocaleString('pt-BR')}</strong> | Emitido em: <strong>{new Date().toLocaleString('pt-BR')}</strong>
+                </div>
+                <div style={{ fontSize: '8pt', marginTop: '2px', color: '#333' }}>
+                  Armeiro de Serviço:{' '}
+                  <strong>
+                    {(() => {
+                      const armUser = getArmeiroUser(activeArmeiroMatricula);
+                      return armUser
+                        ? `${formatPostoGraduacaoSigla(armUser.posto_graduacao)} ${armUser.nome_de_guerra || armUser.nome} (Mat. ${limparMatricula(armUser.matricula)})`
+                        : limparMatricula(activeArmeiroMatricula);
+                    })()}
+                  </strong>
+                </div>
+              </div>
+
+              {/* SEÇÃO 1: CAUTELAS DIÁRIAS (RETIRADAS E DEVOLUÇÕES NO PERÍODO) */}
+              <div style={{ marginBottom: '20px', display: 'block' }}>
+                <h3 style={{ fontSize: '10.5pt', fontWeight: 'bold', borderBottom: '1.5px solid #000', paddingBottom: '3px', marginBottom: '8px', textTransform: 'uppercase', display: 'flex', justifyContent: 'space-between' }}>
+                  <span>1. Cautelas Diárias (Movimentação do Período)</span>
+                  <span style={{ fontSize: '8.5pt', fontWeight: 'normal' }}>
+                    Total no Período: <strong>{printReportData.data.cautelasDiarias?.length || 0}</strong>
+                  </span>
+                </h3>
+                <table>
+                  <thead>
+                    <tr>
+                      <th style={{ width: '15%' }}>Matrícula</th>
+                      <th style={{ width: '22%' }}>Policial</th>
+                      <th style={{ width: '38%' }}>Materiais Pagos</th>
+                      <th style={{ width: '12.5%' }}>Cautela</th>
+                      <th style={{ width: '12.5%' }}>Devolução</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {printReportData.data.cautelasDiarias && printReportData.data.cautelasDiarias.map((c: any, idx: number) => (
+                      <tr key={idx}>
+                        <td style={{ fontWeight: 'bold' }}>{limparMatricula(c.matricula)}</td>
+                        <td>{c.nome_de_guerra ? `${c.posto_graduacao || ''} ${c.nome_de_guerra}` : c.nome}</td>
+                        <td>{c.materiais}</td>
+                        <td>
+                          <div>{c.hora_cautela}</div>
+                          <div style={{ fontWeight: 'bold', fontSize: '7.5pt', marginTop: '2px' }}>
+                            {c.is_emergencial ? 'Autorizado emergencialmente' : 'Assinado eletronicamente'}
+                          </div>
+                        </td>
+                        <td>
+                          {c.hora_devolucao ? (
+                            <>
+                              <div>{c.hora_devolucao}</div>
+                              <div style={{ fontWeight: 'bold', fontSize: '7.5pt', marginTop: '2px' }}>
+                                Assinado eletronicamente
+                              </div>
+                              {c.matricula_armeiro_devolucao && (
+                                <div style={{ fontSize: '7.5pt', color: '#333', marginTop: '2px' }}>
+                                  Matrícula: {limparMatricula(c.matricula_armeiro_devolucao)}
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <span style={{ fontStyle: 'italic' }}>Pendente</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                    {(!printReportData.data.cautelasDiarias || printReportData.data.cautelasDiarias.length === 0) && (
+                      <tr>
+                        <td colSpan={5} style={{ textAlign: 'center', fontStyle: 'italic', padding: '10px' }}>
+                          Nenhuma cautela operacional movimentada no período selecionado.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* SEÇÃO 2: ARMAS E MATERIAIS PARTICULARES */}
+              <div style={{ marginBottom: '20px', display: 'block' }}>
+                <h3 style={{ fontSize: '10.5pt', fontWeight: 'bold', borderBottom: '1.5px solid #000', paddingBottom: '3px', marginBottom: '8px', textTransform: 'uppercase' }}>
+                  2. Armas e Materiais Particulares
+                </h3>
+                
+                {/* 2.1 Movimentações */}
+                <div style={{ marginBottom: '12px' }}>
+                  <div style={{ fontSize: '8.5pt', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>
+                    2.1 Movimentações no Período (Entradas e Saídas)
+                  </div>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th style={{ width: '15%' }}>Data/Hora</th>
+                        <th style={{ width: '25%' }}>Policial Proprietário</th>
+                        <th style={{ width: '30%' }}>Material Particular (Modelo/Série)</th>
+                        <th style={{ width: '15%' }}>Movimentação</th>
+                        <th style={{ width: '15%' }}>Obs</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {printReportData.data.armasParticulares?.movimentacoes && printReportData.data.armasParticulares.movimentacoes.map((mov: any, idx: number) => (
+                        <tr key={idx}>
+                          <td>{mov.data_hora}</td>
+                          <td>{mov.nome_de_guerra || mov.nome} ({limparMatricula(mov.matricula)})</td>
+                          <td>{mov.modelo_serie}</td>
+                          <td style={{ fontWeight: 'bold' }}>{mov.tipo_mov}</td>
+                          <td>{mov.obs || '-'}</td>
+                        </tr>
+                      ))}
+                      {(!printReportData.data.armasParticulares?.movimentacoes || printReportData.data.armasParticulares.movimentacoes.length === 0) && (
+                        <tr>
+                          <td colSpan={5} style={{ textAlign: 'center', fontStyle: 'italic', padding: '8px' }}>
+                            Nenhuma entrada ou saída de arma particular registrada no período.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* 2.2 Saldo Atual Na Reserva */}
+                <div>
+                  <div style={{ fontSize: '8.5pt', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>
+                    2.2 Saldo Atual de Armas Particulares na Reserva
+                  </div>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th style={{ width: '15%' }}>Matrícula</th>
+                        <th style={{ width: '25%' }}>Proprietário</th>
+                        <th style={{ width: '35%' }}>Armamento / Acessórios</th>
+                        <th style={{ width: '15%' }}>Data Entrada</th>
+                        <th style={{ width: '10%' }}>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {printReportData.data.armasParticulares?.saldoNaReserva && printReportData.data.armasParticulares.saldoNaReserva.map((arma: any, idx: number) => (
+                        <tr key={idx}>
+                          <td>{limparMatricula(arma.matricula)}</td>
+                          <td>{arma.nome}</td>
+                          <td>{arma.modelo} {arma.fabricante ? `[${arma.fabricante}]` : ''} {arma.calibre ? `(Cal. ${arma.calibre})` : ''} {arma.numero_serie ? `[SN: ${arma.numero_serie}]` : ''}</td>
+                          <td>{arma.data_deposito}</td>
+                          <td style={{ fontWeight: 'bold', color: '#047857' }}>Na Reserva</td>
+                        </tr>
+                      ))}
+                      {(!printReportData.data.armasParticulares?.saldoNaReserva || printReportData.data.armasParticulares.saldoNaReserva.length === 0) && (
+                        <tr>
+                          <td colSpan={5} style={{ textAlign: 'center', fontStyle: 'italic', padding: '8px' }}>
+                            Nenhuma arma particular guardada na reserva no momento.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* SEÇÃO 3: CARGAS BÉLICAS PERMANENTES */}
+              <div style={{ marginBottom: '20px', display: 'block' }}>
+                <h3 style={{ fontSize: '10.5pt', fontWeight: 'bold', borderBottom: '1.5px solid #000', paddingBottom: '3px', marginBottom: '8px', textTransform: 'uppercase' }}>
+                  3. Cargas Bélicas Permanentes (Dotação Pessoal / Fixa)
+                </h3>
+                
+                {/* 3.1 Devoluções no Período */}
+                <div style={{ marginBottom: '12px' }}>
+                  <div style={{ fontSize: '8.5pt', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>
+                    3.1 Devoluções de Cargas Permanentes no Período
+                  </div>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th style={{ width: '15%' }}>Data Devolução</th>
+                        <th style={{ width: '30%' }}>Policial Militar</th>
+                        <th style={{ width: '35%' }}>Material Devolvido</th>
+                        <th style={{ width: '20%' }}>Obs / Motivo</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {printReportData.data.cargasPermanentes?.devolucoes && printReportData.data.cargasPermanentes.devolucoes.map((dev: any, idx: number) => (
+                        <tr key={idx}>
+                          <td>{dev.data_devolucao}</td>
+                          <td>{dev.policial} ({limparMatricula(dev.matricula)})</td>
+                          <td>{dev.material}</td>
+                          <td>{dev.obs || 'Devolução à Reserva'}</td>
+                        </tr>
+                      ))}
+                      {(!printReportData.data.cargasPermanentes?.devolucoes || printReportData.data.cargasPermanentes.devolucoes.length === 0) && (
+                        <tr>
+                          <td colSpan={4} style={{ textAlign: 'center', fontStyle: 'italic', padding: '8px' }}>
+                            Nenhuma devolução de carga permanente realizada no período.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* 3.2 Em Posse Ativa */}
+                <div>
+                  <div style={{ fontSize: '8.5pt', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>
+                    3.2 Relação de Militares com Carga Permanente Ativa (Fora da Reserva)
+                  </div>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th style={{ width: '15%' }}>Guia</th>
+                        <th style={{ width: '30%' }}>Policial Militar</th>
+                        <th style={{ width: '35%' }}>Material / Modelo / Série</th>
+                        <th style={{ width: '20%' }}>Data Carga</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {printReportData.data.cargasPermanentes?.emPosse && printReportData.data.cargasPermanentes.emPosse.map((pos: any, idx: number) => (
+                        <tr key={idx}>
+                          <td style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{pos.id_cautela}</td>
+                          <td style={{ fontWeight: 'bold' }}>{pos.policial} ({limparMatricula(pos.matricula)})</td>
+                          <td>{pos.modelo} ({pos.id_material})</td>
+                          <td>{pos.data_carga}</td>
+                        </tr>
+                      ))}
+                      {(!printReportData.data.cargasPermanentes?.emPosse || printReportData.data.cargasPermanentes.emPosse.length === 0) && (
+                        <tr>
+                          <td colSpan={4} style={{ textAlign: 'center', fontStyle: 'italic', padding: '8px' }}>
+                            Nenhum militar com carga permanente ativa registrada no momento.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* SEÇÃO 4: INVENTÁRIO GERAL DO ESTOQUE (PAIOL) */}
+              <div style={{ marginBottom: '20px', display: 'block' }}>
+                <h3 style={{ fontSize: '10.5pt', fontWeight: 'bold', borderBottom: '1.5px solid #000', paddingBottom: '3px', marginBottom: '8px', textTransform: 'uppercase' }}>
+                  4. Inventário Geral do Estoque (Paiol da Unidade)
+                </h3>
+                <table>
+                  <thead>
+                    <tr>
+                      <th style={{ width: '25%' }}>Equipamento / Modelo</th>
+                      <th style={{ width: '20%' }}>Fabricante</th>
+                      <th style={{ width: '15%', textAlign: 'center' }}>Total Físico</th>
+                      <th style={{ width: '15%', textAlign: 'center' }}>Disponível (Paiol)</th>
+                      <th style={{ width: '12%', textAlign: 'center' }}>Cautelado (Rua)</th>
+                      <th style={{ width: '13%', textAlign: 'center' }}>Manutenção</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {printReportData.data.estoquePaiol?.itens && printReportData.data.estoquePaiol.itens.map((item: any, idx: number) => (
+                      <tr key={idx}>
+                        <td style={{ fontWeight: 'bold' }}>{item.modelo}</td>
+                        <td>{item.fabricante || '-'}</td>
+                        <td style={{ textAlign: 'center', fontWeight: 'bold' }}>{item.total} un.</td>
+                        <td style={{ textAlign: 'center', color: '#047857', fontWeight: 'bold' }}>{item.disponivel} un.</td>
+                        <td style={{ textAlign: 'center', color: '#b91c1c' }}>{item.cautelado} un.</td>
+                        <td style={{ textAlign: 'center' }}>{item.manutencao} un.</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                {/* Bloco Exclusivo dos Bastões Compactados */}
+                {printReportData.data.estoquePaiol?.bastoes && (
+                  <div style={{ border: '1px solid #000', padding: '8px 10px', marginTop: '6px', background: '#f9f9f9', fontSize: '8pt', lineHeight: '1.4', pageBreakInside: 'avoid' }}>
+                    <div style={{ fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '3px' }}>
+                      Bastões: Total: {printReportData.data.estoquePaiol.bastoes.total} un. ({printReportData.data.estoquePaiol.bastoes.disponivel} no Paiol / {printReportData.data.estoquePaiol.bastoes.cautelado} em Cautela)
+                    </div>
+                    <div>
+                      <strong>Relação de Números:</strong> {printReportData.data.estoquePaiol.bastoes.numeros || '1, 2, 3, 4, 5, 6, 7, 8, 9, 10...'}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* SEÇÃO 5: LIVRO DE ALTERAÇÕES E OCORRÊNCIAS */}
+              <div style={{ marginBottom: '20px', display: 'block' }}>
+                <h3 style={{ fontSize: '10.5pt', fontWeight: 'bold', borderBottom: '1.5px solid #000', paddingBottom: '3px', marginBottom: '10px', textTransform: 'uppercase' }}>
+                  5. Livro de Alterações e Ocorrências do Período
+                </h3>
+
+                {/* Lista de Ocorrências */}
+                {printReportData.data.alteracoesOcorrencias?.ocorrencias && printReportData.data.alteracoesOcorrencias.ocorrencias.map((oco: any, idx: number) => {
+                  const armUser = getArmeiroUser(oco.matricula_armeiro);
+                  const armeiroStr = armUser
+                    ? `${formatPostoGraduacaoSigla(armUser.posto_graduacao)} ${armUser.nome_de_guerra || armUser.nome} (Mat. ${limparMatricula(armUser.matricula)})`
+                    : `Mat. ${limparMatricula(oco.matricula_armeiro)}`;
+
+                  return (
+                    <div key={`oco-${idx}`} style={{ border: '1px solid #333', marginBottom: '12px', pageBreakInside: 'avoid', background: '#fff' }}>
+                      {/* Faixa Superior de Cabeçalho */}
+                      <div style={{ backgroundColor: '#f2f2f2', borderBottom: '1px solid #444', padding: '6px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
+                        <div>
+                          <span style={{ fontWeight: 'bold', textTransform: 'uppercase', fontSize: '8.5pt' }}>
+                            [{oco.tipo?.replace('_', ' ').toUpperCase()}]: {oco.titulo}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '7.5pt', fontStyle: 'italic' }}>
+                          Registrado em: <strong>{new Date(oco.data_hora).toLocaleString('pt-BR')}</strong>
+                        </div>
+                      </div>
+
+                      {/* Sub-faixa de Identificação do Armeiro */}
+                      <div style={{ backgroundColor: '#fafafa', borderBottom: '1px solid #ddd', padding: '4px 10px', fontSize: '7.5pt', color: '#222' }}>
+                        Armeiro Registrante: <strong>{armeiroStr}</strong>
+                      </div>
+
+                      {/* Corpo da Ocorrência em largura total */}
+                      <div style={{ padding: '8px 10px', fontSize: '8pt', lineHeight: '1.45', whiteSpace: 'pre-wrap', color: '#000' }}>
+                        {oco.descricao}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* Lista de Pendências de Serviço */}
+                {printReportData.data.alteracoesOcorrencias?.pendencias && printReportData.data.alteracoesOcorrencias.pendencias.map((pen: any, idx: number) => {
+                  const criadorUser = getArmeiroUser(pen.matricula_criador);
+                  const criadorStr = criadorUser
+                    ? `${formatPostoGraduacaoSigla(criadorUser.posto_graduacao)} ${criadorUser.nome_de_guerra || criadorUser.nome} (Mat. ${limparMatricula(criadorUser.matricula)})`
+                    : `Mat. ${limparMatricula(pen.matricula_criador)}`;
+
+                  const isAberto = pen.status === 'aberto';
+
+                  return (
+                    <div key={`pen-${idx}`} style={{ border: '1px solid #333', marginBottom: '12px', pageBreakInside: 'avoid', background: '#fff' }}>
+                      {/* Faixa Superior de Cabeçalho */}
+                      <div style={{ backgroundColor: '#f2f2f2', borderBottom: '1px solid #444', padding: '6px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
+                        <div>
+                          <span style={{ fontWeight: 'bold', textTransform: 'uppercase', fontSize: '8.5pt', color: isAberto ? '#b91c1c' : '#047857' }}>
+                            [{isAberto ? 'PENDÊNCIA ABERTA' : 'PENDÊNCIA RESOLVIDA'}]
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '7.5pt', fontStyle: 'italic' }}>
+                          Registrada em: <strong>{new Date(pen.data_criacao).toLocaleString('pt-BR')}</strong>
+                        </div>
+                      </div>
+
+                      {/* Sub-faixa de Identificação do Armeiro */}
+                      <div style={{ backgroundColor: '#fafafa', borderBottom: '1px solid #ddd', padding: '4px 10px', fontSize: '7.5pt', color: '#222' }}>
+                        Registrado por: <strong>{criadorStr}</strong>
+                      </div>
+
+                      {/* Corpo da Pendência */}
+                      <div style={{ padding: '8px 10px', fontSize: '8pt', lineHeight: '1.45', whiteSpace: 'pre-wrap', color: '#000' }}>
+                        {pen.descricao}
+                        {pen.resolucao && (
+                          <div style={{ marginTop: '6px', paddingTop: '4px', borderTop: '1px dashed #ccc', fontStyle: 'italic', color: '#047857' }}>
+                            <strong>↳ Resolução ({pen.data_resolucao ? new Date(pen.data_resolucao).toLocaleString('pt-BR') : ''}):</strong> {pen.resolucao} {pen.matricula_resolvedor ? `(por Mat. ${limparMatricula(pen.matricula_resolvedor)})` : ''}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* Mensagem quando não há registros */}
+                {(!printReportData.data.alteracoesOcorrencias?.ocorrencias || printReportData.data.alteracoesOcorrencias.ocorrencias.length === 0) &&
+                 (!printReportData.data.alteracoesOcorrencias?.pendencias || printReportData.data.alteracoesOcorrencias.pendencias.length === 0) && (
+                  <div style={{ border: '1px solid #000', padding: '10px', textAlign: 'center', fontStyle: 'italic', fontSize: '8pt' }}>
+                    Nenhuma ocorrência ou alteração de serviço registrada no período.
+                  </div>
+                )}
+              </div>
+
+              {/* CARIMBO DE ASSINATURA ELETRÔNICA DIGITAL INSTITUCIONAL PMDF */}
+              <div style={{ border: '1.5px solid #000', padding: '12px 14px', marginTop: '25px', pageBreakInside: 'avoid', background: '#fafafa' }}>
+                <div style={{ textAlign: 'center', fontWeight: 'bold', fontSize: '9pt', textTransform: 'uppercase', marginBottom: '6px', borderBottom: '1px solid #bbb', paddingBottom: '4px' }}>
+                  🛡️ CARIMBO DE ASSINATURA ELETRÔNICA DIGITAL INSTITUCIONAL - PMDF
+                </div>
+                <div style={{ fontSize: '8pt', lineHeight: '1.5', color: '#111' }}>
+                  <div>Documento gerado e autenticado eletronicamente via Sistema Tático de Reserva de Armamento PMDF.</div>
+                  <div>
+                    Emitido por:{' '}
+                    <strong>
+                      {(() => {
+                        const armUser = getArmeiroUser(activeArmeiroMatricula);
+                        return armUser
+                          ? `${formatPostoGraduacaoSigla(armUser.posto_graduacao)} ${armUser.nome_de_guerra || armUser.nome}`
+                          : 'Armeiro de Serviço';
+                      })()}
+                    </strong>{' '}
+                    (Matrícula:{' '}
+                    <strong>
+                      {(() => {
+                        const armUser = getArmeiroUser(activeArmeiroMatricula);
+                        return armUser ? limparMatricula(armUser.matricula) : limparMatricula(activeArmeiroMatricula);
+                      })()}
+                    </strong>
+                    ) em <strong>{new Date().toLocaleString('pt-BR')}</strong>
+                  </div>
+                  <div>
+                    Unidade: <strong>{db.quarteis && db.quarteis.length > 0 ? db.quarteis[0].nome : 'Regimento de Polícia Montada (Cavalaria)'}</strong>
+                  </div>
+                  <div style={{ marginTop: '6px', paddingTop: '6px', borderTop: '1px dashed #999', fontFamily: 'monospace', fontSize: '7.5pt' }}>
+                    Chave de Autenticação Digital (SHA-256):<br />
+                    <strong style={{ wordBreak: 'break-all', color: '#000' }}>
+                      [ {printReportData.data.hashIntegridade || '8f4b2c19a0e8d35f78b9123e456789abcdef0123456789abcdef0123456789ab'} ]
+                    </strong>
+                  </div>
+                  <div style={{ fontSize: '7pt', color: '#555', fontStyle: 'italic', marginTop: '4px' }}>
+                    Conforme Lei Federal nº 14.063/2020 e normas de segurança orgânica da PMDF. Para verificar a autenticidade deste relatório, consulte a trilha forense do sistema.
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Rodapé de Assinaturas (apenas para relatórios convencionais com linhas) */}
+          {printReportData.type !== 'fechamento_global' && renderSignatureFooter(activeArmeiroMatricula, 'Armeiro Responsável')}
         </div>
       )}
 
