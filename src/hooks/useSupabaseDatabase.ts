@@ -34,6 +34,40 @@ const gerarIdUnico = (prefix: string = 'ITEM'): string => {
   return `${prefix}-${timestamp}-${counterHex}-${rand}`;
 };
 
+/**
+ * Utilitário de busca paginada completa com suporte a ordenação determinística por chave primária
+ * para contornar o limite rígido de 1.000 registros por requisição do PostgREST/Supabase.
+ */
+async function fetchAllPaginated<T = any>(
+  queryBuilderFn: (from: number, to: number) => PromiseLike<{ data: any; error: any }>
+): Promise<T[]> {
+  const PAGE_SIZE = 1000;
+  let allData: T[] = [];
+  let from = 0;
+  let hasMore = true;
+
+  while (hasMore) {
+    const to = from + PAGE_SIZE - 1;
+    const { data, error } = await queryBuilderFn(from, to);
+    if (error) {
+      console.error(`SGBD Paginação: Erro ao buscar registros [${from}..${to}]:`, error);
+      throw error;
+    }
+    if (data && data.length > 0) {
+      allData = allData.concat(data);
+      if (data.length < PAGE_SIZE) {
+        hasMore = false;
+      } else {
+        from += PAGE_SIZE;
+      }
+    } else {
+      hasMore = false;
+    }
+  }
+
+  return allData;
+}
+
 export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?: string | null, enabled: boolean = true) {
   const offlineDb = useOfflineDatabase();
   const [isOnline, setIsOnline] = useState(typeof window !== 'undefined' ? window.navigator.onLine : true);
@@ -158,47 +192,120 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
         return;
       }
 
-      console.log('SGBD: Iniciando busca de dados paralela (fetchData)...');
+      console.log('SGBD: Iniciando busca de dados paralela paginada (fetchData)...');
 
       const [
-        { data: users, error: errUsers },
-        { data: materials, error: errMaterials },
-        { data: categories, error: errCategories },
-        { data: cautelasData, error: errCautelas },
-        { data: items, error: errItems },
-        { data: logs, error: errLogs },
-        { data: ocos, error: errOcos },
-        { data: models, error: errModels },
-        { data: privateWeapons, error: errPrivateWeapons },
-        { data: dbPendencias, error: errPendencias },
-        { data: quarteisData, error: errQuarteis }
+        users,
+        materials,
+        categories,
+        cautelasData,
+        items,
+        logs,
+        ocos,
+        models,
+        privateWeapons,
+        dbPendencias,
+        quarteisData,
+        { count: countCautelasReal },
+        { count: countItensReal },
+        { count: countMateriaisReal }
       ] = await Promise.all([
-        supabase.from('usuarios').select('matricula, nome, nome_de_guerra, perfil, posto_graduacao, situacao_cautela, data_ultimo_teste_psicologico, motivo_suspensao, id_quartel, tentativas_login, bloqueado_ate, senha_hash, auth_user_id, assinatura_foto').is('deletado_em', null).then(r => { console.log('SGBD: 1. usuarios OK'); return r; }),
-        supabase.from('materiais').select('*').is('deletado_em', null).then(r => { console.log('SGBD: 2. materiais OK'); return r; }),
-        supabase.from('categorias').select('*').then(r => { console.log('SGBD: 3. categorias OK'); return r; }),
-        supabase.from('cautelas').select('*').is('deletado_em', null).then(r => { console.log('SGBD: 4. cautelas OK'); return r; }),
-        supabase.from('cautela_itens').select('*').is('deletado_em', null).then(r => { console.log('SGBD: 5. cautela_itens OK'); return r; }),
-        supabase.from('auditoria_logs').select('*').order('data_hora', { ascending: false }).then(r => { console.log('SGBD: 6. auditoria_logs OK'); return r; }),
-        supabase.from('ocorrencias').select('*').is('deletado_em', null).order('data_hora', { ascending: false }).then(r => { console.log('SGBD: 7. ocorrencias OK'); return r; }),
-        supabase.from('modelos_armas').select('*').then(r => { console.log('SGBD: 8. modelos_armas OK'); return r; }),
-        supabase.from('armas_particulares').select('*').is('deletado_em', null).order('data_deposito', { ascending: false }).then(r => { console.log('SGBD: 9. armas_particulares OK'); return r; }),
-        supabase.from('pendencias_servico').select('*').is('deletado_em', null).order('data_criacao', { ascending: false }).then(r => { console.log('SGBD: 10. pendencias_servico OK'); return r; }),
-        supabase.from('quarteis').select('*').is('deletado_em', null).eq('ativo', true).then(r => { console.log('SGBD: 11. quarteis OK'); return r; })
+        fetchAllPaginated<any>((from, to) =>
+          supabase
+            .from('usuarios')
+            .select('matricula, nome, nome_de_guerra, perfil, posto_graduacao, situacao_cautela, data_ultimo_teste_psicologico, motivo_suspensao, id_quartel, tentativas_login, bloqueado_ate, senha_hash, auth_user_id, assinatura_foto')
+            .is('deletado_em', null)
+            .order('matricula', { ascending: true })
+            .range(from, to)
+        ),
+        fetchAllPaginated<Material>((from, to) =>
+          supabase
+            .from('materiais')
+            .select('*')
+            .is('deletado_em', null)
+            .order('id_material', { ascending: true })
+            .range(from, to)
+        ),
+        fetchAllPaginated<Categoria>((from, to) =>
+          supabase
+            .from('categorias')
+            .select('*')
+            .order('id_categoria', { ascending: true })
+            .range(from, to)
+        ),
+        fetchAllPaginated<Cautela>((from, to) =>
+          supabase
+            .from('cautelas')
+            .select('*')
+            .is('deletado_em', null)
+            .order('id_cautela', { ascending: true })
+            .range(from, to)
+        ),
+        fetchAllPaginated<CautelaItem>((from, to) =>
+          supabase
+            .from('cautela_itens')
+            .select('*')
+            .is('deletado_em', null)
+            .order('id_cautela_item', { ascending: true })
+            .range(from, to)
+        ),
+        fetchAllPaginated<AuditoriaLog>((from, to) =>
+          supabase
+            .from('auditoria_logs')
+            .select('*')
+            .order('data_hora', { ascending: false })
+            .order('id_log', { ascending: true })
+            .range(from, to)
+        ),
+        fetchAllPaginated<OcorrenciaRelatorio>((from, to) =>
+          supabase
+            .from('ocorrencias')
+            .select('*')
+            .is('deletado_em', null)
+            .order('data_hora', { ascending: false })
+            .order('id_ocorrencia', { ascending: true })
+            .range(from, to)
+        ),
+        fetchAllPaginated<any>((from, to) =>
+          supabase
+            .from('modelos_armas')
+            .select('*')
+            .order('modelo', { ascending: true })
+            .range(from, to)
+        ),
+        fetchAllPaginated<ArmaParticular>((from, to) =>
+          supabase
+            .from('armas_particulares')
+            .select('*')
+            .is('deletado_em', null)
+            .order('data_deposito', { ascending: false })
+            .order('id_particular', { ascending: true })
+            .range(from, to)
+        ),
+        fetchAllPaginated<PendenciaServico>((from, to) =>
+          supabase
+            .from('pendencias_servico')
+            .select('*')
+            .is('deletado_em', null)
+            .order('data_criacao', { ascending: false })
+            .order('id_pendencia', { ascending: true })
+            .range(from, to)
+        ),
+        fetchAllPaginated<Quartel>((from, to) =>
+          supabase
+            .from('quarteis')
+            .select('*')
+            .is('deletado_em', null)
+            .eq('ativo', true)
+            .order('id', { ascending: true })
+            .range(from, to)
+        ),
+        supabase.from('cautelas').select('*', { count: 'exact', head: true }).is('deletado_em', null),
+        supabase.from('cautela_itens').select('*', { count: 'exact', head: true }).is('deletado_em', null),
+        supabase.from('materiais').select('*', { count: 'exact', head: true }).is('deletado_em', null)
       ]);
 
-      console.log('SGBD: Todas as queries paralelas finalizadas com sucesso.');
-
-      if (errUsers) throw errUsers;
-      if (errMaterials) throw errMaterials;
-      if (errCategories) throw errCategories;
-      if (errCautelas) throw errCautelas;
-      if (errItems) throw errItems;
-      if (errLogs) throw errLogs;
-      if (errOcos) throw errOcos;
-      if (errModels) throw errModels;
-      if (errPrivateWeapons) throw errPrivateWeapons;
-      if (errPendencias) throw errPendencias;
-      if (errQuarteis) throw errQuarteis;
+      console.log('SGBD: Todas as queries paralelas paginadas finalizadas com sucesso.');
 
       let mappedUsers = (users || []).map(u => ({ ...u, senha_hash: '' } as Usuario));
       if (activeArmeiroMatricula && activeArmeiroMatricula.trim().toUpperCase() === 'ADMIN') {
@@ -217,79 +324,134 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
           });
         }
       }
-      // Auto-reconciliação: Se um militar possui situacao_cautela = 'pendente_devolucao', mas NÃO tem nenhuma cautela ativa no banco, corrigimos para 'apto'
+
+      // Trava de integridade defensiva: Só executa auto-reconciliação se os dados baixados corresponderem ao count real do banco
       const rawCautelas = cautelasData || [];
-      const activeCautelasSet = new Set(
-        rawCautelas
-          .filter(c => {
-            const st = c.status_cautela?.toLowerCase().trim();
-            return st === 'ativa' || st === 'atrasada' || st === 'prorrogada';
-          })
-          .map(c => c.matricula_policial)
-      );
+      const rawItens = items || [];
+      const rawMaterials = materials || [];
 
-      const usuariosParaReabilitar: string[] = [];
-      const usuariosReconciliados = mappedUsers.map(u => {
-        if (u.situacao_cautela === 'pendente_devolucao' && !activeCautelasSet.has(u.matricula)) {
-          usuariosParaReabilitar.push(u.matricula);
-          return { ...u, situacao_cautela: 'apto' as const };
+      const dadosIntegramenteCarregados = 
+        countCautelasReal !== null && countCautelasReal !== undefined && rawCautelas.length === countCautelasReal &&
+        countItensReal !== null && countItensReal !== undefined && rawItens.length === countItensReal &&
+        countMateriaisReal !== null && countMateriaisReal !== undefined && rawMaterials.length === countMateriaisReal;
+
+      let usuariosParaExibir = mappedUsers;
+      let materiaisParaExibir = rawMaterials;
+
+      if (dadosIntegramenteCarregados) {
+        // Auto-reconciliação bidirecional de militares
+        const activeCautelasSet = new Set(
+          rawCautelas
+            .filter(c => {
+              const st = c.status_cautela?.toLowerCase().trim();
+              return st === 'ativa' || st === 'atrasada' || st === 'prorrogada';
+            })
+            .map(c => c.matricula_policial)
+        );
+
+        const usuariosParaRehabilitar: string[] = [];
+        const usuariosParaPender: string[] = [];
+        const usuariosReconciliados = mappedUsers.map(u => {
+          if (u.situacao_cautela === 'pendente_devolucao' && !activeCautelasSet.has(u.matricula)) {
+            usuariosParaRehabilitar.push(u.matricula);
+            return { ...u, situacao_cautela: 'apto' as const };
+          }
+          if (u.situacao_cautela === 'apto' && activeCautelasSet.has(u.matricula)) {
+            usuariosParaPender.push(u.matricula);
+            return { ...u, situacao_cautela: 'pendente_devolucao' as const };
+          }
+          return u;
+        });
+
+        if (usuariosParaRehabilitar.length > 0) {
+          console.log('SGBD Auto-Reconciliação: Reabilitando militares sem cautelas ativas:', usuariosParaRehabilitar);
+          supabase
+            .from('usuarios')
+            .update({ situacao_cautela: 'apto' })
+            .in('matricula', usuariosParaRehabilitar)
+            .then(({ error }) => {
+              if (error) console.error('SGBD Erro ao auto-reconciliar situação dos militares:', error);
+            });
         }
-        return u;
-      });
 
-      if (usuariosParaReabilitar.length > 0) {
-        console.log('SGBD Auto-Reconciliação: Reabilitando militares sem cautelas ativas:', usuariosParaReabilitar);
-        supabase
-          .from('usuarios')
-          .update({ situacao_cautela: 'apto' })
-          .in('matricula', usuariosParaReabilitar)
-          .then(({ error }) => {
-            if (error) console.error('SGBD Erro ao auto-reconciliar situação dos militares:', error);
-          });
+        if (usuariosParaPender.length > 0) {
+          console.log('SGBD Auto-Reconciliação: Marcando policiais com cautela ativa como pendente_devolucao:', usuariosParaPender);
+          supabase
+            .from('usuarios')
+            .update({ situacao_cautela: 'pendente_devolucao' })
+            .in('matricula', usuariosParaPender)
+            .then(({ error }) => {
+              if (error) console.error('SGBD Erro ao auto-reconciliar policiais pendentes:', error);
+            });
+        }
+
+        usuariosParaExibir = usuariosReconciliados;
+
+        // Auto-reconciliação bidirecional de materiais
+        const activeCautelaIdsSet = new Set(
+          rawCautelas
+            .filter(c => {
+              const st = c.status_cautela?.toLowerCase().trim();
+              return st === 'ativa' || st === 'atrasada' || st === 'prorrogada';
+            })
+            .map(c => c.id_cautela)
+        );
+
+        const activeMaterialIdsSet = new Set(
+          rawItens
+            .filter(ci => !ci.estado_devolucao && activeCautelaIdsSet.has(ci.id_cautela))
+            .map(ci => ci.id_material)
+        );
+
+        const materiaisParaLiberar: string[] = [];
+        const materiaisParaCautelar: string[] = [];
+        const materiaisReconciliados = rawMaterials.map(m => {
+          if (!m.controle_quantidade) {
+            if (m.status_atual === 'cautelado' && !activeMaterialIdsSet.has(m.id_material)) {
+              materiaisParaLiberar.push(m.id_material);
+              return { ...m, status_atual: 'disponivel' as const };
+            }
+            if (m.status_atual === 'disponivel' && activeMaterialIdsSet.has(m.id_material)) {
+              materiaisParaCautelar.push(m.id_material);
+              return { ...m, status_atual: 'cautelado' as const };
+            }
+          }
+          return m;
+        });
+
+        if (materiaisParaLiberar.length > 0) {
+          console.log('SGBD Auto-Reconciliação: Corrigindo materiais órfãos de cautelado para disponivel:', materiaisParaLiberar);
+          supabase
+            .from('materiais')
+            .update({ status_atual: 'disponivel' })
+            .in('id_material', materiaisParaLiberar)
+            .then(({ error }) => {
+              if (error) console.error('SGBD Erro ao auto-reconciliar materiais órfãos:', error);
+            });
+        }
+
+        if (materiaisParaCautelar.length > 0) {
+          console.log('SGBD Auto-Reconciliação: Corrigindo materiais em cautela ativa para cautelado:', materiaisParaCautelar);
+          supabase
+            .from('materiais')
+            .update({ status_atual: 'cautelado' })
+            .in('id_material', materiaisParaCautelar)
+            .then(({ error }) => {
+              if (error) console.error('SGBD Erro ao auto-reconciliar materiais cautelados:', error);
+            });
+        }
+
+        materiaisParaExibir = materiaisReconciliados;
+      } else {
+        console.warn('⚠️ SGBD: Contagem em memória diverge do banco. Auto-reconciliação em background ignorada neste ciclo — exibindo dados brutos.');
       }
 
-      setUsuarios(usuariosReconciliados);
-
-      // Auto-reconciliação de materiais marcados como 'cautelado' sem cautela ativa no banco
-      const activeCautelaIdsSet = new Set(
-        rawCautelas
-          .filter(c => {
-            const st = c.status_cautela?.toLowerCase().trim();
-            return st === 'ativa' || st === 'atrasada' || st === 'prorrogada';
-          })
-          .map(c => c.id_cautela)
-      );
-
-      const activeMaterialIdsSet = new Set(
-        (items || [])
-          .filter(ci => !ci.estado_devolucao && activeCautelaIdsSet.has(ci.id_cautela))
-          .map(ci => ci.id_material)
-      );
-
-      const materiaisParaLiberar: string[] = [];
-      const materiaisReconciliados = (materials || []).map(m => {
-        if (!m.controle_quantidade && m.status_atual === 'cautelado' && !activeMaterialIdsSet.has(m.id_material)) {
-          materiaisParaLiberar.push(m.id_material);
-          return { ...m, status_atual: 'disponivel' as const };
-        }
-        return m;
-      });
-
-      if (materiaisParaLiberar.length > 0) {
-        console.log('SGBD Auto-Reconciliação: Corrigindo materiais órfãos de cautelado para disponivel:', materiaisParaLiberar);
-        supabase
-          .from('materiais')
-          .update({ status_atual: 'disponivel' })
-          .in('id_material', materiaisParaLiberar)
-          .then(({ error }) => {
-            if (error) console.error('SGBD Erro ao auto-reconciliar materiais:', error);
-          });
-      }
-
-      setMateriais(materiaisReconciliados);
+      // Os setStates e o carregamento da tela SEMPRE executam normalmente
+      setUsuarios(usuariosParaExibir);
+      setMateriais(materiaisParaExibir);
       setCategorias(categories || []);
       setCautelas(rawCautelas);
-      setCautelaItens(items || []);
+      setCautelaItens(rawItens);
       setAuditoriaLogs(logs || []);
       setOcorrencias(ocos || []);
       setModelosArmas(models || []);
@@ -2398,29 +2560,29 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
 
   const exportarDadosCompletos = async () => {
     const [
-      { data: quarteisData },
-      { data: usuariosData },
-      { data: categoriasData },
-      { data: modelosArmasData },
-      { data: materiaisData },
-      { data: cautelasData },
-      { data: cautelaItensData },
-      { data: armasParticularesData },
-      { data: pendenciasServicoData },
-      { data: ocorrenciasData },
-      { data: auditoriaLogsData }
+      quarteisData,
+      usuariosData,
+      categoriasData,
+      modelosArmasData,
+      materiaisData,
+      cautelasData,
+      cautelaItensData,
+      armasParticularesData,
+      pendenciasServicoData,
+      ocorrenciasData,
+      auditoriaLogsData
     ] = await Promise.all([
-      supabase.from('quarteis').select('*').is('deletado_em', null),
-      supabase.from('usuarios').select('*').is('deletado_em', null),
-      supabase.from('categorias').select('*'),
-      supabase.from('modelos_armas').select('*'),
-      supabase.from('materiais').select('*').is('deletado_em', null),
-      supabase.from('cautelas').select('*').is('deletado_em', null),
-      supabase.from('cautela_itens').select('*').is('deletado_em', null),
-      supabase.from('armas_particulares').select('*').is('deletado_em', null),
-      supabase.from('pendencias_servico').select('*').is('deletado_em', null),
-      supabase.from('ocorrencias').select('*').is('deletado_em', null),
-      supabase.from('auditoria_logs').select('*')
+      fetchAllPaginated<Quartel>((from, to) => supabase.from('quarteis').select('*').is('deletado_em', null).order('id', { ascending: true }).range(from, to)),
+      fetchAllPaginated<Usuario>((from, to) => supabase.from('usuarios').select('*').is('deletado_em', null).order('matricula', { ascending: true }).range(from, to)),
+      fetchAllPaginated<Categoria>((from, to) => supabase.from('categorias').select('*').order('id_categoria', { ascending: true }).range(from, to)),
+      fetchAllPaginated<any>((from, to) => supabase.from('modelos_armas').select('*').order('modelo', { ascending: true }).range(from, to)),
+      fetchAllPaginated<Material>((from, to) => supabase.from('materiais').select('*').is('deletado_em', null).order('id_material', { ascending: true }).range(from, to)),
+      fetchAllPaginated<Cautela>((from, to) => supabase.from('cautelas').select('*').is('deletado_em', null).order('id_cautela', { ascending: true }).range(from, to)),
+      fetchAllPaginated<CautelaItem>((from, to) => supabase.from('cautela_itens').select('*').is('deletado_em', null).order('id_cautela_item', { ascending: true }).range(from, to)),
+      fetchAllPaginated<ArmaParticular>((from, to) => supabase.from('armas_particulares').select('*').is('deletado_em', null).order('data_deposito', { ascending: false }).order('id_particular', { ascending: true }).range(from, to)),
+      fetchAllPaginated<PendenciaServico>((from, to) => supabase.from('pendencias_servico').select('*').is('deletado_em', null).order('data_criacao', { ascending: false }).order('id_pendencia', { ascending: true }).range(from, to)),
+      fetchAllPaginated<OcorrenciaRelatorio>((from, to) => supabase.from('ocorrencias').select('*').is('deletado_em', null).order('data_hora', { ascending: false }).order('id_ocorrencia', { ascending: true }).range(from, to)),
+      fetchAllPaginated<AuditoriaLog>((from, to) => supabase.from('auditoria_logs').select('*').order('data_hora', { ascending: false }).order('id_log', { ascending: true }).range(from, to))
     ]);
 
     return {
