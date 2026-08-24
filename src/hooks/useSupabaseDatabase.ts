@@ -1371,35 +1371,74 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
       }
     });
 
-    const novosItensCautela: CautelaItem[] = Object.entries(groupedCart).map(([idMat, qty]) => {
+    const nowIso = new Date().toISOString();
+    const novosItensCautela: CautelaItem[] = [];
+
+    Object.entries(groupedCart).forEach(([idMat, qty]) => {
       const magQty = (weaponMagazines && weaponMagazines[idMat]) || 0;
-      return {
-        id_cautela_item: gerarIdUnico('ITEM'),
-        id_cautela: idNewCautela,
-        id_material: idMat.trim(),
-        quantidade: qty,
-        estado_entrega: 'excelente',
-        quantidade_carregadores: magQty,
-        id_quartel: quartelId || undefined
-      };
+      const mat = materiais.find(m => m.id_material === idMat);
+      const deveIndividualizar = mat?.individualizar_por_unidade ?? false;
+
+      if (deveIndividualizar) {
+        for (let i = 0; i < qty; i++) {
+          novosItensCautela.push({
+            id_cautela_item: gerarIdUnico('ITEM'),
+            id_cautela: idNewCautela,
+            id_material: idMat.trim(),
+            quantidade: 1,
+            estado_entrega: 'excelente',
+            quantidade_carregadores: i === 0 ? magQty : 0,
+            id_quartel: quartelId || undefined,
+            criado_em: nowIso
+          });
+        }
+      } else {
+        novosItensCautela.push({
+          id_cautela_item: gerarIdUnico('ITEM'),
+          id_cautela: idNewCautela,
+          id_material: idMat.trim(),
+          quantidade: qty,
+          estado_entrega: 'excelente',
+          quantidade_carregadores: magQty,
+          id_quartel: quartelId || undefined,
+          criado_em: nowIso
+        });
+      }
     });
 
-    // Adicionar itens de baterias vinculados aos rádios HT
+    // Adicionar itens de baterias vinculados aos rádios HT (explodindo em N itens unitários se individualizar_por_unidade)
     const batteryDeductions: Record<string, number> = {};
     if (radioBatteries) {
       Object.entries(radioBatteries).forEach(([idMat, bInfo]) => {
         if (cartItens.includes(idMat) && bInfo.qty > 0) {
           const batId = `BAT-${bInfo.brand.trim().toUpperCase()}`;
           batteryDeductions[batId] = (batteryDeductions[batId] || 0) + bInfo.qty;
+          const batMat = materiais.find(m => m.id_material === batId);
+          const deveIndividualizar = batMat?.individualizar_por_unidade ?? true;
 
-          novosItensCautela.push({
-            id_cautela_item: gerarIdUnico('ITEM-BAT'),
-            id_cautela: idNewCautela,
-            id_material: batId,
-            quantidade: bInfo.qty,
-            estado_entrega: 'excelente',
-            id_quartel: quartelId || undefined
-          });
+          if (deveIndividualizar) {
+            for (let i = 0; i < bInfo.qty; i++) {
+              novosItensCautela.push({
+                id_cautela_item: gerarIdUnico('ITEM-BAT'),
+                id_cautela: idNewCautela,
+                id_material: batId,
+                quantidade: 1,
+                estado_entrega: 'excelente',
+                id_quartel: quartelId || undefined,
+                criado_em: nowIso
+              });
+            }
+          } else {
+            novosItensCautela.push({
+              id_cautela_item: gerarIdUnico('ITEM-BAT'),
+              id_cautela: idNewCautela,
+              id_material: batId,
+              quantidade: bInfo.qty,
+              estado_entrega: 'excelente',
+              id_quartel: quartelId || undefined,
+              criado_em: nowIso
+            });
+          }
         }
       });
     }
@@ -1522,7 +1561,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
   // ---- EFETIVAR DEVOLUÇÃO ----
   const processDevolucao = (
     cautId: string, 
-    idsMateriaisDevolvidos: string[], 
+    idsMateriaisDevolvidos: string[], // Aceita tanto id_cautela_item quanto id_material legado
     claimConditions: Record<string, CondicaoUso>, 
     observacoes: string, 
     prorrogar: boolean = false,
@@ -1535,17 +1574,6 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
     const armeiroResponsavel = activeArmeiroMatricula || usuarios.find(u => u.perfil === 'armeiro_gestor')?.matricula || 'SYS-AM';
     const agora = new Date().toISOString();
 
-    // 1. Atualizar materiais correspondentes no estoque (lotes permanecem com carga total invariante)
-    const materiaisAtualizados = materiais.map(m => {
-      if (idsMateriaisDevolvidos.includes(m.id_material)) {
-        if (m.controle_quantidade) {
-          return m; // Carga total permanece invariante (gestão exclusivamente manual)
-        }
-        return { ...m, status_atual: 'disponivel' as StatusMaterial };
-      }
-      return m;
-    });
-
     // 2. Atualizar a condição de devolução de cada item na CautelaItem, suportando devolução parcial e consumo
     let novosCautelaItens = [...cautelaItens];
     const activeItemsMap = new Map<string, CautelaItem>();
@@ -1553,86 +1581,149 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
       activeItemsMap.set(ci.id_cautela_item, { ...ci });
     });
 
-    idsMateriaisDevolvidos.forEach(idMat => {
-      const ci = Array.from(activeItemsMap.values()).find(
-        item => item.id_cautela === cautId && item.id_material === idMat && !item.estado_devolucao
-      );
+    const returnedMaterialIdsSet = new Set<string>();
+
+    idsMateriaisDevolvidos.forEach(idOrKey => {
+      // 1. Localizar o item de cautela correspondente (por id_cautela_item ou fallback por id_material)
+      let ci = activeItemsMap.get(idOrKey);
+      if (!ci || ci.id_cautela !== cautId || ci.estado_devolucao) {
+        ci = Array.from(activeItemsMap.values()).find(
+          item => item.id_cautela === cautId && item.id_material === idOrKey && !item.estado_devolucao
+        );
+      }
       if (!ci) return;
 
-      const mat = materiais.find(m => m.id_material === idMat);
-      const qtyToReturn = (mat?.controle_quantidade && returnedQuantities) 
-        ? (returnedQuantities[idMat] ?? ci.quantidade) 
-        : ci.quantidade;
-      const qtyConsumed = (mat?.controle_quantidade && consumedQuantities)
-        ? (consumedQuantities[idMat] ?? 0)
-        : 0;
+      const itemKey = ci.id_cautela_item;
+      const matId = ci.id_material;
+      returnedMaterialIdsSet.add(matId);
 
-      const condition = claimConditions?.[idMat] || 'em_condicoes_de_uso';
-      const totalProcessed = qtyToReturn + qtyConsumed;
+      const mat = materiais.find(m => m.id_material === matId);
+      const condition = claimConditions?.[itemKey] || claimConditions?.[matId] || 'em_condicoes_de_uso';
 
-      if (totalProcessed >= ci.quantidade) {
-        if (qtyToReturn > 0 && qtyConsumed > 0) {
-          activeItemsMap.set(ci.id_cautela_item, {
+      // ROTEAMENTO ESTRITO:
+      // A) Material Individualizado por Unidade (Baterias de rádio HT e acessórios unitários)
+      if (mat?.individualizar_por_unidade) {
+        if (ci.quantidade === 1) {
+          // Baixa unitária direta
+          activeItemsMap.set(itemKey, {
             ...ci,
-            quantidade: qtyToReturn,
             estado_devolucao: condition
-          });
-          const newId = gerarIdUnico('ITEM-CONS');
-          activeItemsMap.set(newId, {
-            id_cautela_item: newId,
-            id_cautela: cautId,
-            id_material: idMat,
-            quantidade: qtyConsumed,
-            estado_entrega: ci.estado_entrega,
-            estado_devolucao: 'avariado',
-            consumido: true,
-            id_quartel: ci.id_quartel
-          });
-        } else if (qtyConsumed > 0) {
-          activeItemsMap.set(ci.id_cautela_item, {
-            ...ci,
-            estado_devolucao: 'avariado',
-            consumido: true
           });
         } else {
-          activeItemsMap.set(ci.id_cautela_item, {
-            ...ci,
-            estado_devolucao: condition
-          });
-        }
-      } else {
-        activeItemsMap.set(ci.id_cautela_item, {
-          ...ci,
-          quantidade: ci.quantidade - totalProcessed
-        });
-
-        if (qtyToReturn > 0) {
-          const newIdDev = gerarIdUnico('ITEM-DEV');
-          activeItemsMap.set(newIdDev, {
-            id_cautela_item: newIdDev,
-            id_cautela: cautId,
-            id_material: idMat,
-            quantidade: qtyToReturn,
-            estado_entrega: ci.estado_entrega,
-            estado_devolucao: condition,
-            id_quartel: ci.id_quartel
-          });
-        }
-
-        if (qtyConsumed > 0) {
-          const newIdCons = gerarIdUnico('ITEM-CONS');
-          activeItemsMap.set(newIdCons, {
-            id_cautela_item: newIdCons,
-            id_cautela: cautId,
-            id_material: idMat,
-            quantidade: qtyConsumed,
-            estado_entrega: ci.estado_entrega,
-            estado_devolucao: 'avariado',
-            consumido: true,
-            id_quartel: ci.id_quartel
-          });
+          // Fallback para registro legado com quantidade agregada > 1
+          const qtyToReturn = (returnedQuantities?.[itemKey] ?? returnedQuantities?.[matId]) ?? ci.quantidade;
+          if (qtyToReturn >= ci.quantidade) {
+            activeItemsMap.set(itemKey, {
+              ...ci,
+              estado_devolucao: condition
+            });
+          } else if (qtyToReturn > 0) {
+            activeItemsMap.set(itemKey, {
+              ...ci,
+              quantidade: ci.quantidade - qtyToReturn
+            });
+            const newIdDev = gerarIdUnico('ITEM-DEV');
+            activeItemsMap.set(newIdDev, {
+              ...ci,
+              id_cautela_item: newIdDev,
+              quantidade: qtyToReturn,
+              estado_devolucao: condition,
+              criado_em: agora
+            });
+          }
         }
       }
+      // B) Material em Lote / Coletivo com suporte a consumo (Munições)
+      else if (mat?.controle_quantidade) {
+        const qtyToReturn = (returnedQuantities?.[itemKey] ?? returnedQuantities?.[matId]) ?? ci.quantidade;
+        const qtyConsumed = (consumedQuantities?.[itemKey] ?? consumedQuantities?.[matId]) ?? 0;
+        const totalProcessed = qtyToReturn + qtyConsumed;
+
+        if (totalProcessed >= ci.quantidade) {
+          if (qtyToReturn > 0 && qtyConsumed > 0) {
+            activeItemsMap.set(itemKey, {
+              ...ci,
+              quantidade: qtyToReturn,
+              estado_devolucao: condition
+            });
+            const newId = gerarIdUnico('ITEM-CONS');
+            activeItemsMap.set(newId, {
+              id_cautela_item: newId,
+              id_cautela: cautId,
+              id_material: matId,
+              quantidade: qtyConsumed,
+              estado_entrega: ci.estado_entrega,
+              estado_devolucao: 'avariado',
+              consumido: true,
+              id_quartel: ci.id_quartel,
+              criado_em: agora
+            });
+          } else if (qtyConsumed > 0) {
+            activeItemsMap.set(itemKey, {
+              ...ci,
+              estado_devolucao: 'avariado',
+              consumido: true
+            });
+          } else {
+            activeItemsMap.set(itemKey, {
+              ...ci,
+              estado_devolucao: condition
+            });
+          }
+        } else {
+          activeItemsMap.set(itemKey, {
+            ...ci,
+            quantidade: ci.quantidade - totalProcessed
+          });
+
+          if (qtyToReturn > 0) {
+            const newIdDev = gerarIdUnico('ITEM-DEV');
+            activeItemsMap.set(newIdDev, {
+              id_cautela_item: newIdDev,
+              id_cautela: cautId,
+              id_material: matId,
+              quantidade: qtyToReturn,
+              estado_entrega: ci.estado_entrega,
+              estado_devolucao: condition,
+              id_quartel: ci.id_quartel,
+              criado_em: agora
+            });
+          }
+
+          if (qtyConsumed > 0) {
+            const newIdCons = gerarIdUnico('ITEM-CONS');
+            activeItemsMap.set(newIdCons, {
+              id_cautela_item: newIdCons,
+              id_cautela: cautId,
+              id_material: matId,
+              quantidade: qtyConsumed,
+              estado_entrega: ci.estado_entrega,
+              estado_devolucao: 'avariado',
+              consumido: true,
+              id_quartel: ci.id_quartel,
+              criado_em: agora
+            });
+          }
+        }
+      }
+      // C) Equipamentos Seriais (Armas, Coletes, Rádios)
+      else {
+        activeItemsMap.set(itemKey, {
+          ...ci,
+          estado_devolucao: condition
+        });
+      }
+    });
+
+    // 1. Atualizar materiais correspondentes no estoque (lotes permanecem com carga total invariante)
+    const materiaisAtualizados = materiais.map(m => {
+      if (returnedMaterialIdsSet.has(m.id_material)) {
+        if (m.controle_quantidade) {
+          return m; // Carga total permanece invariante (gestão exclusivamente manual)
+        }
+        return { ...m, status_atual: 'disponivel' as StatusMaterial };
+      }
+      return m;
     });
 
     novosCautelaItens = Array.from(activeItemsMap.values());
@@ -1645,13 +1736,15 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
     const novaPrevisao = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
 
     // 5. Atualizar Cautela
-    const returnedSummary = idsMateriaisDevolvidos.map(id => {
-      const qtyRet = returnedQuantities?.[id];
-      const qtyCons = consumedQuantities?.[id];
+    const returnedSummary = idsMateriaisDevolvidos.map(idOrKey => {
+      const ci = activeItemsMap.get(idOrKey);
+      const label = ci ? `${ci.id_material}` : idOrKey;
+      const qtyRet = returnedQuantities?.[idOrKey];
+      const qtyCons = consumedQuantities?.[idOrKey];
       const parts = [];
       if (qtyRet !== undefined) parts.push(`Dev: ${qtyRet}`);
       if (qtyCons !== undefined && qtyCons > 0) parts.push(`Cons: ${qtyCons}`);
-      return `${id} (${parts.join(', ') || 'Total'})`;
+      return `${label} (${parts.join(', ') || 'Total'})`;
     }).join(', ');
 
     const baseObs = idsMateriaisDevolvidos.length > 0

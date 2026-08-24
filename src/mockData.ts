@@ -770,6 +770,7 @@ export const mockMateriais: Material[] = [
     data_aquisicao: '2026-07-23',
     especificacoes_tecnicas: 'Bateria recarregável para rádio HT Hytera',
     controle_quantidade: true,
+    individualizar_por_unidade: true,
     quantidade: 50,
     quantidade_carregadores: null
   },
@@ -783,6 +784,7 @@ export const mockMateriais: Material[] = [
     data_aquisicao: '2026-07-23',
     especificacoes_tecnicas: 'Bateria recarregável para rádio HT Sepura',
     controle_quantidade: true,
+    individualizar_por_unidade: true,
     quantidade: 50,
     quantidade_carregadores: null
   },

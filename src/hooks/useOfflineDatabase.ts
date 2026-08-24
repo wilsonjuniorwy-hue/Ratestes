@@ -83,6 +83,13 @@ export function useOfflineDatabase() {
           // A coluna já existe ou tabela não foi alterada
         }
 
+        try {
+          await db.execute('ALTER TABLE materiais ADD COLUMN individualizar_por_unidade INTEGER DEFAULT 0;');
+          console.log('SGBD Offline: Coluna individualizar_por_unidade adicionada à tabela materiais.');
+        } catch (_) {
+          // A coluna já existe ou tabela não foi alterada
+        }
+
         await db.execute(`
           CREATE TABLE IF NOT EXISTS materiais (
             id_material TEXT PRIMARY KEY,
@@ -94,7 +101,8 @@ export function useOfflineDatabase() {
             quantidade INTEGER,
             controle_quantidade INTEGER,
             id_quartel TEXT,
-            data_validade TEXT
+            data_validade TEXT,
+            individualizar_por_unidade INTEGER DEFAULT 0
           );
         `);
 
@@ -143,6 +151,13 @@ export function useOfflineDatabase() {
         try { await db.execute('ALTER TABLE fila_sincronizacao ADD COLUMN tentativas INTEGER DEFAULT 0;'); } catch (_) {}
         try { await db.execute('ALTER TABLE fila_sincronizacao ADD COLUMN ultimo_erro TEXT DEFAULT NULL;'); } catch (_) {}
 
+        try {
+          await db.execute('ALTER TABLE cautela_itens ADD COLUMN criado_em TEXT DEFAULT NULL;');
+          console.log('SGBD Offline: Coluna criado_em adicionada à tabela cautela_itens.');
+        } catch (_) {
+          // A coluna já existe ou tabela não foi alterada
+        }
+
         await db.execute(`
           CREATE TABLE IF NOT EXISTS cautela_itens (
             id_cautela_item TEXT PRIMARY KEY,
@@ -153,7 +168,8 @@ export function useOfflineDatabase() {
             estado_devolucao TEXT,
             consumido INTEGER,
             quantidade_carregadores INTEGER,
-            id_quartel TEXT
+            id_quartel TEXT,
+            criado_em TEXT
           );
         `);
 
@@ -218,8 +234,8 @@ export function useOfflineDatabase() {
       for (const m of materiaisList) {
         await dbInstance.execute(
           `INSERT OR REPLACE INTO materiais 
-          (id_material, id_categoria, modelo, fabricante, calibre, status_atual, quantidade, controle_quantidade, id_quartel, data_validade) 
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          (id_material, id_categoria, modelo, fabricante, calibre, status_atual, quantidade, controle_quantidade, id_quartel, data_validade, individualizar_por_unidade) 
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             m.id_material !== undefined ? m.id_material : null,
             m.id_categoria !== undefined ? m.id_categoria : null,
@@ -230,7 +246,8 @@ export function useOfflineDatabase() {
             m.quantidade !== undefined && m.quantidade !== null ? m.quantidade : 0,
             m.controle_quantidade ? 1 : 0,
             m.id_quartel !== undefined && m.id_quartel !== null ? m.id_quartel : null,
-            m.data_validade !== undefined && m.data_validade !== null ? m.data_validade : null
+            m.data_validade !== undefined && m.data_validade !== null ? m.data_validade : null,
+            m.individualizar_por_unidade ? 1 : 0
           ]
         );
       }
@@ -284,8 +301,8 @@ export function useOfflineDatabase() {
       for (const item of itensList) {
         await dbInstance.execute(
           `INSERT OR REPLACE INTO cautela_itens 
-          (id_cautela_item, id_cautela, id_material, quantidade, estado_entrega, estado_devolucao, consumido, quantidade_carregadores, id_quartel) 
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          (id_cautela_item, id_cautela, id_material, quantidade, estado_entrega, estado_devolucao, consumido, quantidade_carregadores, id_quartel, criado_em) 
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             item.id_cautela_item !== undefined ? item.id_cautela_item : null,
             item.id_cautela !== undefined ? item.id_cautela : null,
@@ -295,7 +312,8 @@ export function useOfflineDatabase() {
             item.estado_devolucao !== undefined && item.estado_devolucao !== null ? item.estado_devolucao : null,
             item.consumido ? 1 : 0,
             item.quantidade_carregadores !== undefined && item.quantidade_carregadores !== null ? item.quantidade_carregadores : 0,
-            item.id_quartel !== undefined && item.id_quartel !== null ? item.id_quartel : null
+            item.id_quartel !== undefined && item.id_quartel !== null ? item.id_quartel : null,
+            item.criado_em !== undefined && item.criado_em !== null ? item.criado_em : null
           ]
         );
       }
@@ -355,7 +373,8 @@ export function useOfflineDatabase() {
         quantidade: r.quantidade,
         controle_quantidade: r.controle_quantidade === 1,
         id_quartel: r.id_quartel,
-        data_validade: r.data_validade
+        data_validade: r.data_validade,
+        individualizar_por_unidade: r.individualizar_por_unidade === 1
       }));
     } catch (err) {
       console.error('SGBD Offline: Erro ao ler materiais do SQLite:', err);
@@ -406,7 +425,8 @@ export function useOfflineDatabase() {
         estado_devolucao: r.estado_devolucao || undefined,
         consumido: r.consumido === 1,
         quantidade_carregadores: r.quantidade_carregadores,
-        id_quartel: r.id_quartel || undefined
+        id_quartel: r.id_quartel || undefined,
+        criado_em: r.criado_em || undefined
       }));
     } catch (err) {
       console.error('SGBD Offline: Erro ao ler itens de cautela do SQLite:', err);

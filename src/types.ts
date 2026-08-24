@@ -70,6 +70,7 @@ export interface Material {
   id_quartel?: string;   // UUID do quartel
   data_validade?: string; // Data de validade do item (ex: YYYY-MM-DD)
   deletado_em?: string | null; // Soft delete (ISO DateTime)
+  individualizar_por_unidade?: boolean; // Se true, gera N registros unitários na cautela (ex: baterias)
 }
 
 export interface Cautela {
@@ -102,6 +103,7 @@ export interface CautelaItem {
   consumido?: boolean;
   quantidade_carregadores?: number; // Quantidade de carregadores retirados com a arma
   id_quartel?: string;             // UUID do quartel
+  criado_em?: string;              // ISO DateTime para ordenação e numeração estáveis
 }
 
 export interface Manutencao {

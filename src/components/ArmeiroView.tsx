@@ -358,7 +358,8 @@ export function ArmeiroView({
                       return st === 'ativa' || st === 'atrasada' || st === 'prorrogada';
                     }).map((caut) => {
                       const policial = usuarios.find(u => u.matricula === caut.matricula_policial);
-                      const itens = cautelaItens.filter(ci => ci.id_cautela === caut.id_cautela);
+                      const todosItensCautela = cautelaItens.filter(ci => ci.id_cautela === caut.id_cautela);
+                      const itensPendentes = todosItensCautela.filter(ci => !ci.estado_devolucao);
                       
                       return (
                         <tr key={caut.id_cautela} className="hover:bg-slate-900/25 transition-colors">
@@ -376,14 +377,23 @@ export function ArmeiroView({
                             </div>
                           </td>
                           <td className="p-4 space-y-1.5 font-mono text-sm max-w-sm">
-                            {itens.map(ci => {
+                            {itensPendentes.map(ci => {
                               const matItem = materiais.find(m => m.id_material === ci.id_material);
-                              const isBattery = ci.id_material.startsWith('BAT-') || matItem?.modelo.toLowerCase().includes('bateria');
+                              const isBattery = matItem?.individualizar_por_unidade || ci.id_material.startsWith('BAT-') || matItem?.modelo.toLowerCase().includes('bateria');
+                              const sameMatAll = todosItensCautela
+                                .filter(item => item.id_material === ci.id_material)
+                                .sort((a, b) => (a.criado_em || a.id_cautela_item).localeCompare(b.criado_em || b.id_cautela_item));
+                              const itemIdx = sameMatAll.findIndex(item => item.id_cautela_item === ci.id_cautela_item) + 1;
+                              const totalMatCount = sameMatAll.length;
+                              const displayModel = isBattery && totalMatCount > 1
+                                ? `${matItem?.modelo} (Item ${itemIdx}/${totalMatCount})`
+                                : matItem?.modelo;
+
                               return (
                                 <div key={ci.id_cautela_item} className={`px-3 py-1.5 rounded-md border text-sm font-mono flex items-center justify-between gap-3 font-bold ${
                                   isBattery ? 'bg-emerald-955/70 border-emerald-900/60 text-emerald-300' : 'bg-slate-950/80 border-slate-800 text-slate-100'
                                 }`}>
-                                  <span className="truncate">{matItem?.modelo}</span>
+                                  <span className="truncate">{displayModel}</span>
                                   <span className="text-slate-400 text-xs font-mono shrink-0">({ci.id_material})</span>
                                 </div>
                               );
@@ -687,16 +697,32 @@ export function ArmeiroView({
                           <td className="p-4 space-y-1.5 max-w-xs align-top">
                             {cItens.map(ci => {
                               const matItem = materiais.find(m => m.id_material === ci.id_material);
-                              const isBattery = ci.id_material.startsWith('BAT-') || matItem?.modelo.toLowerCase().includes('bateria');
+                              const isBattery = matItem?.individualizar_por_unidade || ci.id_material.startsWith('BAT-') || matItem?.modelo.toLowerCase().includes('bateria');
+                              const sameMatAll = cItens
+                                .filter(item => item.id_material === ci.id_material)
+                                .sort((a, b) => (a.criado_em || a.id_cautela_item).localeCompare(b.criado_em || b.id_cautela_item));
+                              const itemIdx = sameMatAll.findIndex(item => item.id_cautela_item === ci.id_cautela_item) + 1;
+                              const totalMatCount = sameMatAll.length;
+                              const displayModel = isBattery && totalMatCount > 1
+                                ? `${matItem?.modelo} (Item ${itemIdx}/${totalMatCount})`
+                                : matItem?.modelo;
+
                               return (
                                 <div key={ci.id_cautela_item} className={`px-2.5 py-1.5 rounded border text-[10px] font-mono flex items-center justify-between gap-2 ${
                                   isBattery ? 'bg-emerald-955/60 border-emerald-900/50 text-emerald-300' : 'bg-slate-950/60 border-slate-850 text-slate-300'
                                 }`}>
-                                  <span className="font-bold truncate">
-                                    {matItem?.modelo} {matItem?.controle_quantidade ? `(x${ci.quantidade})` : ''}
-                                  </span>
-                                  <span className="text-[8px] opacity-75">
-                                    {matItem?.controle_quantidade ? 'Item Coletivo' : ci.id_material}
+                                  <div className="flex items-center gap-1.5 truncate">
+                                    <span className="font-bold truncate">
+                                      {displayModel} {matItem?.controle_quantidade && !matItem?.individualizar_por_unidade ? `(x${ci.quantidade})` : ''}
+                                    </span>
+                                    {ci.estado_devolucao && (
+                                      <span className="text-[8px] bg-emerald-900/80 text-emerald-300 px-1 py-0.2 rounded font-bold uppercase shrink-0">
+                                        Devolvido
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="text-[8px] opacity-75 shrink-0">
+                                    {matItem?.controle_quantidade && !matItem?.individualizar_por_unidade ? 'Item Coletivo' : ci.id_material}
                                   </span>
                                 </div>
                               );
@@ -1353,10 +1379,16 @@ export function ArmeiroView({
                             onClick={() => {
                               setReturnCautelaId(c.id_cautela);
                               const matches = cautelaItens.filter(ci => ci.id_cautela === c.id_cautela && !ci.estado_devolucao);
-                              setItemsToReturn(matches.map(m => m.id_material));
+                              setItemsToReturn(matches.map(m => m.id_cautela_item));
                               const initial: Record<string, CondicaoUso> = {};
-                              matches.forEach(m => { initial[m.id_material] = 'em_condicoes_de_uso'; });
+                              const initialQty: Record<string, number> = {};
+                              matches.forEach(m => { 
+                                initial[m.id_cautela_item] = 'em_condicoes_de_uso';
+                                initialQty[m.id_cautela_item] = m.quantidade;
+                              });
                               setClaimConditions(initial);
+                              setReturnedQuantities(initialQty);
+                              setConsumedQuantities({});
                               setDevolucaoSuccessMsg('');
                               setDevolucaoErrorMsg('');
                             }}
@@ -1425,7 +1457,8 @@ export function ArmeiroView({
                     (() => {
                       const selectedCaut = cautelas.find(c => c.id_cautela === returnCautelaId);
                       const pm = usuarios.find(u => u.matricula === selectedCaut?.matricula_policial);
-                      const cItens = cautelaItens.filter(ci => ci.id_cautela === returnCautelaId && !ci.estado_devolucao);
+                      const allCautelaItens = cautelaItens.filter(ci => ci.id_cautela === returnCautelaId);
+                      const cItens = allCautelaItens.filter(ci => !ci.estado_devolucao);
 
                       return (
                         <div className="flex-1 flex flex-col justify-between h-full overflow-hidden">
@@ -1451,8 +1484,17 @@ export function ArmeiroView({
                             
                             {cItens.map((ci) => {
                               const mat = materiais.find(m => m.id_material === ci.id_material);
-                              const isChecked = itemsToReturn.includes(ci.id_material);
-                              const currentReturnedQty = returnedQuantities[ci.id_material] ?? ci.quantidade;
+                              const isChecked = itemsToReturn.includes(ci.id_cautela_item);
+                              const currentReturnedQty = returnedQuantities[ci.id_cautela_item] ?? ci.quantidade;
+                              const isBattery = mat?.individualizar_por_unidade || ci.id_material.startsWith('BAT-') || mat?.modelo.toLowerCase().includes('bateria');
+                              const sameMatAll = allCautelaItens
+                                .filter(item => item.id_material === ci.id_material)
+                                .sort((a, b) => (a.criado_em || a.id_cautela_item).localeCompare(b.criado_em || b.id_cautela_item));
+                              const itemIdx = sameMatAll.findIndex(item => item.id_cautela_item === ci.id_cautela_item) + 1;
+                              const totalMatCount = sameMatAll.length;
+                              const displayModel = isBattery && totalMatCount > 1
+                                ? `${mat?.modelo} (${ci.id_material} - Item ${itemIdx}/${totalMatCount})`
+                                : mat?.modelo;
                               
                               return (
                                 <div
@@ -1471,17 +1513,17 @@ export function ArmeiroView({
                                         checked={isChecked}
                                         onChange={() => {
                                           if (isChecked) {
-                                            setItemsToReturn(prev => prev.filter(id => id !== ci.id_material));
+                                            setItemsToReturn(prev => prev.filter(id => id !== ci.id_cautela_item));
                                           } else {
-                                            setItemsToReturn(prev => [...prev, ci.id_material]);
+                                            setItemsToReturn(prev => [...prev, ci.id_cautela_item]);
                                           }
                                         }}
                                         className="h-4.5 w-4.5 rounded border-slate-800 text-blue-600 focus:ring-blue-500 bg-slate-950 cursor-pointer"
                                       />
                                       <div>
-                                        <h4 className={`text-xs font-bold uppercase font-sans ${isChecked ? 'text-slate-100' : 'text-slate-500'}`}>{mat?.modelo}</h4>
+                                        <h4 className={`text-xs font-bold uppercase font-sans ${isChecked ? 'text-slate-100' : 'text-slate-500'}`}>{displayModel}</h4>
                                         <p className="text-[8px] font-mono text-slate-500">
-                                          {mat?.controle_quantidade ? `Item Coletivo (Custódia: ${ci.quantidade} un)` : `SN/CÓDIGO: ${ci.id_material}`}
+                                          {mat?.controle_quantidade && !mat?.individualizar_por_unidade ? `Item Coletivo (Custódia: ${ci.quantidade} un)` : `SN/CÓDIGO: ${ci.id_material}`}
                                         </p>
                                         {ci.quantidade_carregadores !== undefined && ci.quantidade_carregadores > 0 && (
                                           <div className={`flex items-center gap-1.5 mt-1.5 px-2 py-1 rounded border text-[9px] font-mono font-bold uppercase tracking-wider w-fit ${
@@ -1492,13 +1534,13 @@ export function ArmeiroView({
                                             <span>Devolver {ci.quantidade_carregadores} Carregador(es)</span>
                                           </div>
                                         )}
-                                        {(ci.id_material.startsWith('BAT-') || mat?.modelo.toLowerCase().includes('bateria')) && (
+                                        {isBattery && (
                                           <div className={`flex items-center gap-1.5 mt-1.5 px-2 py-1 rounded border text-[9px] font-mono font-bold uppercase tracking-wider w-fit ${
                                             isChecked 
                                               ? 'bg-emerald-955/40 border-emerald-900/40 text-emerald-400' 
                                               : 'bg-slate-950/50 border-slate-900 text-slate-550'
                                           }`}>
-                                            <span>Devolver {ci.quantidade} Bateria(s)</span>
+                                            <span>Devolver {ci.quantidade === 1 ? '1 Bateria' : `${ci.quantidade} Baterias`}</span>
                                           </div>
                                         )}
                                       </div>
@@ -1506,7 +1548,7 @@ export function ArmeiroView({
 
                                     <div className="flex items-center gap-4">
                                       {/* Quantidade a devolver se for coletivo e estiver checado */}
-                                      {isChecked && mat?.controle_quantidade && (
+                                      {isChecked && (mat?.controle_quantidade || ci.quantidade > 1) && !((mat?.individualizar_por_unidade ?? false) && ci.quantidade === 1) && (
                                         <div className="space-y-0.5">
                                           <span className="text-[8px] text-slate-500 font-mono font-bold block uppercase tracking-wide">Qtd p/ Devolver:</span>
                                           <div className="flex items-center gap-1 bg-slate-950 border border-slate-855 rounded p-0.5">
@@ -1514,7 +1556,7 @@ export function ArmeiroView({
                                               type="button"
                                               onClick={() => {
                                                 if (currentReturnedQty > 0) {
-                                                  setReturnedQuantities(prev => ({ ...prev, [ci.id_material]: currentReturnedQty - 1 }));
+                                                  setReturnedQuantities(prev => ({ ...prev, [ci.id_cautela_item]: currentReturnedQty - 1 }));
                                                 }
                                               }}
                                               className="px-1.5 py-0.5 bg-slate-900 hover:bg-slate-800 text-xs font-bold text-white rounded"
@@ -1532,13 +1574,13 @@ export function ArmeiroView({
                                                     const nextQty = currentReturnedQty + 1;
                                                     const diff = ci.quantidade - nextQty;
                                                     setConsumedQuantities(cPrev => {
-                                                      const currentCons = cPrev[ci.id_material] ?? 0;
+                                                      const currentCons = cPrev[ci.id_cautela_item] ?? 0;
                                                       return {
                                                         ...cPrev,
-                                                        [ci.id_material]: Math.min(diff, currentCons)
+                                                        [ci.id_cautela_item]: Math.min(diff, currentCons)
                                                       };
                                                     });
-                                                    return { ...prev, [ci.id_material]: nextQty };
+                                                    return { ...prev, [ci.id_cautela_item]: nextQty };
                                                   });
                                                 }
                                               }}
@@ -1555,10 +1597,10 @@ export function ArmeiroView({
                                         <div className="space-y-0.5">
                                           <span className="text-[8px] text-slate-500 font-mono font-bold block uppercase tracking-wide">Laudo Físico:</span>
                                           <select
-                                            value={claimConditions[ci.id_material] || 'em_condicoes_de_uso'}
+                                            value={claimConditions[ci.id_cautela_item] || 'em_condicoes_de_uso'}
                                             onChange={(e) => setClaimConditions(prev => ({
                                               ...prev,
-                                              [ci.id_material]: e.target.value as CondicaoUso
+                                              [ci.id_cautela_item]: e.target.value as CondicaoUso
                                             }))}
                                             className="bg-[#0a1120] border border-slate-850 rounded px-2 py-1 text-[10px] font-mono text-slate-350 focus:outline-none cursor-pointer"
                                           >
@@ -1571,23 +1613,23 @@ export function ArmeiroView({
                                   </div>
 
                                   {/* Checkbox para Consumo de Munições/Carregadores (apenas se for controle_quantidade e tiver diferença) */}
-                                  {isChecked && mat?.controle_quantidade && currentReturnedQty < ci.quantidade && (
+                                  {isChecked && mat?.controle_quantidade && !mat?.individualizar_por_unidade && currentReturnedQty < ci.quantidade && (
                                     <div className="flex items-center gap-2 bg-slate-950/60 p-2 rounded border border-slate-855/60 mt-1">
                                       <input
                                         type="checkbox"
-                                        id={`check-consume-${ci.id_material}`}
-                                        checked={(consumedQuantities[ci.id_material] ?? 0) === (ci.quantidade - currentReturnedQty)}
+                                        id={`check-consume-${ci.id_cautela_item}`}
+                                        checked={(consumedQuantities[ci.id_cautela_item] ?? 0) === (ci.quantidade - currentReturnedQty)}
                                         onChange={(e) => {
                                           const diff = ci.quantidade - currentReturnedQty;
                                           setConsumedQuantities(prev => ({
                                             ...prev,
-                                            [ci.id_material]: e.target.checked ? diff : 0
+                                            [ci.id_cautela_item]: e.target.checked ? diff : 0
                                           }));
                                         }}
                                         className="h-3.5 w-3.5 rounded border-slate-800 text-cyan-600 focus:ring-cyan-500 bg-slate-950 cursor-pointer animate-none"
                                       />
                                       <label 
-                                        htmlFor={`check-consume-${ci.id_material}`} 
+                                        htmlFor={`check-consume-${ci.id_cautela_item}`} 
                                         className="text-[9px] font-mono text-cyan-400 font-bold uppercase cursor-pointer select-none leading-none animate-none"
                                       >
                                         Marcar {ci.quantidade - currentReturnedQty} unidades como Consumidas/Disparadas
