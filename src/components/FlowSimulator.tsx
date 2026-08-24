@@ -57,75 +57,67 @@ const parseHandoverDescription = (desc: string) => {
       continue;
     }
 
-    if (line === 'SERVIÇO DIÁRIO') {
+    if (line === 'SERVIÇO DIÁRIO' || line === 'SERVICO DIARIO') {
       currentSection = 'SERVIÇO_DIARIO';
       continue;
     }
 
-    if (line === 'MATERIAL CARGA') {
+    if (line === 'MATERIAL CARGA' || line === 'ESTOQUE FÍSICO DO PAIOL CONFERIDO' || line === 'ESTOQUE FISICO DO PAIOL CONFERIDO') {
       currentSection = 'MATERIAL_CARGA';
       continue;
     }
 
-    if (line === 'SITUAÇÃO DAS ALTERAÇÕES E PENDÊNCIAS DO SERVIÇO') {
+    if (line === 'SITUAÇÃO DAS ALTERAÇÕES E PENDÊNCIAS DO SERVIÇO' || line === 'SITUACAO DAS ALTERACOES E PENDENCIAS DO SERVICO') {
       currentSection = 'PENDENCIAS';
       continue;
     }
 
-    if (line === 'CONFERÊNCIA FÍSICA E QUANTITATIVA') {
+    if (line === 'CONFERÊNCIA FÍSICA E QUANTITATIVA' || line === 'CONFERENCIA FISICA E QUANTITATIVA') {
       currentSection = 'CONFERENCIA';
       continue;
     }
 
-    if (line === 'PASSAGEM DE SERVIÇO') {
+    if (line === 'PASSAGEM DE SERVIÇO' || line === 'PASSAGEM DE SERVICO') {
       currentSection = 'PASSAGEM';
       continue;
     }
 
     if (currentSection === 'SERVIÇO_DIARIO') {
-      if (line.startsWith('Oficial CPU:')) oficialCPU = line.replace('Oficial CPU:', '').trim();
-      else if (line.startsWith('Adjunto ao CPU:')) adjuntoCPU = line.replace('Adjunto ao CPU:', '').trim();
-      else if (line.startsWith('Armeiro de dia:')) armeiroDia = line.replace('Armeiro de dia:', '').trim();
+      const clean = line.startsWith('-') ? line.substring(1).trim() : line;
+      if (/^Oficial\s*(de\s*Dia|CPU)\s*:/i.test(clean)) {
+        oficialCPU = clean.replace(/^Oficial\s*(de\s*Dia|CPU)\s*:/i, '').trim();
+      } else if (/^Adjunto\s*(ao\s*CPU|de\s*Servi[çc]o)?\s*:/i.test(clean)) {
+        adjuntoCPU = clean.replace(/^Adjunto\s*(ao\s*CPU|de\s*Servi[çc]o)?\s*:/i, '').trim();
+      } else if (/^Armeiro\s*(de\s*Servi[çc]o|de\s*dia|do\s*dia)?\s*:/i.test(clean)) {
+        armeiroDia = clean.replace(/^Armeiro\s*(de\s*Servi[çc]o|de\s*dia|do\s*dia)?\s*:/i, '').trim();
+      }
     } else if (currentSection === 'MATERIAL_CARGA') {
       if (line.startsWith('-')) {
         const content = line.substring(1).trim();
-        const namePart = content.split(':')[0] || '';
-        const rest = content.substring(namePart.length + 1).trim();
+        const colonIdx = content.indexOf(':');
+        const namePart = colonIdx !== -1 ? content.substring(0, colonIdx).trim() : content;
+        const rest = colonIdx !== -1 ? content.substring(colonIdx + 1).trim() : '';
         
         let carregadores = '0';
-        let total = '1';
-        let disponivel = '1';
+        let total = '0';
+        let disponivel = '0';
         let cautelado = '0';
         let manutencao = '0';
 
-        if (rest.includes('(Disponível:')) {
-          const totalPart = rest.split('(Disponível:')[0].trim();
-          const detailPart = rest.split('(Disponível:')[1].replace(')', '').trim();
+        const totalMatch = rest.match(/(\d+)\s*un/i);
+        if (totalMatch) total = totalMatch[1];
 
-          const totalMatch = totalPart.match(/^(\d+)\s*un/);
-          if (totalMatch) total = totalMatch[1];
+        const carrMatch = rest.match(/\+\s*(\d+)\s*carregadores/i);
+        if (carrMatch) carregadores = carrMatch[1];
 
-          const carrMatch = totalPart.match(/\+\s*(\d+)\s*carregadores/);
-          if (carrMatch) carregadores = carrMatch[1];
+        const dispMatch = rest.match(/Dispon[íi]vel:\s*(\d+)/i) || rest.match(/(\d+)\s*un\.?\s*disp/i);
+        if (dispMatch) disponivel = dispMatch[1];
 
-          const cautMatch = detailPart.match(/Cautelado:\s*(\d+)/);
-          if (cautMatch) cautelado = cautMatch[1];
+        const cautMatch = rest.match(/Cautelado:\s*(\d+)/i) || rest.match(/(\d+)\s*un\.?\s*em\s*campo/i);
+        if (cautMatch) cautelado = cautMatch[1];
 
-          const manutMatch = detailPart.match(/Manutenção:\s*(\d+)/);
-          if (manutMatch) manutencao = manutMatch[1];
-
-          const dispMatch = detailPart.match(/Disponível:\s*(\d+)/);
-          if (dispMatch) disponivel = dispMatch[1];
-        } else {
-          const totalMatch = rest.match(/^(\d+)\s*un/);
-          if (totalMatch) total = totalMatch[1];
-
-          const dispMatch = rest.match(/(\d+)\s*un\.\s*disp\./);
-          if (dispMatch) disponivel = dispMatch[1];
-          
-          const cautMatch = rest.match(/(\d+)\s*un\.\s*em\s*campo/);
-          if (cautMatch) cautelado = cautMatch[1];
-        }
+        const manutMatch = rest.match(/Manuten[çc][ãa]o:\s*(\d+)/i);
+        if (manutMatch) manutencao = manutMatch[1];
 
         stockItems.push({
           material: namePart.trim(),

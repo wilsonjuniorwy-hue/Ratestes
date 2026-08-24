@@ -11,6 +11,102 @@ import { comparePassword, hashSHA256 } from '../utils/crypto';
 import { useOfflineDatabase } from '../hooks/useOfflineDatabase';
 import { formatPostoGraduacaoSigla, POSTOS_GRADUACOES_EXTENSO } from '../utils/rankUtils';
 
+interface QuantityInputProps {
+  value: number;
+  maxQty: number;
+  minQty?: number;
+  onChange: (value: number) => void;
+  className?: string;
+  disabled?: boolean;
+}
+
+const QuantityInput: React.FC<QuantityInputProps> = ({
+  value,
+  maxQty,
+  minQty = 0,
+  onChange,
+  className = '',
+  disabled = false
+}) => {
+  const [localText, setLocalText] = React.useState<string>(value > 0 ? String(value) : '');
+
+  React.useEffect(() => {
+    setLocalText(value > 0 ? String(value) : '');
+  }, [value]);
+
+  const commitValue = (raw: string) => {
+    if (raw === '' || isNaN(Number(raw))) {
+      onChange(0);
+      setLocalText('');
+      return;
+    }
+    const parsed = parseInt(raw, 10);
+    const clamped = Math.max(minQty, Math.min(parsed, maxQty));
+    onChange(clamped);
+    setLocalText(clamped > 0 ? String(clamped) : '');
+  };
+
+  const handleStep = (delta: number) => {
+    const currentTyped = localText === '' ? 0 : parseInt(localText, 10);
+    const base = isNaN(currentTyped) ? value : currentTyped;
+    const next = Math.max(minQty, Math.min(base + delta, maxQty));
+    onChange(next);
+    setLocalText(next > 0 ? String(next) : '');
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const clean = e.target.value.replace(/\D/g, '');
+    setLocalText(clean);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.currentTarget.blur();
+    }
+  };
+
+  const currentVal = localText === '' ? 0 : parseInt(localText, 10);
+  const effectiveVal = isNaN(currentVal) ? value : currentVal;
+
+  return (
+    <div className={`flex items-center gap-1.5 bg-slate-950 p-1 border border-slate-800 rounded-lg ${className}`}>
+      {(effectiveVal > 0 || value > 0) && (
+        <button
+          type="button"
+          onClick={() => handleStep(-1)}
+          disabled={disabled}
+          className="px-2 py-1 bg-slate-900 hover:bg-slate-800 active:bg-slate-750 text-xs font-bold text-slate-200 rounded transition-colors cursor-pointer select-none"
+        >
+          -
+        </button>
+      )}
+      <input
+        type="number"
+        inputMode="numeric"
+        pattern="[0-9]*"
+        min={minQty}
+        max={maxQty}
+        value={localText}
+        placeholder="0"
+        disabled={disabled}
+        onFocus={(e) => e.target.select()}
+        onChange={handleInputChange}
+        onBlur={(e) => commitValue(e.target.value)}
+        onKeyDown={handleKeyDown}
+        className="w-14 bg-slate-900 border border-slate-750 text-center text-xs font-mono font-bold text-white rounded py-1 focus:outline-none focus:border-blue-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+      />
+      <button
+        type="button"
+        disabled={disabled || effectiveVal >= maxQty}
+        onClick={() => handleStep(1)}
+        className="px-2 py-1 bg-slate-900 hover:bg-slate-800 active:bg-slate-750 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold text-slate-200 rounded transition-colors cursor-pointer select-none"
+      >
+        +
+      </button>
+    </div>
+  );
+};
+
 interface TotemViewProps {
   usuarios: Usuario[];
   materiais: Material[];
@@ -246,7 +342,8 @@ export function TotemView({
   };
 
   const ajustarQuantidadeCarrinho = (idMat: string, newQty: number, maxQty: number) => {
-    const qtyNormalizada = Math.max(0, Math.min(newQty, maxQty));
+    const val = isNaN(newQty) ? 0 : newQty;
+    const qtyNormalizada = Math.max(0, Math.min(val, maxQty));
     setCartItens(prev => {
       const outrosItens = prev.filter(id => id !== idMat);
       const novosItens = Array(qtyNormalizada).fill(idMat);
@@ -1068,28 +1165,11 @@ export function TotemView({
                           <div>
                             {isAvailable ? (
                               mat.controle_quantidade ? (
-                                <div className="flex items-center gap-2 bg-slate-950 p-1 border border-slate-800 rounded-lg">
-                                  {isSelected && (
-                                    <button
-                                      type="button"
-                                      onClick={() => ajustarQuantidadeCarrinho(mat.id_material, countInCart - 1, disponivelQty + countInCart)}
-                                      className="px-2 py-1 bg-slate-900 hover:bg-slate-800 text-xs font-bold text-slate-200 rounded animate-none"
-                                    >
-                                      -
-                                    </button>
-                                  )}
-                                  <span className="text-xs font-mono font-bold text-white px-2">
-                                    {countInCart}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    disabled={disponivelQty <= 0}
-                                    onClick={() => ajustarQuantidadeCarrinho(mat.id_material, countInCart + 1, disponivelQty + countInCart)}
-                                    className="px-2 py-1 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold text-slate-200 rounded animate-none"
-                                  >
-                                    +
-                                  </button>
-                                </div>
+                                <QuantityInput
+                                  value={countInCart}
+                                  maxQty={disponivelQty + countInCart}
+                                  onChange={(newQty) => ajustarQuantidadeCarrinho(mat.id_material, newQty, disponivelQty + countInCart)}
+                                />
                               ) : (
                                 <button
                                   id={`btn-toggle-cart-${mat.id_material}`}
@@ -1592,28 +1672,11 @@ export function TotemView({
                               <div>
                                 {isAvailable ? (
                                   mat.controle_quantidade ? (
-                                    <div className="flex items-center gap-2 bg-slate-950 p-1 border border-slate-800 rounded-lg">
-                                      {isSelected && (
-                                        <button
-                                          type="button"
-                                          onClick={() => ajustarQuantidadeCarrinho(mat.id_material, countInCart - 1, disponivelQty + countInCart)}
-                                          className="px-2 py-1 bg-slate-900 hover:bg-slate-850 text-xs font-bold text-slate-200 rounded animate-none"
-                                        >
-                                          -
-                                        </button>
-                                      )}
-                                      <span className="text-xs font-mono font-bold text-white px-2">
-                                        {countInCart}
-                                      </span>
-                                      <button
-                                        type="button"
-                                        disabled={disponivelQty <= 0}
-                                        onClick={() => ajustarQuantidadeCarrinho(mat.id_material, countInCart + 1, disponivelQty + countInCart)}
-                                        className="px-2 py-1 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-bold text-slate-200 rounded animate-none"
-                                      >
-                                        +
-                                      </button>
-                                    </div>
+                                    <QuantityInput
+                                      value={countInCart}
+                                      maxQty={disponivelQty + countInCart}
+                                      onChange={(newQty) => ajustarQuantidadeCarrinho(mat.id_material, newQty, disponivelQty + countInCart)}
+                                    />
                                   ) : (
                                     <button
                                       type="button"
@@ -1659,11 +1722,13 @@ export function TotemView({
                           return Object.entries(groupedCart).map(([id, qty]) => {
                             const item = materiais.find(m => m.id_material === id);
                             const isQtyItem = item?.controle_quantidade;
+                            const maxQty = isQtyItem && item ? (getDisponivelQty(item) + qty) : 1;
+
                             return (
-                              <div key={id} className="bg-slate-955 border border-slate-850 p-3 rounded-lg flex justify-between items-center text-xs font-mono">
-                                <div className="truncate pr-2">
+                              <div key={id} className="bg-slate-955 border border-slate-850 p-3 rounded-lg flex justify-between items-center text-xs font-mono gap-2">
+                                <div className="truncate pr-2 flex-1">
                                   <p className="text-white uppercase font-sans font-bold truncate text-xs">
-                                    {item?.modelo} {isQtyItem ? `(Qtd: ${qty})` : ''}
+                                    {item?.modelo}
                                     {!isQtyItem && cartWeaponMagazines[id] && cartWeaponMagazines[id] > 0 ? (
                                       <span className="text-cyan-400 font-mono font-bold"> (+{cartWeaponMagazines[id]} Carg)</span>
                                     ) : ''}
@@ -1672,18 +1737,28 @@ export function TotemView({
                                     ) : ''}
                                   </p>
                                   <p className="text-[10px] text-slate-400 font-mono">
-                                    {isQtyItem ? 'Item Coletivo' : `CÓD: ${id}`}
+                                    {isQtyItem ? 'Item Coletivo / Lote' : `CÓD: ${id}`}
                                   </p>
                                 </div>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setCartItens(prev => prev.filter(x => x !== id));
-                                  }}
-                                  className="text-slate-505 hover:text-red-400 transition-colors p-1 cursor-pointer"
-                                >
-                                  <X className="h-3.5 w-3.5" />
-                                </button>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  {isQtyItem && item && (
+                                    <QuantityInput
+                                      value={qty}
+                                      maxQty={maxQty}
+                                      onChange={(newVal) => ajustarQuantidadeCarrinho(id, newVal, maxQty)}
+                                    />
+                                  )}
+                                  <button
+                                    type="button"
+                                    title="Remover do carrinho"
+                                    onClick={() => {
+                                      setCartItens(prev => prev.filter(x => x !== id));
+                                    }}
+                                    className="text-slate-505 hover:text-red-400 transition-colors p-1 cursor-pointer"
+                                  >
+                                    <X className="h-4 w-4" />
+                                  </button>
+                                </div>
                               </div>
                             );
                           });

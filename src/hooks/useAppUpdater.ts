@@ -6,6 +6,7 @@ export function useAppUpdater() {
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [newVersion, setNewVersion] = useState('');
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isChecking, setIsChecking] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [pendingUpdate, setPendingUpdate] = useState<any>(null);
@@ -22,6 +23,7 @@ export function useAppUpdater() {
     }
 
     try {
+      setIsChecking(true);
       setError(null);
       console.log("Buscando atualizações...");
       const update = await check();
@@ -42,6 +44,8 @@ export function useAppUpdater() {
       if (manual) {
         setError(err.message || "Erro ao conectar com servidor de atualizações.");
       }
+    } finally {
+      setIsChecking(false);
     }
     return null;
   };
@@ -102,6 +106,7 @@ export function useAppUpdater() {
     updateAvailable,
     newVersion,
     isDownloading,
+    isChecking,
     progress,
     error,
     checkUpdates,

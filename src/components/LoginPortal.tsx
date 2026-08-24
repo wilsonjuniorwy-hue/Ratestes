@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Shield, KeyRound, ShieldAlert, CheckCircle, RefreshCw, Eye, EyeOff, Building2, ArrowLeft, Download } from 'lucide-react';
+import { Shield, KeyRound, ShieldAlert, CheckCircle, RefreshCw, Eye, EyeOff, Building2, ArrowLeft, Download, Sparkles, ArrowUpCircle, CheckCircle2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Usuario, Quartel } from '../types';
 import { supabase, obterAmbienteAtual, alterarAmbiente } from '../supabaseClient';
@@ -17,29 +17,37 @@ interface LoginPortalProps {
   onLoginSuccess: (usuario: Usuario, quartel: Quartel | null) => void;
   cadastrarSenha: (matricula: string, novaSenha: string) => void;
   quarteis: Quartel[];
+  updater?: ReturnType<typeof useAppUpdater>;
 }
 
 export default function LoginPortal({
   onLoginSuccess,
   cadastrarSenha,
-  quarteis
+  quarteis,
+  updater: externalUpdater
 }: LoginPortalProps) {
   // ---- SISTEMA DE ATUALIZAÇÃO AUTOMÁTICA ----
+  const localUpdater = useAppUpdater();
+  const updater = externalUpdater || localUpdater;
+
   const { 
     updateAvailable, 
     newVersion, 
     isDownloading, 
+    isChecking: updaterIsChecking,
     error: updaterError, 
     checkUpdates, 
     installUpdate 
-  } = useAppUpdater();
+  } = updater;
 
-  const [isChecking, setIsChecking] = useState(false);
+  const [isCheckingLocal, setIsCheckingLocal] = useState(false);
   const [checkedSuccessfully, setCheckedSuccessfully] = useState(false);
+
+  const isChecking = updaterIsChecking || isCheckingLocal;
 
   const handleCheckClick = async () => {
     if (isChecking || isDownloading) return;
-    setIsChecking(true);
+    setIsCheckingLocal(true);
     setCheckedSuccessfully(false);
     try {
       const update = await checkUpdates(false);
@@ -50,7 +58,7 @@ export default function LoginPortal({
     } catch (err) {
       console.error(err);
     } finally {
-      setIsChecking(false);
+      setIsCheckingLocal(false);
     }
   };
 
@@ -763,50 +771,90 @@ export default function LoginPortal({
           </motion.div>
         )}
 
-        {/* FOOTER DE ATUALIZAÇÃO DO SISTEMA */}
-        <div className="border-t border-slate-850/60 mt-6 pt-4 flex flex-col items-center justify-center gap-2 text-[10px] font-mono text-slate-500 relative z-10">
-          <div className="flex items-center gap-1.5">
-            <span>Versão: <strong className="text-slate-400 font-bold">v{packageJson.version}</strong></span>
-            <span className="text-slate-700">•</span>
-            <span>Canal: <strong className="text-slate-400 font-bold">Homologação</strong></span>
-          </div>
+        {/* CARD TÁTICO DE VERSÃO E ATUALIZAÇÃO DO SISTEMA */}
+        <div className="border-t border-slate-800/80 mt-6 pt-5 relative z-10 font-mono">
+          {updateAvailable ? (
+            <div className="bg-gradient-to-r from-emerald-950/40 via-slate-900 to-blue-950/40 border border-emerald-500/40 rounded-xl p-4 shadow-[0_0_20px_rgba(16,185,129,0.15)] space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
+                  <span className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <Sparkles className="h-3.5 w-3.5" />
+                    Nova Versão Disponível
+                  </span>
+                </div>
+                <span className="text-[10px] text-slate-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
+                  Instalada: v{packageJson.version}
+                </span>
+              </div>
 
-          <div className="flex items-center justify-center min-h-[16px]">
-            {isDownloading ? (
-              <span className="text-blue-450 font-bold flex items-center gap-1 animate-pulse">
-                <RefreshCw className="h-3 w-3 animate-spin text-blue-400" />
-                Baixando atualização...
-              </span>
-            ) : updateAvailable ? (
+              <div className="bg-slate-950/80 border border-slate-800 rounded-lg p-2.5 flex items-center justify-between text-xs">
+                <span className="text-slate-400">Versão de Destino:</span>
+                <span className="text-emerald-400 font-bold text-sm tracking-wider">v{newVersion}</span>
+              </div>
+
               <button
                 type="button"
                 onClick={handleInstallClick}
-                className="text-emerald-450 hover:text-emerald-400 font-bold underline cursor-pointer uppercase text-[9px] tracking-widest flex items-center gap-1 animate-pulse"
+                disabled={isDownloading}
+                className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.3)] animate-pulse transition-all cursor-pointer disabled:opacity-50"
               >
-                <Download className="h-3 w-3" />
-                Instalar v{newVersion}
+                {isDownloading ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 animate-spin text-white" />
+                    <span>Baixando e Instalando v{newVersion}...</span>
+                  </>
+                ) : (
+                  <>
+                    <Download className="h-4 w-4 text-white" />
+                    <span>Atualizar Sistema Agora (v{newVersion})</span>
+                  </>
+                )}
               </button>
-            ) : isChecking ? (
-              <span className="text-slate-400 flex items-center gap-1 animate-pulse">
-                <RefreshCw className="h-3 w-3 animate-spin" />
-                Verificando...
-              </span>
-            ) : checkedSuccessfully ? (
-              <span className="text-emerald-450 font-bold">Aplicativo atualizado!</span>
-            ) : (
+            </div>
+          ) : (
+            <div className="bg-slate-950/70 border border-slate-800/80 rounded-xl p-3.5 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]" />
+                  <span className="text-[10px] text-slate-300 font-bold uppercase tracking-wider">
+                    Versão: <strong className="text-white text-[11px]">v{packageJson.version}</strong>
+                  </span>
+                </div>
+                <span className="text-[9px] text-slate-500 uppercase tracking-widest bg-slate-900 border border-slate-850 px-2 py-0.5 rounded">
+                  Canal Oficial PMDF
+                </span>
+              </div>
+
               <button
                 type="button"
                 onClick={handleCheckClick}
-                className="text-slate-500 hover:text-slate-400 underline cursor-pointer font-bold uppercase text-[9px] tracking-wider flex items-center gap-1 transition-colors"
+                disabled={isChecking}
+                className="w-full bg-slate-900 hover:bg-slate-850 border border-slate-750 hover:border-blue-500/50 text-slate-300 hover:text-white py-2.5 px-3 rounded-lg text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-60 shadow-sm"
               >
-                <RefreshCw className="h-3 w-3" />
-                Verificar Atualizações
+                {isChecking ? (
+                  <>
+                    <RefreshCw className="h-3.5 w-3.5 animate-spin text-blue-400" />
+                    <span className="text-blue-400">Verificando Servidor de Atualizações...</span>
+                  </>
+                ) : checkedSuccessfully ? (
+                  <>
+                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+                    <span className="text-emerald-400">Sistema Atualizado na Versão Mais Recente!</span>
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="h-3.5 w-3.5 text-slate-400" />
+                    <span>Buscar Atualização do Sistema</span>
+                  </>
+                )}
               </button>
-            )}
-          </div>
+            </div>
+          )}
+
           {updaterError && (
-            <p className="text-red-400 text-[8px] font-mono mt-1 text-center max-w-[280px] truncate" title={updaterError}>
-              Erro: {updaterError}
+            <p className="text-red-400 text-[9px] font-mono mt-2 text-center bg-red-955/20 border border-red-900/30 p-1.5 rounded" title={updaterError}>
+              Falha na checagem: {updaterError}
             </p>
           )}
         </div>

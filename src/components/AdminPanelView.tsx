@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Shield, Building2, Plus, Power, LogOut, ChevronRight, Laptop, Key, Check, AlertTriangle, ShieldAlert, Trash2, RefreshCw, Download, Upload } from 'lucide-react';
+import { Shield, Building2, Plus, Power, LogOut, ChevronRight, Laptop, Key, Check, AlertTriangle, ShieldAlert, Trash2, RefreshCw, Download, Upload, Sparkles } from 'lucide-react';
 import { Usuario, Quartel } from '../types';
 import { supabase, obterAmbienteAtual } from '../supabaseClient';
 import { useAppUpdater } from '../hooks/useAppUpdater';
+import packageJson from '../../package.json';
 
 interface AdminPanelViewProps {
   admin: Usuario;
@@ -25,7 +26,7 @@ export function AdminPanelView({ admin, db, onSelecionarQuartel, onLogout }: Adm
   const [isCreating, setIsCreating] = useState(false);
 
   const [activeTab, setActiveTab] = useState<'quarteis' | 'dispositivos'>('quarteis');
-  const { updateAvailable, newVersion, checkUpdates, installUpdate, isDownloading, error: updaterError } = useAppUpdater();
+  const { updateAvailable, newVersion, checkUpdates, installUpdate, isDownloading, isChecking, error: updaterError } = useAppUpdater();
   
   // Dispositivos States
   const [dispositivos, setDispositivos] = useState<any[]>([]);
@@ -465,42 +466,57 @@ export function AdminPanelView({ admin, db, onSelecionarQuartel, onLogout }: Adm
         {activeTab === 'dispositivos' && (
           <div className="space-y-8">
             {/* Atualização do Sistema */}
-            <div className="bg-slate-900/60 backdrop-blur-md border border-slate-800/80 rounded-xl p-6 shadow-lg space-y-4">
-              <div className="flex items-center gap-2 border-b border-slate-850 pb-4">
-                <RefreshCw className={`h-4.5 w-4.5 text-blue-400 ${isDownloading ? 'animate-spin' : ''}`} />
-                <h2 className="text-sm font-bold font-mono text-slate-200 uppercase tracking-widest">Atualização do Sistema</h2>
+            <div className={`backdrop-blur-md border rounded-xl p-6 shadow-lg space-y-4 transition-all ${
+              updateAvailable 
+                ? 'bg-gradient-to-r from-emerald-950/40 via-slate-900 to-blue-950/40 border-emerald-500/40 shadow-[0_0_20px_rgba(16,185,129,0.15)]' 
+                : 'bg-slate-900/60 border-slate-800/80'
+            }`}>
+              <div className="flex items-center justify-between border-b border-slate-850 pb-4">
+                <div className="flex items-center gap-2">
+                  <RefreshCw className={`h-4.5 w-4.5 text-blue-400 ${isDownloading || isChecking ? 'animate-spin' : ''}`} />
+                  <h2 className="text-sm font-bold font-mono text-slate-200 uppercase tracking-widest">Atualização do Sistema</h2>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-mono text-slate-500">Versão instalada:</span>
+                  <span className="text-[11px] font-mono font-bold text-slate-200 bg-slate-950 border border-slate-800 px-2 py-0.5 rounded">
+                    v{packageJson.version}
+                  </span>
+                </div>
               </div>
-              <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between text-xs">
-                <div className="space-y-1.5 flex-1 pr-4">
-                  <p className="text-slate-400 leading-relaxed max-w-lg">
+              <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between text-xs font-mono">
+                <div className="space-y-1.5 flex-1 pr-4 font-sans">
+                  <p className="text-slate-400 leading-relaxed max-w-lg text-xs">
                     Verifique se existem atualizações pendentes para o aplicativo de controle de armamento. As atualizações corrigem falhas, melhoram a segurança física e adicionam novos recursos de forma automática.
                   </p>
                   {updateAvailable && (
-                    <div className="inline-flex items-center gap-1.5 bg-emerald-950/40 border border-emerald-900/40 text-emerald-400 px-2.5 py-1 rounded font-mono text-[9px] font-bold mt-1">
-                      <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping" />
-                      NOVA VERSÃO DISPONÍVEL: v{newVersion}
+                    <div className="inline-flex items-center gap-2 bg-emerald-950/60 border border-emerald-500/40 text-emerald-400 px-3 py-1.5 rounded-lg font-mono text-[10px] font-bold mt-1 shadow-sm animate-pulse">
+                      <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>NOVA VERSÃO DISPONÍVEL: v{newVersion}</span>
                     </div>
                   )}
                   {updaterError && (
-                    <p className="text-red-400 font-mono text-[9px] mt-1">Erro: {updaterError}</p>
+                    <p className="text-red-400 font-mono text-[10px] mt-1 bg-red-955/20 border border-red-900/30 p-1.5 rounded">
+                      Erro: {updaterError}
+                    </p>
                   )}
                 </div>
-                <div className="flex gap-2 shrink-0">
+                <div className="flex gap-2.5 shrink-0">
                   <button
                     onClick={() => checkUpdates(true)}
-                    disabled={isDownloading}
-                    className="px-5 py-2.5 bg-slate-950 hover:bg-slate-900 text-slate-300 font-bold font-mono rounded-lg transition-colors border border-slate-800 uppercase tracking-wider cursor-pointer whitespace-nowrap"
+                    disabled={isDownloading || isChecking}
+                    className="px-5 py-2.5 bg-slate-950 hover:bg-slate-900 text-slate-300 font-bold font-mono rounded-lg transition-colors border border-slate-800 hover:border-blue-500/40 uppercase tracking-wider cursor-pointer whitespace-nowrap text-xs flex items-center gap-2 disabled:opacity-60"
                   >
-                    Verificar
+                    <RefreshCw className={`h-3.5 w-3.5 ${isChecking ? 'animate-spin text-blue-400' : ''}`} />
+                    {isChecking ? 'Verificando...' : 'Buscar Atualizações'}
                   </button>
                   {updateAvailable && (
                     <button
                       onClick={installUpdate}
                       disabled={isDownloading}
-                      className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold font-mono rounded-lg transition-colors uppercase tracking-wider cursor-pointer whitespace-nowrap flex items-center gap-1.5 glow-blue"
+                      className="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold font-mono rounded-lg transition-all uppercase tracking-wider cursor-pointer whitespace-nowrap flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.4)] animate-pulse text-xs disabled:opacity-60"
                     >
-                      <Download className="h-4 w-4" />
-                      {isDownloading ? 'Instalando...' : 'Instalar v' + newVersion}
+                      <Download className="h-4 w-4 text-white" />
+                      {isDownloading ? `Instalando v${newVersion}...` : `Instalar v${newVersion}`}
                     </button>
                   )}
                 </div>

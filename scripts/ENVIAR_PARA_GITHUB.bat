@@ -1,7 +1,7 @@
 @echo off
 cd /d "%~dp0\.."
 
-echo === ENVIANDO RELEASE V0.2.51 PARA O GITHUB ===
+echo === ENVIANDO RELEASE V0.2.52 PARA O GITHUB ===
 echo.
 
 git config --global --add safe.directory "%~dp0\.."
@@ -10,10 +10,10 @@ echo [1/6] Adicionando arquivos...
 git add .
 
 echo [2/6] Criando commit...
-git commit -m "release: v0.2.51 - individualizacao de baterias e baixa unitaria de itens de cautela"
+git commit -m "release: v0.2.52 - correcao impressao passagem servico e limpeza relatorio geral"
 
-echo [3/6] Criando tag v0.2.51...
-git tag -a v0.2.51 -m "Release v0.2.51"
+echo [3/6] Criando tag v0.2.52...
+git tag -a v0.2.52 -m "Release v0.2.52"
 
 echo [4/6] Enviando codigo para o GitHub (feature/tauri-desktop)...
 git push origin feature/tauri-desktop
@@ -21,9 +21,9 @@ git push origin feature/tauri-desktop
 echo [5/6] Enviando para a branch main...
 git push origin feature/tauri-desktop:main
 
-echo [6/6] Enviando tag v0.2.51 para o GitHub...
-git push origin v0.2.51
+echo [6/6] Enviando tag v0.2.52 para o GitHub...
+git push origin v0.2.52
 
 echo.
-echo === CONCLUIDO! O SISTEMA FOI ENVIADO COM SUCESSO AO GITHUB (RELEASE V0.2.51) ===
+echo === CONCLUIDO! O SISTEMA FOI ENVIADO COM SUCESSO AO GITHUB (RELEASE V0.2.52) ===
 pause

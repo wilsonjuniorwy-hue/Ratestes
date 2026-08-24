@@ -944,7 +944,7 @@ Riacho Fundo I - DF, ${dataMinusculo}.`;
 
     return ocorrencias.filter(o => {
       const dMs = parseDateSafe(o.data_hora);
-      return dMs >= startMs && dMs <= endMs;
+      return dMs >= startMs && dMs <= endMs && o.tipo !== 'conferencia_estoque';
     });
   }, [ocorrencias, startDateStr, endDateStr]);
 

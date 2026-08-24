@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Shield } from 'lucide-react';
+import { Shield, Download, RefreshCw, Sparkles } from 'lucide-react';
 import { motion } from 'motion/react';
 import FlowSimulator from './components/FlowSimulator';
 import { useSupabaseDatabase } from './hooks/useSupabaseDatabase';
@@ -13,8 +13,12 @@ import { AdminPanelView } from './components/AdminPanelView';
 import { Usuario, Quartel } from './types';
 import { formatPostoGraduacaoSigla } from './utils/rankUtils';
 import { supabase, configurarAssinaturaDispositivo, obterAmbienteAtual, alterarAmbiente } from './supabaseClient';
+import { useAppUpdater } from './hooks/useAppUpdater';
+import packageJson from '../package.json';
 
 export default function App() {
+  const updater = useAppUpdater();
+
   const [activeArmeiroMatricula, setActiveArmeiroMatricula] = useState<string>(() => {
     return sessionStorage.getItem('activeArmeiroMatricula') || '';
   });
@@ -441,6 +445,7 @@ export default function App() {
       {/* Tela de Login */}
       {rota === 'login' && !db.isLoading && (
         <LoginPortal 
+          updater={updater}
           onLoginSuccess={(user, quartel) => {
             setAuthenticatedArmeiro(user);
             setActiveArmeiroMatricula(user.matricula);
@@ -508,7 +513,44 @@ export default function App() {
           </div>
         </div>
 
-        <div className="flex items-center gap-4 md:gap-8">
+        <div className="flex items-center gap-3 md:gap-6">
+          {/* Badge de Versão / Botão de Atualização em Destaque */}
+          {updater.updateAvailable ? (
+            <button
+              onClick={updater.installUpdate}
+              disabled={updater.isDownloading}
+              className="flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white border border-emerald-400/50 px-3.5 py-1.5 rounded-lg transition-all duration-200 cursor-pointer shadow-[0_0_15px_rgba(16,185,129,0.4)] animate-pulse"
+              title="Nova versão disponível! Clique para baixar e instalar agora."
+            >
+              <Sparkles className="h-3.5 w-3.5 text-emerald-200" />
+              <div className="flex flex-col text-left">
+                <span className="text-[8px] uppercase font-black tracking-widest text-emerald-200">
+                  Atualização Pendente
+                </span>
+                <span className="text-[10px] font-mono font-bold uppercase text-white flex items-center gap-1">
+                  <Download className="h-3 w-3" />
+                  {updater.isDownloading ? `Baixando v${updater.newVersion}...` : `Instalar v${updater.newVersion}`}
+                </span>
+              </div>
+            </button>
+          ) : (
+            <div className="flex items-center gap-2 bg-slate-900/60 border border-slate-800/80 px-3 py-1.5 rounded-lg text-[10px] font-mono">
+              <div className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]"></span>
+                <span className="text-[9px] uppercase font-bold text-slate-400">Versão:</span>
+                <strong className="text-slate-200">v{packageJson.version}</strong>
+              </div>
+              <button
+                onClick={() => updater.checkUpdates(true)}
+                disabled={updater.isChecking}
+                className="text-slate-500 hover:text-blue-400 transition-colors p-1 rounded hover:bg-slate-800 cursor-pointer ml-0.5"
+                title="Verificar atualizações do sistema"
+              >
+                <RefreshCw className={`h-3 w-3 ${updater.isChecking ? 'animate-spin text-blue-400' : ''}`} />
+              </button>
+            </div>
+          )}
+
           <div className="flex items-center gap-3 bg-slate-900/60 border border-slate-850 px-4 py-2 rounded-lg">
             <div className="flex flex-col items-end">
               <span className="text-[11px] font-bold text-slate-350 uppercase">
