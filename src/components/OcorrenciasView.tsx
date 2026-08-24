@@ -517,6 +517,7 @@ Riacho Fundo I - DF, ${dataMinusculo}.`;
         const inInPeriod = checkInMs > 0 && checkInMs >= startMs && checkInMs <= endMs;
         return outInPeriod || inInPeriod;
       })
+      .sort((a, b) => parseDateSafe(b.data_retirada) - parseDateSafe(a.data_retirada))
       .map(c => {
         const pol = usuarios.find(u => 
           u.matricula === c.matricula_policial || 
