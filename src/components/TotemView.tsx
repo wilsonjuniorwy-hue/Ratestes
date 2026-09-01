@@ -1277,7 +1277,7 @@ export function TotemView({
                 className="p-6 md:p-8 space-y-5 flex-1 flex flex-col justify-between" 
                 id="policial-sign-step"
               >
-                <div className="space-y-4">
+                <div className="space-y-4 flex-1 min-h-0 overflow-y-auto pr-1 custom-scrollbar">
                   <div className="flex items-center gap-3 border-b border-slate-850 pb-4">
                     <div className="bg-blue-600/10 p-2.5 rounded-lg border border-blue-500/20 text-blue-400 glow-blue">
                       <FileCheck2 className="h-5 w-5" />
@@ -1580,11 +1580,11 @@ export function TotemView({
               </div>
 
               {/* Corpo */}
-              <div className="flex-1 overflow-hidden grid grid-cols-1 lg:grid-cols-12 gap-6 p-6">
+              <div className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden grid grid-cols-1 lg:grid-cols-12 gap-6 p-6">
                 
                 {/* Lado Esquerdo: Busca e Resultados */}
-                <div className="lg:col-span-8 flex flex-col space-y-4 overflow-hidden h-full">
-                  <div className="relative">
+                <div className="lg:col-span-8 flex flex-col space-y-4 min-h-0 h-full">
+                  <div className="relative shrink-0">
                     <Search className="absolute left-4 top-4 h-5 w-5 text-slate-400" />
                     <input
                       type="text"
@@ -1597,7 +1597,7 @@ export function TotemView({
                     />
                   </div>
 
-                  <div className="flex-1 overflow-y-auto pr-1 space-y-2 max-h-[480px] lg:max-h-[580px]">
+                  <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-2 max-h-[420px] lg:max-h-none custom-scrollbar">
                     {materiais
                       .filter(mat => {
                         const q = searchQuery.toLowerCase().trim();
@@ -1703,17 +1703,31 @@ export function TotemView({
                   </div>
                 </div>
 
-                  {/* Lado Direito: Carga Selecionada e Assinatura */}
-                  <div className="lg:col-span-4 flex flex-col space-y-4 justify-between h-full border-t lg:border-t-0 lg:border-l border-slate-800 pt-4 lg:pt-0 lg:pl-6">
+                {/* Lado Direito: Carga Selecionada e Assinatura */}
+                <div className="lg:col-span-4 flex flex-col min-h-0 h-full border-t lg:border-t-0 lg:border-l border-slate-800 pt-4 lg:pt-0 lg:pl-6 overflow-hidden">
                   
-                  <div className="space-y-3 flex-1 overflow-y-auto max-h-[340px] lg:max-h-none">
-                    <span className="text-xs font-mono font-bold text-slate-350 uppercase tracking-wider block">Itens Selecionados ({cartItens.length}):</span>
+                  {/* Lista de Itens Selecionados com Rolagem Própria */}
+                  <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                    <div className="flex items-center justify-between pb-2 shrink-0">
+                      <span className="text-xs font-mono font-bold text-slate-350 uppercase tracking-wider block">
+                        Itens Selecionados ({cartItens.length}):
+                      </span>
+                      {cartItens.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setCartItens([])}
+                          className="text-[10px] font-mono text-slate-500 hover:text-red-400 transition-colors uppercase font-bold cursor-pointer"
+                        >
+                          Limpar tudo
+                        </button>
+                      )}
+                    </div>
                     {cartItens.length === 0 ? (
                       <div className="p-4 border border-slate-800 rounded-lg text-center text-slate-505 text-xs font-mono">
                         Nenhum item selecionado. Use a busca ao lado para adicionar.
                       </div>
                     ) : (
-                      <div className="space-y-1.5">
+                      <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-1.5 custom-scrollbar max-h-[260px] lg:max-h-none">
                         {(() => {
                           const groupedCart = cartItens.reduce((acc, id) => {
                             acc[id] = (acc[id] || 0) + 1;
@@ -1767,9 +1781,9 @@ export function TotemView({
                     )}
                   </div>
 
-                  {/* Campo de Senha (PIN) e Confirmação */}
+                  {/* Campo de Senha (PIN) e Confirmação - Fixo no Rodapé */}
                   {!loggedUser?.senha_hash || loggedUser.senha_hash === '' ? (
-                    <div className="space-y-3 bg-slate-950/60 p-3.5 border border-slate-850 rounded-xl mt-auto text-center">
+                    <div className="shrink-0 space-y-3 bg-slate-950/60 p-3.5 border border-slate-850 rounded-xl mt-3 text-center">
                       <p className="text-[11px] text-slate-400 font-sans">
                         Você ainda não possui uma senha de assinatura eletrônica cadastrada.
                       </p>
@@ -1786,7 +1800,7 @@ export function TotemView({
                       </button>
                     </div>
                   ) : (
-                    <div className="space-y-3 bg-slate-950/60 p-3.5 border border-slate-850 rounded-xl mt-auto">
+                    <div className="shrink-0 space-y-3 bg-slate-950/60 p-3.5 border border-slate-850 rounded-xl mt-3">
                       <div className="space-y-1.5">
                         <label className="text-[10px] font-mono font-bold text-slate-450 uppercase tracking-wider block">Assinatura Eletrônica (Sua Senha):</label>
                         <input

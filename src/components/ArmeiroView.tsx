@@ -1433,11 +1433,18 @@ export function ArmeiroView({
                               </div>
                             </div>
 
-                            <div className="border-t border-slate-850 pt-2 w-full flex flex-wrap gap-1.5">
+                            <div className="border-t border-slate-850 pt-2.5 w-full flex flex-wrap gap-2">
                               {cItens.map(ci => {
                                 const mat = materiais.find(m => m.id_material === ci.id_material);
                                 return (
-                                  <span key={ci.id_cautela_item} className="text-[8px] font-mono bg-slate-950 px-2 py-0.5 rounded border border-slate-850 text-slate-400">
+                                  <span
+                                    key={ci.id_cautela_item}
+                                    className={`text-xs font-mono font-medium px-2.5 py-1 rounded-md border tracking-tight transition-colors ${
+                                      isSelected
+                                        ? 'bg-blue-950/40 border-blue-500/40 text-blue-100'
+                                        : 'bg-slate-950/80 border-slate-800 text-slate-200'
+                                    }`}
+                                  >
                                     {mat?.modelo} {mat?.controle_quantidade ? `(x${ci.quantidade})` : `(${ci.id_material})`}
                                   </span>
                                 );

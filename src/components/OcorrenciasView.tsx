@@ -1,12 +1,13 @@
 import React, { useState, useMemo } from 'react';
 import { 
   Terminal, ShieldAlert, CheckCircle, Printer, Boxes, BookOpen, Check, AlertTriangle, X,
-  PlusCircle, ClipboardList, History, FileText, Calendar, Search, Clock, ChevronDown, Download, Sparkles
+  PlusCircle, ClipboardList, History, FileText, Calendar, Search, Clock, ChevronDown, Download, Sparkles, FileDown
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { hashSHA256 } from '../utils/crypto';
 import { OcorrenciaRelatorio, Material, PendenciaServico, Usuario, Cautela, CautelaItem, ArmaParticular, Categoria } from '../types';
 import { formatPostoGraduacaoSigla } from '../utils/rankUtils';
+import { exportarPassagemServicoDocx } from '../utils/docxExport';
 
 interface OcorrenciasViewProps {
   ocorrencias: OcorrenciaRelatorio[];
@@ -155,6 +156,7 @@ export function OcorrenciasView({
   const [isReportsModalOpen, setIsReportsModalOpen] = useState(false);
   const [selectedReportTab, setSelectedReportTab] = useState<'fechamento_global' | 'periodico' | 'estoque' | 'particulares' | 'permanente'>('fechamento_global');
   const [isHandoverModalOpen, setIsHandoverModalOpen] = useState(false);
+  const [handoverSuccessOco, setHandoverSuccessOco] = useState<OcorrenciaRelatorio | null>(null);
   const [handoverArmeiroAnterior, setHandoverArmeiroAnterior] = useState('');
   const [handoverAdjunto, setHandoverAdjunto] = useState('');
   const [handoverOficialDia, setHandoverOficialDia] = useState('');
@@ -164,7 +166,7 @@ export function OcorrenciasView({
 
   // Bloquear scroll do body quando um modal estiver aberto
   React.useEffect(() => {
-    const anyModalOpen = isStockModalOpen || isAlteracoesModalOpen || isReportsModalOpen || isHandoverModalOpen;
+    const anyModalOpen = isStockModalOpen || isAlteracoesModalOpen || isReportsModalOpen || isHandoverModalOpen || !!handoverSuccessOco;
     if (anyModalOpen) {
       document.body.style.overflow = 'hidden';
     } else {
@@ -173,7 +175,7 @@ export function OcorrenciasView({
     return () => {
       document.body.style.overflow = '';
     };
-  }, [isStockModalOpen, isAlteracoesModalOpen, isReportsModalOpen, isHandoverModalOpen]);
+  }, [isStockModalOpen, isAlteracoesModalOpen, isReportsModalOpen, isHandoverModalOpen, handoverSuccessOco]);
 
   // Ordenar usuários por posto/graduação e nome (excluindo admins e deletados)
   const usuariosOrdenados = useMemo(() => {
@@ -378,10 +380,63 @@ export function OcorrenciasView({
       return `- ${g.modelo} [${g.fabricante}]: ${g.quantidadeTotal} un.${magText} ${detailText}`;
     }).join('\n');
 
+    // 1. Delimitar o início do plantão atual (última troca de turno nas últimas 24h ou 24h atrás)
+    const agora = new Date();
+    const ms24hAgo = agora.getTime() - 24 * 60 * 60 * 1000;
+
+    const trocasAnteriores = ocorrencias.filter(o => 
+      o.tipo === 'troca_turno' && 
+      new Date(o.data_hora).getTime() >= ms24hAgo &&
+      new Date(o.data_hora).getTime() < agora.getTime()
+    ).sort((a, b) => new Date(b.data_hora).getTime() - new Date(a.data_hora).getTime());
+
+    const inicioPlantaoMs = trocasAnteriores.length > 0 
+      ? new Date(trocasAnteriores[0].data_hora).getTime() 
+      : ms24hAgo;
+
+    // 2. Ocorrências e Eventos lançados no Livro Digital durante o plantão (ex: Entrada de Material, avarias, etc.)
+    const ocorrenciasPlantao = ocorrencias.filter(o => {
+      const oMs = new Date(o.data_hora).getTime();
+      if (o.tipo === 'troca_turno') return false;
+      if (o.tipo === 'conferencia_estoque' && o.titulo.toUpperCase().includes('CONFERÊNCIA DE ESTOQUE - PAIOL')) return false;
+      return oMs >= inicioPlantaoMs && oMs <= agora.getTime();
+    }).sort((a, b) => new Date(a.data_hora).getTime() - new Date(b.data_hora).getTime());
+
+    let ocorrenciasTexto = '';
+    if (ocorrenciasPlantao.length > 0) {
+      ocorrenciasTexto = ocorrenciasPlantao.map((o, idx) => {
+        const d = new Date(o.data_hora);
+        const dataHoraStr = d.toLocaleString('pt-BR', { 
+          day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' 
+        });
+        const tipoLabel = o.tipo.replace('_', ' ').toUpperCase();
+        return `[OCORRÊNCIA ${idx + 1}] • ${dataHoraStr} [${tipoLabel}]: ${o.titulo.toUpperCase()}\n${o.descricao}`;
+      }).join('\n\n');
+    }
+
+    // 3. Pendências de serviço cadastradas em aberto
     const pendenciasAbertas = pendenciasServico.filter(p => p.status === 'aberto');
-    const pendenciasTexto = pendenciasAbertas.length > 0
-      ? pendenciasAbertas.map((p, idx) => `${idx + 1}. ID: ${p.id_pendencia.substring(0, 8).toUpperCase()} - ${p.descricao}`).join('\n')
-      : 'Nenhuma alteração ou pendência em aberto registrada.';
+    let pendenciasTexto = '';
+    if (pendenciasAbertas.length > 0) {
+      pendenciasTexto = pendenciasAbertas.map((p, idx) => 
+        `[PENDÊNCIA ${idx + 1}] • ID: ${p.id_pendencia.substring(0, 8).toUpperCase()} - ${p.descricao}`
+      ).join('\n');
+    }
+
+    // 4. Montar bloco consolidado de Alterações
+    let secaoAlteracoes = '';
+    if (ocorrenciasPlantao.length > 0 && pendenciasAbertas.length > 0) {
+      secaoAlteracoes = `1. OCORRÊNCIAS E EVENTOS REGISTRADOS NO LIVRO DIGITAL:\n${ocorrenciasTexto}\n\n2. PENDÊNCIAS DE SERVIÇO EM ABERTO:\n${pendenciasTexto}`;
+    } else if (ocorrenciasPlantao.length > 0) {
+      secaoAlteracoes = `1. OCORRÊNCIAS E EVENTOS REGISTRADOS NO LIVRO DIGITAL:\n${ocorrenciasTexto}`;
+    } else if (pendenciasAbertas.length > 0) {
+      secaoAlteracoes = `1. PENDÊNCIAS DE SERVIÇO EM ABERTO:\n${pendenciasTexto}`;
+    } else {
+      secaoAlteracoes = 'Nenhuma alteração, ocorrência ou pendência registrada durante o plantão.';
+    }
+
+    const temAlteracoes = ocorrenciasPlantao.length > 0 || pendenciasAbertas.length > 0;
+    const alteracoesTextoOpcao = temAlteracoes ? 'com as seguintes' : 'sem';
 
     const getMilText = (matricula: string) => {
       const u = usuarios.find(usr => usr.matricula === matricula);
@@ -398,14 +453,12 @@ export function OcorrenciasView({
     const oficialDiaText = getMilText(handoverOficialDia);
     const proximoArmeiroText = getMilText(handoverProximoArmeiro);
 
-    const agora = new Date();
     const dataHoraFormatada = agora.toLocaleString('pt-BR', { 
       day: '2-digit', month: '2-digit', year: 'numeric', 
       hour: '2-digit', minute: '2-digit' 
     });
 
     const ocoTitulo = `Passagem de Serviço: ${armeiroDiaText} para ${proximoArmeiroText}`;
-    const alteracoesTextoOpcao = pendenciasAbertas.length > 0 ? 'com as seguintes' : 'sem';
 
     const meses = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
     const diaNum = agora.getDate();
@@ -426,7 +479,7 @@ ESTOQUE FÍSICO DO PAIOL CONFERIDO
 ${listEstoqueDetallado}
 
 SITUAÇÃO DAS ALTERAÇÕES E PENDÊNCIAS DO SERVIÇO
-${pendenciasTexto}
+${secaoAlteracoes}
 
 PASSAGEM DE SERVIÇO
 Realizada em ${dataHoraFormatada} ao ${proximoArmeiroText}, com as ordens em vigor e ${alteracoesTextoOpcao} alterações.
@@ -435,14 +488,13 @@ Riacho Fundo I - DF, ${dataMinusculo}.`;
 
     const novaOco = salvarOcorrencia(ocoTitulo, 'troca_turno', ataTexto);
 
-    handlePrintOcorrencia(novaOco);
-
     setHandoverArmeiroAnterior('');
     setHandoverAdjunto('');
     setHandoverOficialDia('');
     setHandoverProximoArmeiro('');
     setHandoverError('');
     setIsHandoverModalOpen(false);
+    setHandoverSuccessOco(novaOco);
   };
 
   // Filtros do Relatório (Padrão: últimas 24 horas)
@@ -1528,14 +1580,32 @@ ${estoqueObservacao.trim() || 'Sem divergências ou alterações físicas relata
                       <span className="text-slate-500 text-[9px]">ID: {oco.id_ocorrencia}</span>
                     </div>
                     
-                    <button
-                      type="button"
-                      onClick={() => handlePrintOcorrencia(oco)}
-                      className="bg-slate-900 hover:bg-slate-850 border border-slate-800 hover:border-slate-700 text-slate-455 hover:text-slate-200 py-1 px-2 rounded text-[9px] uppercase font-bold tracking-wider transition-colors flex items-center gap-1 cursor-pointer no-print font-mono"
-                    >
-                      <Printer className="h-3 w-3" />
-                      <span>Imprimir</span>
-                    </button>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => handlePrintOcorrencia(oco)}
+                        className="bg-slate-900 hover:bg-slate-850 border border-slate-800 hover:border-slate-700 text-slate-455 hover:text-slate-200 py-1 px-2 rounded text-[9px] uppercase font-bold tracking-wider transition-colors flex items-center gap-1 cursor-pointer no-print font-mono"
+                        title="Imprimir ou Salvar em PDF"
+                      >
+                        <Printer className="h-3 w-3" />
+                        <span>Imprimir</span>
+                      </button>
+
+                      {oco.tipo === 'troca_turno' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const armUser = usuarios.find(u => u.matricula === oco.matricula_armeiro) || loggedArmeiroUser;
+                            exportarPassagemServicoDocx(oco, armUser);
+                          }}
+                          className="bg-blue-950/60 hover:bg-blue-900/80 border border-blue-800/60 hover:border-blue-700 text-blue-300 hover:text-blue-100 py-1 px-2 rounded text-[9px] uppercase font-bold tracking-wider transition-colors flex items-center gap-1 cursor-pointer no-print font-mono"
+                          title="Baixar Livro Diário em formato Word (.docx)"
+                        >
+                          <FileDown className="h-3 w-3" />
+                          <span>Baixar DOCX</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   <div className="space-y-1 font-sans">
@@ -3006,6 +3076,97 @@ ${estoqueObservacao.trim() || 'Sem divergências ou alterações físicas relata
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE CONCLUSÃO DA PASSAGEM DE SERVIÇO */}
+      {handoverSuccessOco && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-955/85 backdrop-blur-md animate-fadeIn">
+          <div 
+            className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-slideUp"
+            id="arm-passagem-concluida-modal"
+          >
+            {/* Header do Modal */}
+            <div className="p-5 border-b border-slate-850 bg-emerald-950/20 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <CheckCircle className="h-6 w-6 text-emerald-400 shrink-0" />
+                <div>
+                  <h3 className="text-sm font-bold font-mono text-emerald-200 uppercase tracking-wider">
+                    Passagem de Serviço Concluída!
+                  </h3>
+                  <p className="text-[10px] text-slate-400 font-sans mt-0.5">
+                    Livro diário fechado e registrado no histórico da reserva de armamento.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setHandoverSuccessOco(null)}
+                className="p-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-850 hover:border-slate-700 text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+                title="Fechar Janela"
+              >
+                <X className="h-4.5 w-4.5" />
+              </button>
+            </div>
+
+            {/* Corpo do Modal */}
+            <div className="p-6 space-y-4">
+              <div className="bg-slate-950/80 border border-slate-800/80 rounded-xl p-4 space-y-2">
+                <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
+                  Resumo do Registro
+                </div>
+                <div className="text-xs font-bold text-slate-100 font-mono">
+                  {handoverSuccessOco.titulo}
+                </div>
+                <div className="flex items-center justify-between text-[10px] text-slate-400 pt-2 border-t border-slate-900 font-mono">
+                  <span>Código: <strong className="text-slate-200">{handoverSuccessOco.id_ocorrencia}</strong></span>
+                  <span>Data: <strong className="text-slate-200">{new Date(handoverSuccessOco.data_hora).toLocaleString('pt-BR')}</strong></span>
+                </div>
+              </div>
+
+              <p className="text-xs text-slate-300 font-sans leading-relaxed">
+                Você pode baixar a ata em formato <strong>Word (.docx)</strong> para edição e arquivamento, ou abrir o diálogo de impressão para salvar o <strong>PDF oficial</strong>:
+              </p>
+
+              {/* Botões de Ação Principais */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    exportarPassagemServicoDocx(handoverSuccessOco, loggedArmeiroUser);
+                  }}
+                  className="px-4 py-3 bg-blue-600 hover:bg-blue-550 text-white font-bold font-mono text-xs rounded-xl transition-all shadow-md hover:shadow-blue-500/20 active:scale-95 duration-150 cursor-pointer flex items-center justify-center gap-2 glow-blue"
+                  id="btn-baixar-docx-sucesso"
+                >
+                  <FileDown className="h-4 w-4 shrink-0" />
+                  <span>Baixar Word (.docx)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    handlePrintOcorrencia(handoverSuccessOco);
+                  }}
+                  className="px-4 py-3 bg-slate-800 hover:bg-slate-750 border border-slate-700 hover:border-slate-600 text-slate-100 font-bold font-mono text-xs rounded-xl transition-all shadow-md active:scale-95 duration-150 cursor-pointer flex items-center justify-center gap-2"
+                  id="btn-imprimir-pdf-sucesso"
+                >
+                  <Printer className="h-4 w-4 shrink-0" />
+                  <span>Salvar / Imprimir PDF</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Rodapé do Modal */}
+            <div className="p-4 bg-slate-950/40 border-t border-slate-850 flex items-center justify-end">
+              <button
+                type="button"
+                onClick={() => setHandoverSuccessOco(null)}
+                className="px-5 py-2 border border-slate-800 hover:border-slate-700 bg-slate-900 hover:bg-slate-850 text-slate-300 hover:text-white font-bold font-mono text-xs rounded-lg transition-colors cursor-pointer"
+              >
+                Concluir e Voltar ao Livro
+              </button>
+            </div>
           </div>
         </div>
       )}

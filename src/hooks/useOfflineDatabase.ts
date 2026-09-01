@@ -323,6 +323,125 @@ export function useOfflineDatabase() {
     }
   };
 
+  // ---- MÉTODOS DE ESCRITA INCREMENTAL (< 10ms) ----
+
+  const adicionarCautelaLocal = async (cautela: Cautela, itens: CautelaItem[]) => {
+    if (!isDbReady) return;
+    if (!isTauri) {
+      try {
+        const rawC = localStorage.getItem('offline_cache_cautelas');
+        const prevC = rawC ? JSON.parse(rawC) : [];
+        localStorage.setItem('offline_cache_cautelas', JSON.stringify([cautela, ...prevC.filter((c: any) => c.id_cautela !== cautela.id_cautela)]));
+
+        const rawI = localStorage.getItem('offline_cache_cautela_itens');
+        const prevI = rawI ? JSON.parse(rawI) : [];
+        const itemIds = new Set(itens.map(i => i.id_cautela_item));
+        localStorage.setItem('offline_cache_cautela_itens', JSON.stringify([...prevI.filter((i: any) => !itemIds.has(i.id_cautela_item)), ...itens]));
+      } catch (err) {
+        console.warn('SGBD Offline: Aviso ao atualizar cache web local:', err);
+      }
+      return;
+    }
+
+    try {
+      await dbInstance.execute(
+        `INSERT OR REPLACE INTO cautelas 
+        (id_cautela, matricula_policial, matricula_armeiro_retirada, data_retirada, previsao_devolucao, status_cautela, observacoes_retirada, id_quartel, is_emergencial, motivo_emergencial) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          cautela.id_cautela || null,
+          cautela.matricula_policial || null,
+          cautela.matricula_armeiro_retirada || null,
+          cautela.data_retirada || null,
+          cautela.previsao_devolucao || null,
+          cautela.status_cautela || null,
+          cautela.observacoes_retirada || null,
+          cautela.id_quartel || null,
+          cautela.is_emergencial ? 1 : 0,
+          cautela.motivo_emergencial || null
+        ]
+      );
+
+      for (const item of itens) {
+        await dbInstance.execute(
+          `INSERT OR REPLACE INTO cautela_itens 
+          (id_cautela_item, id_cautela, id_material, quantidade, estado_entrega, estado_devolucao, consumido, quantidade_carregadores, id_quartel, criado_em) 
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            item.id_cautela_item || null,
+            item.id_cautela || null,
+            item.id_material || null,
+            item.quantidade || 0,
+            item.estado_entrega || null,
+            item.estado_devolucao || null,
+            item.consumido ? 1 : 0,
+            item.quantidade_carregadores || 0,
+            item.id_quartel || null,
+            item.criado_em || null
+          ]
+        );
+      }
+      console.log(`SGBD Offline: Cautela ${cautela.id_cautela} gravada de forma incremental no SQLite local.`);
+    } catch (err) {
+      console.error('SGBD Offline: Erro defensivo ao adicionar cautela localmente (não-bloqueante):', err);
+    }
+  };
+
+  const atualizarUsuarioLocal = async (u: Usuario) => {
+    if (!isDbReady) return;
+    if (!isTauri) return;
+    try {
+      await dbInstance.execute(
+        `INSERT OR REPLACE INTO usuarios 
+        (matricula, nome, nome_de_guerra, perfil, posto_graduacao, situacao_cautela, data_ultimo_teste_psicologico, senha_hash, id_quartel, tentativas_login, bloqueado_ate, assinatura_foto) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          u.matricula || null,
+          u.nome || null,
+          u.nome_de_guerra || null,
+          u.perfil || null,
+          u.posto_graduacao || null,
+          u.situacao_cautela || null,
+          u.data_ultimo_teste_psicologico || null,
+          u.senha_hash || null,
+          u.id_quartel || null,
+          u.tentativas_login || 0,
+          u.bloqueado_ate || null,
+          u.assinatura_foto || null
+        ]
+      );
+    } catch (err) {
+      console.error('SGBD Offline: Erro ao atualizar usuário localmente:', err);
+    }
+  };
+
+  const atualizarMaterialLocal = async (m: Material) => {
+    if (!isDbReady) return;
+    if (!isTauri) return;
+    try {
+      await dbInstance.execute(
+        `INSERT OR REPLACE INTO materiais 
+        (id_material, id_categoria, modelo, fabricante, calibre, status_atual, quantidade, controle_quantidade, id_quartel, data_validade, individualizar_por_unidade) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          m.id_material || null,
+          m.id_categoria || null,
+          m.modelo || null,
+          m.fabricante || null,
+          m.calibre || null,
+          m.status_atual || null,
+          m.quantidade || 0,
+          m.controle_quantidade ? 1 : 0,
+          m.id_quartel || null,
+          m.data_validade || null,
+          m.individualizar_por_unidade ? 1 : 0
+        ]
+      );
+    } catch (err) {
+      console.error('SGBD Offline: Erro ao atualizar material localmente:', err);
+    }
+  };
+
   // ---- MÉTODOS DE LEITURA LOCAL (QUANDO OFFLINE) ----
 
   const obterUsuariosLocal = async (): Promise<Usuario[]> => {
@@ -547,6 +666,9 @@ export function useOfflineDatabase() {
     salvarMateriaisLocal,
     salvarCautelasLocal,
     salvarCautelaItensLocal,
+    adicionarCautelaLocal,
+    atualizarUsuarioLocal,
+    atualizarMaterialLocal,
     obterUsuariosLocal,
     obterMateriaisLocal,
     obterCautelasLocal,

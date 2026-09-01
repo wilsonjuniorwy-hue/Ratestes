@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import { 
   Usuario, Categoria, Material, Cautela, CautelaItem, 
@@ -71,6 +71,8 @@ async function fetchAllPaginated<T = any>(
 export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?: string | null, enabled: boolean = true) {
   const offlineDb = useOfflineDatabase();
   const [isOnline, setIsOnline] = useState(typeof window !== 'undefined' ? window.navigator.onLine : true);
+  const isFetchingRef = useRef(false);
+  const wasDisconnectedRef = useRef(false);
 
   const gerarProximoIdCautela = async (): Promise<string> => {
     if (isOnline) {
@@ -169,9 +171,14 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
   }, []);
 
   // ---- BUSCAR DADOS DO SUPABASE AO INICIAR ----
-  const fetchData = async () => {
+  const fetchData = async (isSilent: boolean = false) => {
+    if (isFetchingRef.current) {
+      console.log('SGBD: fetchData ignorado pois outra busca já está em andamento (mutex).');
+      return;
+    }
+    isFetchingRef.current = true;
     try {
-      setIsLoading(true);
+      if (!isSilent) setIsLoading(true);
       setDbError(null);
 
       if (!isOnline) {
@@ -188,7 +195,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
         setMateriais(localMaterials);
         setCautelas(localCautelas);
         setCautelaItens(localItems);
-        setIsLoading(false);
+        if (!isSilent) setIsLoading(false);
         return;
       }
 
@@ -479,7 +486,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
           };
           supabase.from('usuarios').insert(armeiroData).then(({ error }) => {
             if (error) console.error('SGBD Erro ao migrar armeiro:', error);
-            fetchData();
+            fetchData(true);
           });
         });
       } else if (!exactArmeiro) {
@@ -499,7 +506,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
             console.error('SGBD Erro: Falha ao inserir armeiro automático:', error);
           } else {
             console.log('SGBD: Usuário "ARMEIRO" criado com sucesso!');
-            fetchData();
+            fetchData(true);
           }
         });
       }
@@ -516,40 +523,118 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
       console.error('Erro ao buscar dados do Supabase:', error);
       setDbError(error.message || 'Erro de conexão com o Supabase.');
     } finally {
-      setIsLoading(false);
+      if (!isSilent) setIsLoading(false);
+      isFetchingRef.current = false;
     }
   };
 
   useEffect(() => {
     if (!enabled) return;
-    fetchData();
+    fetchData(); // Carga inicial do sistema com spinner de carregamento
 
-    let fetchTimeout: any = null;
-
-    // Inscreve nos eventos em tempo real do Supabase com debounce para evitar condições de corrida (race conditions)
-    // durante operações de escrita rápida (ex: delete + insert em lote).
+    // Inscreve nos eventos em tempo real do Supabase com atualização delta granular (sem re-baixar 11 tabelas)
     const channel = supabase
       .channel('reserva-realtime-sync')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public' },
-        (payload) => {
-          console.log('SGBD Realtime: alteração detectada.', payload);
-          
-          if (fetchTimeout) {
-            clearTimeout(fetchTimeout);
+        (payload: any) => {
+          const { table, eventType, new: newRecord, old: oldRecord } = payload;
+          console.log(`SGBD Realtime Delta: [${table}] ${eventType}`);
+
+          if (table === 'materiais' && newRecord) {
+            if (eventType === 'UPDATE' || eventType === 'INSERT') {
+              setMateriais(prev => {
+                const idx = prev.findIndex(m => m.id_material === newRecord.id_material);
+                if (idx >= 0) {
+                  const updated = [...prev];
+                  updated[idx] = { ...updated[idx], ...newRecord };
+                  return updated;
+                }
+                return [...prev, newRecord];
+              });
+              offlineDb.atualizarMaterialLocal(newRecord);
+            }
+          } else if (table === 'cautelas') {
+            if (eventType === 'INSERT' && newRecord) {
+              setCautelas(prev => {
+                if (prev.some(c => c.id_cautela === newRecord.id_cautela)) return prev;
+                return [newRecord, ...prev];
+              });
+            } else if (eventType === 'UPDATE' && newRecord) {
+              setCautelas(prev => prev.map(c => c.id_cautela === newRecord.id_cautela ? { ...c, ...newRecord } : c));
+            } else if (eventType === 'DELETE') {
+              const delId = oldRecord?.id_cautela || newRecord?.id_cautela;
+              if (delId) setCautelas(prev => prev.filter(c => c.id_cautela !== delId));
+            }
+          } else if (table === 'cautela_itens') {
+            if (eventType === 'INSERT' && newRecord) {
+              setCautelaItens(prev => {
+                if (prev.some(ci => ci.id_cautela_item === newRecord.id_cautela_item)) return prev;
+                return [...prev, newRecord];
+              });
+            } else if (eventType === 'UPDATE' && newRecord) {
+              setCautelaItens(prev => prev.map(ci => ci.id_cautela_item === newRecord.id_cautela_item ? { ...ci, ...newRecord } : ci));
+            } else if (eventType === 'DELETE') {
+              const delId = oldRecord?.id_cautela_item || newRecord?.id_cautela_item;
+              if (delId) setCautelaItens(prev => prev.filter(ci => ci.id_cautela_item !== delId));
+            }
+          } else if (table === 'usuarios' && newRecord) {
+            if (eventType === 'UPDATE' || eventType === 'INSERT') {
+              setUsuarios(prev => {
+                const idx = prev.findIndex(u => u.matricula === newRecord.matricula);
+                if (idx >= 0) {
+                  const updated = [...prev];
+                  updated[idx] = { ...updated[idx], ...newRecord, senha_hash: '' };
+                  return updated;
+                }
+                return [...prev, { ...newRecord, senha_hash: '' }];
+              });
+              offlineDb.atualizarUsuarioLocal(newRecord);
+            }
+          } else if (table === 'auditoria_logs' && newRecord) {
+            if (eventType === 'INSERT') {
+              setAuditoriaLogs(prev => {
+                if (prev.some(l => l.id_log === newRecord.id_log)) return prev;
+                return [newRecord, ...prev];
+              });
+            }
+          } else if (table === 'ocorrencias' && newRecord) {
+            if (eventType === 'INSERT') {
+              setOcorrencias(prev => [newRecord, ...prev]);
+            } else if (eventType === 'UPDATE') {
+              setOcorrencias(prev => prev.map(o => o.id_ocorrencia === newRecord.id_ocorrencia ? { ...o, ...newRecord } : o));
+            }
+          } else if (table === 'pendencias_servico' && newRecord) {
+            if (eventType === 'INSERT') {
+              setPendenciasServico(prev => [newRecord, ...prev]);
+            } else if (eventType === 'UPDATE') {
+              setPendenciasServico(prev => prev.map(p => p.id_pendencia === newRecord.id_pendencia ? { ...p, ...newRecord } : p));
+            }
           }
-          
-          fetchTimeout = setTimeout(() => {
-            console.log('SGBD Realtime: sincronizando dados em segundo plano...');
-            fetchData();
-          }, 800); // Debounce de 800ms garante que toda a sequência de inserts encadeados (cautelas → cautela_itens) terminou antes de re-buscar
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log('SGBD Realtime status da inscrição:', status);
+        if (status === 'SUBSCRIBED') {
+          if (wasDisconnectedRef.current) {
+            console.log('SGBD Realtime: Conexão restabelecida! Executando alinhamento silencioso em background...');
+            fetchData(true);
+            wasDisconnectedRef.current = false;
+          }
+        } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          wasDisconnectedRef.current = true;
+        }
+      });
+
+    // Rede de segurança: Heartbeat silencioso de baixa prioridade a cada 10 minutos
+    const heartbeatInterval = setInterval(() => {
+      console.log('SGBD Heartbeat: Verificação periódica de integridade em segundo plano (silenciosa)...');
+      fetchData(true);
+    }, 10 * 60 * 1000);
 
     return () => {
-      if (fetchTimeout) clearTimeout(fetchTimeout);
+      clearInterval(heartbeatInterval);
       supabase.removeChannel(channel);
     };
   }, [enabled, activeArmeiroMatricula, quartelId, isOnline, offlineDb.isDbReady]);
@@ -1527,19 +1612,35 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
           alert(`ALERTA DE FALHA NO SUPABASE:\nNão foi possível salvar os itens da cautela.\nErro: ${errItens.message}`);
         } else {
           console.log('✔ Cautela e itens salvos com sucesso no Supabase!');
-          setTimeout(() => { fetchData(); }, 1500);
+          offlineDb.adicionarCautelaLocal(novaCautela, novosItensCautela);
         }
 
         const individualMats = cartItens.filter(id => !materiais.find(m => m.id_material === id)?.controle_quantidade);
         if (individualMats.length > 0) {
           await supabase.from('materiais').update({ status_atual: 'cautelado' }).in('id_material', individualMats);
+          individualMats.forEach(id => {
+            const matObj = materiaisAtualizados.find(m => m.id_material === id);
+            if (matObj) offlineDb.atualizarMaterialLocal(matObj);
+          });
         }
         if (!isPermanent) {
           await supabase.from('usuarios').update({ situacao_cautela: 'pendente_devolucao' }).eq('matricula', matriculaPolicial);
+          const polObj = usuariosAtualizados.find(u => u.matricula === matriculaPolicial);
+          if (polObj) offlineDb.atualizarUsuarioLocal(polObj);
         }
       } else {
         console.log('✔ Cautela processada atomicamente via RPC Postgres (fn_efetivar_cautela)!');
-        setTimeout(() => { fetchData(); }, 1500);
+        offlineDb.adicionarCautelaLocal(novaCautela, novosItensCautela);
+
+        const individualMats = cartItens.filter(id => !materiais.find(m => m.id_material === id)?.controle_quantidade);
+        individualMats.forEach(id => {
+          const matObj = materiaisAtualizados.find(m => m.id_material === id);
+          if (matObj) offlineDb.atualizarMaterialLocal(matObj);
+        });
+        if (!isPermanent) {
+          const polObj = usuariosAtualizados.find(u => u.matricula === matriculaPolicial);
+          if (polObj) offlineDb.atualizarUsuarioLocal(polObj);
+        }
       }
     }
 
@@ -1879,14 +1980,8 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
               if (error) console.error('Erro ao reabilitar militar no Supabase:', error);
             });
           }
-          setTimeout(() => {
-            fetchData();
-          }, 500);
         } else {
           console.log('✔ Devolução processada atomicamente via RPC Postgres (fn_realizar_devolucao)!');
-          setTimeout(() => {
-            fetchData();
-          }, 500);
         }
       });
     }
@@ -2622,7 +2717,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
       
       console.log('SGBD Sync: Sincronização offline concluída, atualizando dados locais...');
       await carregarFilaSincronizacao();
-      fetchData();
+      fetchData(true);
     } catch (err) {
       console.error('SGBD Sync: Erro geral no sync worker:', err);
     } finally {
