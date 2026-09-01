@@ -967,21 +967,39 @@ export async function exportarPassagemServicoDocx(
     ]
   });
 
-  // Geração do arquivo e download no cliente
-  const blob = await Packer.toBlob(doc);
-
   const ocoDate = new Date(ocorrencia.data_hora);
   const yyyy = ocoDate.getFullYear();
   const mm = String(ocoDate.getMonth() + 1).padStart(2, '0');
   const dd = String(ocoDate.getDate()).padStart(2, '0');
   const fileName = `Livro_Diario_Reserva_PMDF_${yyyy}-${mm}-${dd}.docx`;
 
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = fileName;
-  document.body.appendChild(anchor);
-  anchor.click();
-  document.body.removeChild(anchor);
-  URL.revokeObjectURL(url);
+  const isTauri = typeof window !== 'undefined' && !!(window as any).__TAURI_INTERNALS__;
+
+  if (isTauri) {
+    try {
+      const arrayBuffer = await Packer.toArrayBuffer(doc);
+      const bytes = Array.from(new Uint8Array(arrayBuffer));
+      const { invoke } = await import('@tauri-apps/api/core');
+      const result = await invoke<string>('salvar_arquivo_docx', {
+        conteudo: bytes,
+        nomePadrao: fileName
+      });
+      alert(result);
+    } catch (tauriErr: any) {
+      if (tauriErr !== 'Operação cancelada pelo usuário.') {
+        alert('Erro ao salvar documento Word nativo: ' + tauriErr);
+      }
+    }
+  } else {
+    // Geração do arquivo e download no navegador
+    const blob = await Packer.toBlob(doc);
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = fileName;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
+  }
 }

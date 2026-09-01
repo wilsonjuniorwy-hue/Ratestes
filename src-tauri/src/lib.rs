@@ -97,6 +97,24 @@ fn abrir_arquivo_backup() -> Result<String, String> {
     }
 }
 
+#[tauri::command]
+fn salvar_arquivo_docx(conteudo: Vec<u8>, nome_padrao: String) -> Result<String, String> {
+    let file_path = FileDialog::new()
+        .set_title("Salvar Livro Diário (.docx)")
+        .add_filter("Documento Word (.docx)", &["docx"])
+        .set_file_name(&nome_padrao)
+        .save_file();
+
+    if let Some(path) = file_path {
+        match fs::write(&path, conteudo) {
+            Ok(_) => Ok(format!("Documento salvo com sucesso em: {}", path.to_string_lossy())),
+            Err(e) => Err(format!("Erro ao gravar arquivo: {}", e)),
+        }
+    } else {
+        Err("Operação cancelada pelo usuário.".to_string())
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
@@ -111,7 +129,8 @@ pub fn run() {
         obter_assinatura_fisica,
         reiniciar_aplicacao,
         salvar_arquivo_backup,
-        abrir_arquivo_backup
+        abrir_arquivo_backup,
+        salvar_arquivo_docx
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
