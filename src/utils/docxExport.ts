@@ -976,30 +976,20 @@ export async function exportarPassagemServicoDocx(
   const isTauri = typeof window !== 'undefined' && !!(window as any).__TAURI_INTERNALS__;
 
   if (isTauri) {
-    try {
-      const arrayBuffer = await Packer.toArrayBuffer(doc);
-      const bytes = Array.from(new Uint8Array(arrayBuffer));
-      const { invoke } = await import('@tauri-apps/api/core');
-      const result = await invoke<string>('salvar_arquivo_docx', {
-        conteudo: bytes,
-        nomePadrao: fileName
-      });
-      alert(result);
-    } catch (tauriErr: any) {
-      if (tauriErr !== 'Operação cancelada pelo usuário.') {
-        alert('Erro ao salvar documento Word nativo: ' + tauriErr);
-      }
-    }
-  } else {
-    // Geração do arquivo e download no navegador
-    const blob = await Packer.toBlob(doc);
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = fileName;
-    document.body.appendChild(anchor);
-    anchor.click();
-    document.body.removeChild(anchor);
-    URL.revokeObjectURL(url);
+    alert(
+      'AVISO INSTITUCIONAL: Em conformidade com as diretrizes de segurança da PMDF, utilize a opção [Salvar / Imprimir PDF] para emitir a Ata de Passagem de Serviço oficial com fé pública.\n\nA exportação em formato Word (.docx) está disponível ao acessar o sistema via navegador.'
+    );
+    return;
   }
+
+  // Geração do arquivo e download no navegador
+  const blob = await Packer.toBlob(doc);
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = fileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
 }
