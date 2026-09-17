@@ -371,25 +371,35 @@ export default function LoginPortal({
             return;
           }
         }
-        const novasTentativas = (user.tentativas_login || 0) + 1;
-        let novoBloqueio: string | null = null;
-        let msgErro = 'Senha de acesso incorreta ou usuário não cadastrado no Supabase Auth.';
-        if (novasTentativas >= 5) {
-          const d = new Date();
-          d.setMinutes(d.getMinutes() + 15);
-          novoBloqueio = d.toISOString();
-          msgErro = 'Usuário bloqueado temporariamente por 15 min devido a 5 tentativas de senha incorretas.';
+        try {
+          const { data: failResult, error: failErr } = await supabase.rpc('fn_registrar_falha_login', {
+            p_matricula: matriculaNorm
+          });
+          if (failErr) {
+            console.warn('Falha ao chamar RPC fn_registrar_falha_login (tentando fallback direto):', failErr);
+            const novasTentativas = (user.tentativas_login || 0) + 1;
+            let novoBloqueio: string | null = null;
+            if (novasTentativas >= 5) {
+              const d = new Date();
+              d.setMinutes(d.getMinutes() + 15);
+              novoBloqueio = d.toISOString();
+            }
+            supabase.from('usuarios').update({
+              tentativas_login: novasTentativas,
+              bloqueado_ate: novoBloqueio
+            }).eq('matricula', matriculaNorm).then(() => {});
+          }
+
+          let msgErro = 'Senha de acesso incorreta ou usuário não cadastrado no Supabase Auth.';
+          if (failResult?.bloqueado || (user.tentativas_login || 0) + 1 >= 5) {
+            msgErro = 'Usuário bloqueado temporariamente por 15 min devido a 5 tentativas de senha incorretas.';
+          }
+          sessionStorage.removeItem('logging_in');
+          setAuthError(msgErro);
+        } catch (rpcCatch) {
+          sessionStorage.removeItem('logging_in');
+          setAuthError('Senha de acesso incorreta ou usuário não cadastrado no Supabase Auth.');
         }
-
-        supabase.from('usuarios').update({
-          tentativas_login: novasTentativas,
-          bloqueado_ate: novoBloqueio
-        }).eq('matricula', matriculaNorm).then(({ error }) => {
-          if (error) console.error('Erro ao registrar tentativa incorreta de login:', error);
-        });
-
-        sessionStorage.removeItem('logging_in');
-        setAuthError(msgErro);
         setIsAuthenticating(false);
         return;
       }

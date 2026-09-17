@@ -1942,7 +1942,8 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
           id_material: ci.id_material,
           quantidade: ci.quantidade,
           estado_devolucao: ci.estado_devolucao,
-          consumido: ci.consumido || false
+          consumido: ci.consumido || false,
+          estado_entrega: ci.estado_entrega || 'excelente'
         }));
       
       const statusDevolucao = todosDevolvidos ? 'devolvida' : (prorrogar ? 'prorrogada' : 'ativa');
@@ -2312,10 +2313,10 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
         console.warn('Aviso ao remover logs de auditoria:', errLogs);
       }
 
-      // 3. Deletar o usuário de usuários
+      // 3. Deletar o usuário de usuários (Soft Delete preservando integridade referencial)
       const { error: errUser } = await supabase
         .from('usuarios')
-        .delete()
+        .update({ deletado_em: new Date().toISOString() })
         .eq('matricula', matricula);
       if (errUser) throw errUser;
 
@@ -2384,17 +2385,10 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
         throw new Error(`Não é possível excluir o material ${idMaterial} pois ele está vinculado a uma cautela ativa ou pendente.`);
       }
 
-      // 1. Deletar do Supabase: cautela_itens
-      const { error: errItens } = await supabase
-        .from('cautela_itens')
-        .delete()
-        .eq('id_material', idMaterial);
-      if (errItens) throw errItens;
-
-      // 2. Deletar do Supabase: materiais
+      // 1. Deletar do Supabase: materiais (Soft Delete preservando histórico de cautelas já devolvidas)
       const { error: errMaterial } = await supabase
         .from('materiais')
-        .delete()
+        .update({ deletado_em: new Date().toISOString() })
         .eq('id_material', idMaterial);
       if (errMaterial) throw errMaterial;
 
@@ -2609,8 +2603,36 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
               p_itens: novosItensCautela
             });
 
-            if (rpcErr) throw rpcErr;
-            success = true;
+            if (rpcErr) {
+              // Verificação explícita de Idempotência para Cautela:
+              const isDuplicate = rpcErr.code === '23505' || 
+                rpcErr.message?.includes('cautelas_pkey') || 
+                rpcErr.message?.includes('duplicate key');
+
+              if (isDuplicate) {
+                const { data: cautelaDb } = await supabase
+                  .from('cautelas')
+                  .select('id_cautela')
+                  .eq('id_cautela', idNewCautela)
+                  .maybeSingle();
+
+                const { data: itensDb } = await supabase
+                  .from('cautela_itens')
+                  .select('id_cautela_item')
+                  .eq('id_cautela', idNewCautela);
+
+                if (cautelaDb && (itensDb || []).length >= (novosItensCautela || []).length) {
+                  console.warn(`SGBD Sync: Cautela ${idNewCautela} e seus itens já existem integralmente no banco. Marcando como sincronizada (Idempotência).`);
+                  success = true;
+                } else {
+                  throw rpcErr;
+                }
+              } else {
+                throw rpcErr;
+              }
+            } else {
+              success = true;
+            }
           } 
           else if (item.operacao === 'EFETIVAR_DEVOLUCAO') {
             const { cautId, prorrogar, novosCautelaItens, todosDevolvidos, policialResponsavel, updatedCautela, armeiroResponsavel, agora } = payload;
@@ -2627,7 +2649,8 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
               id_material: ci.id_material,
               quantidade: ci.quantidade,
               estado_devolucao: ci.estado_devolucao,
-              consumido: ci.consumido || false
+              consumido: ci.consumido || false,
+              estado_entrega: ci.estado_entrega || 'excelente'
             }));
             
             const statusDevolucao = todosDevolvidos ? 'devolvida' : (prorrogar ? 'prorrogada' : 'ativa');
@@ -2643,8 +2666,51 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
               p_itens_devolvidos: itensDevolvidosPayload
             });
 
-            if (rpcErr) throw rpcErr;
-            success = true;
+            if (rpcErr) {
+              // Verificação explícita de Idempotência para Devolução:
+              try {
+                const { data: cautelaDb } = await supabase
+                  .from('cautelas')
+                  .select('status_cautela')
+                  .eq('id_cautela', cautId)
+                  .maybeSingle();
+
+                const statusAlvoEsperado = todosDevolvidos ? 'devolvida' : (prorrogar ? 'prorrogada' : 'ativa');
+                const statusConfere = cautelaDb && (cautelaDb.status_cautela === statusAlvoEsperado || cautelaDb.status_cautela === 'devolvida');
+
+                if (statusConfere) {
+                  const itemIdsParaVerificar = itensDevolvidosPayload
+                    .filter((i: any) => i.estado_devolucao)
+                    .map((i: any) => i.id_cautela_item);
+
+                  if (itemIdsParaVerificar.length > 0) {
+                    const { data: itensDb } = await supabase
+                      .from('cautela_itens')
+                      .select('id_cautela_item, estado_devolucao')
+                      .in('id_cautela_item', itemIdsParaVerificar);
+
+                    const todosItensProcessados = itemIdsParaVerificar.every((id: string) =>
+                      itensDb?.some(dbItem => dbItem.id_cautela_item === id && dbItem.estado_devolucao !== null)
+                    );
+
+                    if (todosItensProcessados) {
+                      console.warn(`SGBD Sync: Devolução da cautela ${cautId} e todos os itens já constam gravados no banco. Marcando como sincronizada (Idempotência).`);
+                      success = true;
+                    } else {
+                      throw rpcErr;
+                    }
+                  } else {
+                    success = true;
+                  }
+                } else {
+                  throw rpcErr;
+                }
+              } catch (checkErr) {
+                throw rpcErr;
+              }
+            } else {
+              success = true;
+            }
           }
           else if (item.operacao === 'SALVAR_OCORRENCIA') {
             const { novaOco } = payload;

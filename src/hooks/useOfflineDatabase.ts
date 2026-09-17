@@ -189,34 +189,73 @@ export function useOfflineDatabase() {
   const salvarUsuariosLocal = async (usuariosList: Usuario[]) => {
     if (!isDbReady) return;
     if (!isTauri) {
-      localStorage.setItem('offline_cache_usuarios', JSON.stringify(usuariosList));
+      const prevRaw = localStorage.getItem('offline_cache_usuarios');
+      const prevList: Usuario[] = prevRaw ? JSON.parse(prevRaw) : [];
+      const prevMap = new Map(prevList.map(u => [u.matricula, u.senha_hash]));
+      const merged = usuariosList.map(u => ({
+        ...u,
+        senha_hash: (u.senha_hash && u.senha_hash !== '') ? u.senha_hash : (prevMap.get(u.matricula) || '')
+      }));
+      localStorage.setItem('offline_cache_usuarios', JSON.stringify(merged));
       return;
     }
 
     try {
-      await dbInstance.execute('DELETE FROM usuarios');
-      for (const u of usuariosList) {
-        await dbInstance.execute(
-          `INSERT OR REPLACE INTO usuarios 
-          (matricula, nome, nome_de_guerra, perfil, posto_graduacao, situacao_cautela, data_ultimo_teste_psicologico, senha_hash, id_quartel, tentativas_login, bloqueado_ate, assinatura_foto) 
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            u.matricula !== undefined ? u.matricula : null,
-            u.nome !== undefined ? u.nome : null,
-            u.nome_de_guerra !== undefined && u.nome_de_guerra !== null ? u.nome_de_guerra : null,
-            u.perfil !== undefined ? u.perfil : null,
-            u.posto_graduacao !== undefined ? u.posto_graduacao : null,
-            u.situacao_cautela !== undefined ? u.situacao_cautela : null,
-            u.data_ultimo_teste_psicologico !== undefined && u.data_ultimo_teste_psicologico !== null ? u.data_ultimo_teste_psicologico : null,
-            u.senha_hash !== undefined ? u.senha_hash : null,
-            u.id_quartel !== undefined && u.id_quartel !== null ? u.id_quartel : null,
-            u.tentativas_login !== undefined && u.tentativas_login !== null ? u.tentativas_login : 0,
-            u.bloqueado_ate !== undefined && u.bloqueado_ate !== null ? u.bloqueado_ate : null,
-            u.assinatura_foto !== undefined && u.assinatura_foto !== null ? u.assinatura_foto : null
-          ]
-        );
+      if (usuariosList.length > 0) {
+        // 1. Reconciliação por diferença: remove do SQLite apenas quem foi desativado/excluído no servidor
+        const allMatriculas = usuariosList.map(u => u.matricula);
+        const localUsers: Array<{ matricula: string }> = await dbInstance.select('SELECT matricula FROM usuarios');
+        const activeSet = new Set(allMatriculas);
+        const matriculasParaRemover = localUsers
+          .map(u => u.matricula)
+          .filter(m => !activeSet.has(m));
+
+        const CHUNK_SIZE = 500;
+        for (let i = 0; i < matriculasParaRemover.length; i += CHUNK_SIZE) {
+          const chunk = matriculasParaRemover.slice(i, i + CHUNK_SIZE);
+          const placeholders = chunk.map(() => '?').join(',');
+          await dbInstance.execute(`DELETE FROM usuarios WHERE matricula IN (${placeholders})`, chunk);
+        }
+
+        // 2. Upsert preservando a senha de quem já existe localmente
+        for (const u of usuariosList) {
+          await dbInstance.execute(
+            `INSERT INTO usuarios 
+            (matricula, nome, nome_de_guerra, perfil, posto_graduacao, situacao_cautela, data_ultimo_teste_psicologico, senha_hash, id_quartel, tentativas_login, bloqueado_ate, assinatura_foto) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(matricula) DO UPDATE SET
+              nome = excluded.nome,
+              nome_de_guerra = excluded.nome_de_guerra,
+              perfil = excluded.perfil,
+              posto_graduacao = excluded.posto_graduacao,
+              situacao_cautela = excluded.situacao_cautela,
+              data_ultimo_teste_psicologico = excluded.data_ultimo_teste_psicologico,
+              senha_hash = CASE 
+                WHEN excluded.senha_hash IS NOT NULL AND excluded.senha_hash <> '' THEN excluded.senha_hash 
+                ELSE usuarios.senha_hash 
+              END,
+              id_quartel = excluded.id_quartel,
+              tentativas_login = excluded.tentativas_login,
+              bloqueado_ate = excluded.bloqueado_ate,
+              assinatura_foto = COALESCE(excluded.assinatura_foto, usuarios.assinatura_foto)`,
+            [
+              u.matricula !== undefined ? u.matricula : null,
+              u.nome !== undefined ? u.nome : null,
+              u.nome_de_guerra !== undefined && u.nome_de_guerra !== null ? u.nome_de_guerra : null,
+              u.perfil !== undefined ? u.perfil : null,
+              u.posto_graduacao !== undefined ? u.posto_graduacao : null,
+              u.situacao_cautela !== undefined ? u.situacao_cautela : null,
+              u.data_ultimo_teste_psicologico !== undefined && u.data_ultimo_teste_psicologico !== null ? u.data_ultimo_teste_psicologico : null,
+              u.senha_hash !== undefined ? u.senha_hash : null,
+              u.id_quartel !== undefined && u.id_quartel !== null ? u.id_quartel : null,
+              u.tentativas_login !== undefined && u.tentativas_login !== null ? u.tentativas_login : 0,
+              u.bloqueado_ate !== undefined && u.bloqueado_ate !== null ? u.bloqueado_ate : null,
+              u.assinatura_foto !== undefined && u.assinatura_foto !== null ? u.assinatura_foto : null
+            ]
+          );
+        }
+        console.log(`SGBD Offline: Reconciliação concluída para ${usuariosList.length} policiais com senhas preservadas.`);
       }
-      console.log(`SGBD Offline: ${usuariosList.length} policiais salvos no cache SQLite.`);
     } catch (err) {
       console.error('SGBD Offline: Erro ao salvar policiais localmente:', err);
     }
