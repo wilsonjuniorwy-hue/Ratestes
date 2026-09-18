@@ -327,19 +327,35 @@ export function TotemView({
     setSelectedAccessoryWeapon(null);
   };
 
-  const getDisponivelQty = (mat: Material) => {
-    if (!mat.controle_quantidade) {
-      return mat.status_atual === 'disponivel' ? 1 : 0;
-    }
-    const total = mat.quantidade || 0;
-    const activeQty = cautelaItens
-      .filter(ci => {
-        const c = cautelas.find(caut => caut.id_cautela === ci.id_cautela);
-        return ci.id_material === mat.id_material && c && (c.status_cautela === 'ativa' || c.status_cautela === 'atrasada' || c.status_cautela === 'prorrogada') && !ci.estado_devolucao;
-      })
-      .reduce((sum, ci) => sum + ci.quantidade, 0);
-    return Math.max(0, total - activeQty);
-  };
+  // ---- PRÉ-CÁLCULO O(1) DE SALDOS DISPONÍVEIS VIA USEMEMO (ETAPA 1) ----
+  const saldosDisponiveisMap = React.useMemo(() => {
+    const cautelasAtivasSet = new Set<string>();
+    cautelas.forEach(c => {
+      if (c.status_cautela === 'ativa' || c.status_cautela === 'atrasada' || c.status_cautela === 'prorrogada') {
+        cautelasAtivasSet.add(c.id_cautela);
+      }
+    });
+
+    const activeQtyPorMaterial: Record<string, number> = {};
+    cautelaItens.forEach(ci => {
+      if (!ci.estado_devolucao && cautelasAtivasSet.has(ci.id_cautela)) {
+        activeQtyPorMaterial[ci.id_material] = (activeQtyPorMaterial[ci.id_material] || 0) + ci.quantidade;
+      }
+    });
+
+    const map: Record<string, number> = {};
+    materiais.forEach(m => {
+      if (!m.controle_quantidade) {
+        map[m.id_material] = m.status_atual === 'disponivel' ? 1 : 0;
+      } else {
+        const total = m.quantidade || 0;
+        const acautelado = activeQtyPorMaterial[m.id_material] || 0;
+        map[m.id_material] = Math.max(0, total - acautelado);
+      }
+    });
+
+    return map;
+  }, [materiais, cautelas, cautelaItens]);
 
   const ajustarQuantidadeCarrinho = (idMat: string, newQty: number, maxQty: number) => {
     const val = isNaN(newQty) ? 0 : newQty;
@@ -1114,7 +1130,7 @@ export function TotemView({
                     {materiais.map((mat) => {
                       const countInCart = cartItens.filter(id => id === mat.id_material).length;
                       const isSelected = countInCart > 0;
-                      const disponivelQty = getDisponivelQty(mat);
+                      const disponivelQty = saldosDisponiveisMap[mat.id_material] ?? 0;
                       const isAvailable = mat.controle_quantidade ? (disponivelQty > 0 || isSelected) : (mat.status_atual === 'disponivel');
                       
                       return (
@@ -1546,8 +1562,16 @@ export function TotemView({
       {/* Modal de Busca Rápida & Assinatura */}
       <AnimatePresence>
         {isSearchModalOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
+          <React.Profiler
+            id="QuickSearchModal"
+            onRender={(id, phase, actualDuration) => {
+              if (import.meta.env.DEV) {
+                console.log(`[PROFILER] ${id} (${phase}): ${actualDuration.toFixed(2)}ms`);
+              }
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md"
@@ -1626,7 +1650,7 @@ export function TotemView({
                         .map((mat) => {
                           const countInCart = cartItens.filter(id => id === mat.id_material).length;
                           const isSelected = countInCart > 0;
-                          const disponivelQty = getDisponivelQty(mat);
+                          const disponivelQty = saldosDisponiveisMap[mat.id_material] ?? 0;
                           const isAvailable = mat.controle_quantidade ? (disponivelQty > 0 || isSelected) : (mat.status_atual === 'disponivel');
                           
                           return (
@@ -1736,7 +1760,7 @@ export function TotemView({
                           return Object.entries(groupedCart).map(([id, qty]) => {
                             const item = materiais.find(m => m.id_material === id);
                             const isQtyItem = item?.controle_quantidade;
-                            const maxQty = isQtyItem && item ? (getDisponivelQty(item) + qty) : 1;
+                            const maxQty = isQtyItem && item ? ((saldosDisponiveisMap[item.id_material] ?? 0) + qty) : 1;
 
                             return (
                               <div key={id} className="bg-slate-955 border border-slate-850 p-3 rounded-lg flex justify-between items-center text-xs font-mono gap-2">
@@ -1849,7 +1873,8 @@ export function TotemView({
               </div>
             </motion.div>
           </motion.div>
-        )}
+        </React.Profiler>
+      )}
       </AnimatePresence>
 
       {/* Modal de Configuração de Acessórios (Munições/Carregadores) */}
