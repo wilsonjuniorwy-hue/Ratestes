@@ -81,7 +81,7 @@ export function BancoDadosView({
   const deferredUserSearchTerm = useDeferredValue(userSearchTerm);
   const filteredPoliciais = useMemo(() => {
     const policiais = usuarios.filter(u => u.perfil === 'policial');
-    const term = deferredUserSearchTerm.toLowerCase().trim();
+    const term = deferredUserSearchTerm.toLowerCase();
     if (!term) return policiais;
     return policiais.filter(u =>
       (u.nome && u.nome.toLowerCase().includes(term)) ||
@@ -92,7 +92,7 @@ export function BancoDadosView({
 
   const deferredStockSearchTerm = useDeferredValue(stockSearchTerm);
   const filteredStockMateriais = useMemo(() => {
-    const term = deferredStockSearchTerm.toLowerCase().trim();
+    const term = deferredStockSearchTerm.toLowerCase();
     if (!term) return materiais;
     return materiais.filter(m =>
       (m.modelo && m.modelo.toLowerCase().includes(term)) ||

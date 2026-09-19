@@ -107,7 +107,7 @@ export function ArmeiroView({
   // ---- BUSCAS OTIMIZADAS COM USEDEFERREDVALUE E USEMEMO (ETAPA 2) ----
   const deferredSearchMaterialTerm = useDeferredValue(searchMaterialTerm);
   const materiaisAuditFiltrados = useMemo(() => {
-    const term = deferredSearchMaterialTerm.toLowerCase().trim();
+    const term = deferredSearchMaterialTerm.toLowerCase();
     if (!term) return materiais;
     return materiais.filter(m =>
       (m.modelo && m.modelo.toLowerCase().includes(term)) ||
