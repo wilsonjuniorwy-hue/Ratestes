@@ -711,8 +711,6 @@ export function TotemView({
       const { matches } = await comparePassword(pinValue, loggedUser.senha_hash);
       if (!matches) {
         setPinError('Inconsistência cadastral. Senha de assinatura digital incorreta.');
-        modalPinRef.current?.clear();
-        assinaturaPinRef.current?.clear();
         setIsSubmittingCautela(false);
         return;
       }
