@@ -1653,15 +1653,7 @@ export function TotemView({
             className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md"
             id="modal-quick-search-wrapper"
           >
-            <React.Profiler
-              id="QuickSearchModal"
-              onRender={(id, phase, actualDuration) => {
-                if (import.meta.env.DEV) {
-                  console.log(`[PROFILER] ${id} (${phase}): ${actualDuration.toFixed(2)}ms`);
-                }
-              }}
-            >
-              <motion.div
+            <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
@@ -1927,9 +1919,8 @@ export function TotemView({
 
               </div>
             </motion.div>
-          </React.Profiler>
-        </motion.div>
-      )}
+          </motion.div>
+        )}
       </AnimatePresence>
 
       {/* Modal de Configuração de Acessórios (Munições/Carregadores) */}
