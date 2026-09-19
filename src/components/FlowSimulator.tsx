@@ -221,8 +221,6 @@ export default function FlowSimulator({
   const [matriculaInput, setMatriculaInput] = useState('');
   const [senhaInput, setSenhaInput] = useState('');
   const [loggedUser, setLoggedUser] = useState<Usuario | null>(null);
-  const [novaSenhaInput, setNovaSenhaInput] = useState('');
-  const [confirmarSenhaInput, setConfirmarSenhaInput] = useState('');
   const [cadastroSenhaError, setCadastroSenhaError] = useState('');
   const [cartItens, setCartItens] = useState<string[]>([]); // Array com ids_materiais
   const [observacoesRetirada, setObservacoesRetirada] = useState('Escala operacional de serviço de radiopatrulha tática.');
@@ -478,10 +476,6 @@ export default function FlowSimulator({
             setSenhaInput={setSenhaInput}
             loggedUser={loggedUser}
             setLoggedUser={setLoggedUser}
-            novaSenhaInput={novaSenhaInput}
-            setNovaSenhaInput={setNovaSenhaInput}
-            confirmarSenhaInput={confirmarSenhaInput}
-            setConfirmarSenhaInput={setConfirmarSenhaInput}
             cadastroSenhaError={cadastroSenhaError}
             setCadastroSenhaError={setCadastroSenhaError}
             cartItens={cartItens}
@@ -527,8 +521,6 @@ export default function FlowSimulator({
               setMatriculaInput('');
               setSenhaInput('');
               setLoggedUser(null);
-              setNovaSenhaInput('');
-              setConfirmarSenhaInput('');
               setCadastroSenhaError('');
               setCartItens([]);
               setObservacoesRetirada('Carga pessoal permanente.');
@@ -543,8 +535,6 @@ export default function FlowSimulator({
               setMatriculaInput('');
               setSenhaInput('');
               setLoggedUser(null);
-              setNovaSenhaInput('');
-              setConfirmarSenhaInput('');
               setCadastroSenhaError('');
               setCartItens([]);
               setObservacoesRetirada('Cautela emergencial.');

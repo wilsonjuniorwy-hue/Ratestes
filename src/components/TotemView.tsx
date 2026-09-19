@@ -120,10 +120,6 @@ interface TotemViewProps {
   setSenhaInput: (v: string) => void;
   loggedUser: Usuario | null;
   setLoggedUser: (u: Usuario | null) => void;
-  novaSenhaInput: string;
-  setNovaSenhaInput: (v: string) => void;
-  confirmarSenhaInput: string;
-  setConfirmarSenhaInput: (v: string) => void;
   cadastroSenhaError: string;
   setCadastroSenhaError: (v: string) => void;
   cartItens: string[];
@@ -137,7 +133,7 @@ interface TotemViewProps {
   
   // SGBD actions
   registrarLogAuditoria: (executor: string, tipo: AuditoriaLog['tipo_evento'], detalhes: string) => void;
-  cadastrarSenha: (matricula: string, novaSenhaInput: string) => void;
+  cadastrarSenha: (matricula: string, novaSenha: string) => void;
   processEfetivarCautela: (
     matriculaPolicial: string, 
     cartItens: string[], 
@@ -211,6 +207,79 @@ function PinInput({
   );
 }
 
+// ---- SUBCOMPONENTE DE CADASTRO DE SENHA (ETAPA 3B) ----
+interface CadastroSenhaFormProps {
+  onSubmit: (nova: string, confirmar: string) => void;
+  onCancel: () => void;
+  error?: string;
+}
+
+function CadastroSenhaForm({ onSubmit, onCancel, error }: CadastroSenhaFormProps) {
+  const [novaSenha, setNovaSenha] = React.useState('');
+  const [confirmarSenha, setConfirmarSenha] = React.useState('');
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onSubmit(novaSenha, confirmarSenha);
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4" id="form-cadastro-senha">
+      <div className="space-y-1.5">
+        <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wide">Nova Senha (4 a 6 dígitos numéricos):</label>
+        <input
+          type="password"
+          id="input-nova-senha"
+          maxLength={6}
+          placeholder="••••••"
+          value={novaSenha}
+          required
+          onChange={(e) => setNovaSenha(e.target.value.replace(/\D/g, ''))}
+          className="w-full bg-slate-950 border border-slate-800 focus:border-cyan-500 p-3 text-xs font-mono text-slate-200 focus:outline-none tracking-widest text-center rounded-lg transition-all focus:ring-1 focus:ring-cyan-500/20 text-lg"
+        />
+      </div>
+
+      <div className="space-y-1.5">
+        <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wide">Confirmar Nova Senha:</label>
+        <input
+          type="password"
+          id="input-confirmar-senha"
+          maxLength={6}
+          placeholder="••••••"
+          value={confirmarSenha}
+          required
+          onChange={(e) => setConfirmarSenha(e.target.value.replace(/\D/g, ''))}
+          className="w-full bg-slate-950 border border-slate-800 focus:border-cyan-500 p-3 text-xs font-mono text-slate-200 focus:outline-none tracking-widest text-center rounded-lg transition-all focus:ring-1 focus:ring-cyan-500/20 text-lg"
+        />
+      </div>
+
+      {error && (
+        <div className="bg-red-955/30 border border-red-900/40 p-3.5 rounded-lg text-xs text-red-400 font-mono leading-normal flex items-start gap-2.5 glow-red">
+          <ShieldAlert className="h-4.5 w-4.5 shrink-0 mt-0.5 text-red-500" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      <button
+        type="submit"
+        id="btn-submit-cadastro-senha"
+        className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold font-mono py-3.5 px-4 rounded-lg text-xs transition-all shadow-md flex items-center justify-center gap-2 uppercase tracking-wider cursor-pointer glow-blue"
+      >
+        <span>Cadastrar e Prosseguir</span>
+        <ArrowRight className="h-4.5 w-4.5" />
+      </button>
+
+      <button
+        type="button"
+        onClick={onCancel}
+        className="w-full bg-transparent hover:bg-slate-955/50 text-slate-400 hover:text-slate-200 border border-transparent hover:border-slate-800 font-mono py-2 rounded-lg text-xs transition-all uppercase tracking-wider cursor-pointer"
+      >
+        Cancelar
+      </button>
+    </form>
+  );
+}
+
 export function TotemView({
   usuarios,
   materiais,
@@ -224,10 +293,6 @@ export function TotemView({
   setSenhaInput,
   loggedUser,
   setLoggedUser,
-  novaSenhaInput,
-  setNovaSenhaInput,
-  confirmarSenhaInput,
-  setConfirmarSenhaInput,
   cadastroSenhaError,
   setCadastroSenhaError,
   cartItens,
@@ -564,25 +629,24 @@ export function TotemView({
   };
 
   // ---- CADASTRO DE SENHA DO PRIMEIRO ACESSO ----
-  const handleCadastrarSenha = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleCadastrarSenha = async (nova: string, confirmar: string) => {
     setCadastroSenhaError('');
 
     if (!loggedUser) return;
 
-    if (!/^\d{4,6}$/.test(novaSenhaInput)) {
+    if (!/^\d{4,6}$/.test(nova)) {
       setCadastroSenhaError('A senha deve conter de 4 a 6 números (ex: 1234 ou 123456).');
       return;
     }
 
-    if (novaSenhaInput !== confirmarSenhaInput) {
+    if (nova !== confirmar) {
       setCadastroSenhaError('As senhas digitadas não coincidem.');
       return;
     }
 
-    cadastrarSenha(loggedUser.matricula, novaSenhaInput);
+    cadastrarSenha(loggedUser.matricula, nova);
 
-    const hashed = await hashSHA256(novaSenhaInput);
+    const hashed = await hashSHA256(nova);
     const updatedUser = { ...loggedUser, senha_hash: hashed };
     setLoggedUser(updatedUser);
     
@@ -772,8 +836,6 @@ export function TotemView({
     setForcePermitirMaisItens(false);
     // Limpar estados de autenticação e cadastro para não contaminar próxima sessão
     setAuthError('');
-    setNovaSenhaInput('');
-    setConfirmarSenhaInput('');
     setCadastroSenhaError('');
     setObservacoesRetirada('');
     setMotivoEmergencialInput('');
@@ -980,59 +1042,11 @@ export function TotemView({
                   </p>
                 </div>
 
-                <form onSubmit={handleCadastrarSenha} className="space-y-4" id="form-cadastro-senha">
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wide">Nova Senha (4 a 6 dígitos numéricos):</label>
-                    <input
-                      type="password"
-                      id="input-nova-senha"
-                      maxLength={6}
-                      placeholder="••••••"
-                      value={novaSenhaInput}
-                      required
-                      onChange={(e) => setNovaSenhaInput(e.target.value.replace(/\D/g, ''))}
-                      className="w-full bg-slate-950 border border-slate-800 focus:border-cyan-500 p-3 text-xs font-mono text-slate-200 focus:outline-none tracking-widest text-center rounded-lg transition-all focus:ring-1 focus:ring-cyan-500/20 text-lg"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-mono font-bold text-slate-455 uppercase tracking-wide">Confirmar Nova Senha:</label>
-                    <input
-                      type="password"
-                      id="input-confirmar-senha"
-                      maxLength={6}
-                      placeholder="••••••"
-                      value={confirmarSenhaInput}
-                      required
-                      onChange={(e) => setConfirmarSenhaInput(e.target.value.replace(/\D/g, ''))}
-                      className="w-full bg-slate-950 border border-slate-800 focus:border-cyan-500 p-3 text-xs font-mono text-slate-200 focus:outline-none tracking-widest text-center rounded-lg transition-all focus:ring-1 focus:ring-cyan-500/20 text-lg"
-                    />
-                  </div>
-
-                  {cadastroSenhaError && (
-                    <div className="bg-red-955/30 border border-red-900/40 p-3.5 rounded-lg text-xs text-red-400 font-mono leading-normal flex items-start gap-2.5 glow-red">
-                      <ShieldAlert className="h-4.5 w-4.5 shrink-0 mt-0.5 text-red-500" />
-                      <span>{cadastroSenhaError}</span>
-                    </div>
-                  )}
-
-                  <button
-                    type="submit"
-                    id="btn-submit-cadastro-senha"
-                    className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold font-mono py-3.5 px-4 rounded-lg text-xs transition-all shadow-md flex items-center justify-center gap-2 uppercase tracking-wider cursor-pointer glow-blue"
-                  >
-                    <span>Cadastrar e Prosseguir</span>
-                    <ArrowRight className="h-4.5 w-4.5" />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setPolicialStep('carrinho')}
-                    className="w-full bg-transparent hover:bg-slate-955/50 text-slate-400 hover:text-slate-200 border border-transparent hover:border-slate-800 font-mono py-2 rounded-lg text-xs transition-all uppercase tracking-wider cursor-pointer"
-                  >
-                    Cancelar
-                  </button>
-                </form>
+                <CadastroSenhaForm
+                  onSubmit={handleCadastrarSenha}
+                  onCancel={() => setPolicialStep('carrinho')}
+                  error={cadastroSenhaError}
+                />
               </motion.div>
             )}
 
