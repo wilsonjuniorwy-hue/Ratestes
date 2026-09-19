@@ -357,6 +357,18 @@ export function TotemView({
     return map;
   }, [materiais, cautelas, cautelaItens]);
 
+  // ---- FILTRAGEM DE MATERIAIS NO MODAL DE BUSCA COM USEDEFERREDVALUE E USEMEMO (ETAPA 2) ----
+  const deferredSearchQuery = React.useDeferredValue(searchQuery);
+  const materiaisFiltradosModal = React.useMemo(() => {
+    const q = deferredSearchQuery.toLowerCase().trim();
+    if (!q) return materiais;
+    return materiais.filter(mat =>
+      mat.modelo.toLowerCase().includes(q) || 
+      mat.id_material.toLowerCase().includes(q) ||
+      (mat.calibre && mat.calibre.toLowerCase().includes(q))
+    );
+  }, [materiais, deferredSearchQuery]);
+
   const ajustarQuantidadeCarrinho = (idMat: string, newQty: number, maxQty: number) => {
     const val = isNaN(newQty) ? 0 : newQty;
     const qtyNormalizada = Math.max(0, Math.min(val, maxQty));
@@ -1562,22 +1574,22 @@ export function TotemView({
       {/* Modal de Busca Rápida & Assinatura */}
       <AnimatePresence>
         {isSearchModalOpen && (
-          <React.Profiler
-            id="QuickSearchModal"
-            onRender={(id, phase, actualDuration) => {
-              if (import.meta.env.DEV) {
-                console.log(`[PROFILER] ${id} (${phase}): ${actualDuration.toFixed(2)}ms`);
-              }
-            }}
-          >
-            <motion.div
-              initial={{ opacity: 0 }}
+          <motion.div
+            initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md"
             id="modal-quick-search-wrapper"
           >
-            <motion.div
+            <React.Profiler
+              id="QuickSearchModal"
+              onRender={(id, phase, actualDuration) => {
+                if (import.meta.env.DEV) {
+                  console.log(`[PROFILER] ${id} (${phase}): ${actualDuration.toFixed(2)}ms`);
+                }
+              }}
+            >
+              <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
@@ -1622,32 +1634,12 @@ export function TotemView({
                   </div>
 
                   <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-2 max-h-[420px] lg:max-h-none custom-scrollbar">
-                    {materiais
-                      .filter(mat => {
-                        const q = searchQuery.toLowerCase().trim();
-                        if (!q) return true;
-                        return (
-                          mat.modelo.toLowerCase().includes(q) || 
-                          mat.id_material.toLowerCase().includes(q) ||
-                          (mat.calibre && mat.calibre.toLowerCase().includes(q))
-                        );
-                      })
-                      .length === 0 ? (
+                    {materiaisFiltradosModal.length === 0 ? (
                       <div className="text-center p-8 border border-dashed border-slate-800 rounded-lg text-slate-500 font-mono text-xs">
                         Nenhum material bélico localizado para "{searchQuery}".
                       </div>
                     ) : (
-                      materiais
-                        .filter(mat => {
-                          const q = searchQuery.toLowerCase().trim();
-                          if (!q) return true;
-                          return (
-                            mat.modelo.toLowerCase().includes(q) || 
-                            mat.id_material.toLowerCase().includes(q) ||
-                            (mat.calibre && mat.calibre.toLowerCase().includes(q))
-                          );
-                        })
-                        .map((mat) => {
+                      materiaisFiltradosModal.map((mat) => {
                           const countInCart = cartItens.filter(id => id === mat.id_material).length;
                           const isSelected = countInCart > 0;
                           const disponivelQty = saldosDisponiveisMap[mat.id_material] ?? 0;
@@ -1872,8 +1864,8 @@ export function TotemView({
 
               </div>
             </motion.div>
-          </motion.div>
-        </React.Profiler>
+          </React.Profiler>
+        </motion.div>
       )}
       </AnimatePresence>
 

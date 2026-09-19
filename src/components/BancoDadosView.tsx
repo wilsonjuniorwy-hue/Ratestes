@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useDeferredValue } from 'react';
 import { 
   Database, Search, KeyRound, Package, ShieldAlert, CheckCircle, AlertTriangle, Plus, Lock, X, FolderLock,
   RefreshCw, Trash2, Eye, Play, FileText, Trash, Edit
@@ -76,6 +76,30 @@ export function BancoDadosView({
   const [bancoDadosSubSection, setBancoDadosSubSection] = useState<'policiais' | 'estoque' | 'particulares' | 'sincronizacao'>('policiais');
   const [userSearchTerm, setUserSearchTerm] = useState('');
   const [stockSearchTerm, setStockSearchTerm] = useState('');
+
+  // ---- BUSCAS OTIMIZADAS COM USEDEFERREDVALUE E USEMEMO (ETAPA 2) ----
+  const deferredUserSearchTerm = useDeferredValue(userSearchTerm);
+  const filteredPoliciais = useMemo(() => {
+    const policiais = usuarios.filter(u => u.perfil === 'policial');
+    const term = deferredUserSearchTerm.toLowerCase().trim();
+    if (!term) return policiais;
+    return policiais.filter(u =>
+      (u.nome && u.nome.toLowerCase().includes(term)) ||
+      (u.matricula && u.matricula.toLowerCase().includes(term)) ||
+      (u.nome_de_guerra && u.nome_de_guerra.toLowerCase().includes(term))
+    );
+  }, [usuarios, deferredUserSearchTerm]);
+
+  const deferredStockSearchTerm = useDeferredValue(stockSearchTerm);
+  const filteredStockMateriais = useMemo(() => {
+    const term = deferredStockSearchTerm.toLowerCase().trim();
+    if (!term) return materiais;
+    return materiais.filter(m =>
+      (m.modelo && m.modelo.toLowerCase().includes(term)) ||
+      (m.id_material && m.id_material.toLowerCase().includes(term)) ||
+      (m.fabricante && m.fabricante.toLowerCase().includes(term))
+    );
+  }, [materiais, deferredStockSearchTerm]);
 
   const [expandedPayloadId, setExpandedPayloadId] = useState<number | null>(null);
 
@@ -886,14 +910,7 @@ export function BancoDadosView({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-850/50 font-sans text-xs">
-                {usuarios
-                  .filter(u => u.perfil === 'policial')
-                  .filter(u => 
-                    u.nome.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
-                    u.matricula.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
-                    (u.nome_de_guerra && u.nome_de_guerra.toLowerCase().includes(userSearchTerm.toLowerCase()))
-                  )
-                  .map((user) => {
+                {filteredPoliciais.map((user) => {
                     const isLocked = user.bloqueado_ate && new Date(user.bloqueado_ate) > new Date();
                     return (
                       <tr key={user.matricula} className="hover:bg-slate-900/25 transition-colors">
@@ -1506,13 +1523,7 @@ export function BancoDadosView({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-850/50 font-sans text-xs">
-                    {materiais
-                      .filter(m => 
-                        m.modelo.toLowerCase().includes(stockSearchTerm.toLowerCase()) ||
-                        m.id_material.toLowerCase().includes(stockSearchTerm.toLowerCase()) ||
-                        m.fabricante.toLowerCase().includes(stockSearchTerm.toLowerCase())
-                      )
-                      .map((mat) => {
+                    {filteredStockMateriais.map((mat) => {
                         const isCautelado = mat.status_atual === 'cautelado';
                         const isRetirado = mat.status_atual === 'retirado';
                         const isQtyControlled = mat.controle_quantidade;

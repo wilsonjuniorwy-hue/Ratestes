@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useDeferredValue } from 'react';
 import { 
   LayoutDashboard, UserPlus, ClipboardList, Search, History, FileCheck2, 
   Clock, ShieldAlert, CheckCircle, Printer, X, Timer, Briefcase, ChevronDown, ChevronUp, ExternalLink, Siren
@@ -103,6 +103,40 @@ export function ArmeiroView({
   const [devolucaoErrorMsg, setDevolucaoErrorMsg] = useState('');
   const [returnedQuantities, setReturnedQuantities] = useState<Record<string, number>>({});
   const [consumedQuantities, setConsumedQuantities] = useState<Record<string, number>>({});
+
+  // ---- BUSCAS OTIMIZADAS COM USEDEFERREDVALUE E USEMEMO (ETAPA 2) ----
+  const deferredSearchMaterialTerm = useDeferredValue(searchMaterialTerm);
+  const materiaisAuditFiltrados = useMemo(() => {
+    const term = deferredSearchMaterialTerm.toLowerCase().trim();
+    if (!term) return materiais;
+    return materiais.filter(m =>
+      (m.modelo && m.modelo.toLowerCase().includes(term)) ||
+      (m.id_material && m.id_material.toLowerCase().includes(term)) ||
+      (m.fabricante && m.fabricante.toLowerCase().includes(term))
+    );
+  }, [materiais, deferredSearchMaterialTerm]);
+
+  const deferredReturnSearchQuery = useDeferredValue(returnSearchQuery);
+  const cautelasVisiveisDevolucao = useMemo(() => {
+    const ativas = cautelas.filter(c => {
+      const st = c.status_cautela?.toLowerCase().trim();
+      return st === 'ativa' || st === 'atrasada' || st === 'prorrogada';
+    });
+    const q = deferredReturnSearchQuery.toLowerCase().trim();
+    if (!q) return ativas;
+    return ativas.filter(c => {
+      const pm = usuarios.find(u => u.matricula === c.matricula_policial);
+      const cItens = cautelaItens.filter(ci => ci.id_cautela === c.id_cautela);
+      const matchesPm = pm?.nome.toLowerCase().includes(q) ||
+                        pm?.nome_de_guerra?.toLowerCase().includes(q) ||
+                        c.matricula_policial.toLowerCase().includes(q);
+      const matchesMat = cItens.some(ci => {
+        const mat = materiais.find(m => m.id_material === ci.id_material);
+        return mat?.modelo.toLowerCase().includes(q) || ci.id_material.toLowerCase().includes(q);
+      });
+      return Boolean(matchesPm || matchesMat);
+    });
+  }, [cautelas, deferredReturnSearchQuery, usuarios, cautelaItens, materiais]);
 
   React.useEffect(() => {
     setReturnedQuantities({});
@@ -828,13 +862,7 @@ export function ArmeiroView({
               </div>
 
               <div className="space-y-1.5 h-[340px] overflow-y-auto pr-1" id="audit-materials-list">
-                {materiais
-                  .filter(m => 
-                    m.modelo.toLowerCase().includes(searchMaterialTerm.toLowerCase()) || 
-                    m.id_material.toLowerCase().includes(searchMaterialTerm.toLowerCase()) ||
-                    m.fabricante.toLowerCase().includes(searchMaterialTerm.toLowerCase())
-                  )
-                  .map((mat) => {
+                {materiaisAuditFiltrados.map((mat) => {
                     const isSelected = selectedAuditMaterial?.id_material === mat.id_material;
                     return (
                       <button
@@ -1338,36 +1366,12 @@ export function ArmeiroView({
                   </div>
 
                   <div className="flex-1 overflow-y-auto pr-1 space-y-2.5 max-h-[480px] lg:max-h-[580px]">
-                    {(() => {
-                      const cautelasVisiveis = cautelas
-                        .filter(c => {
-                          const st = c.status_cautela?.toLowerCase().trim();
-                          return st === 'ativa' || st === 'atrasada' || st === 'prorrogada';
-                        })
-                        .filter(c => {
-                          const q = returnSearchQuery.toLowerCase().trim();
-                          if (!q) return true;
-                          const pm = usuarios.find(u => u.matricula === c.matricula_policial);
-                          const cItens = cautelaItens.filter(ci => ci.id_cautela === c.id_cautela);
-                          const matchesPm = pm?.nome.toLowerCase().includes(q) ||
-                                            pm?.nome_de_guerra?.toLowerCase().includes(q) ||
-                                            c.matricula_policial.toLowerCase().includes(q);
-                          const matchesMat = cItens.some(ci => {
-                            const mat = materiais.find(m => m.id_material === ci.id_material);
-                            return mat?.modelo.toLowerCase().includes(q) || ci.id_material.toLowerCase().includes(q);
-                          });
-                          return matchesPm || matchesMat;
-                        });
-
-                      if (cautelasVisiveis.length === 0) {
-                        return (
-                          <div className="text-center p-8 border border-dashed border-slate-800 rounded-lg text-slate-500 font-mono text-xs">
-                            Nenhuma cautela tática ativa localizada{returnSearchQuery ? ` para "${returnSearchQuery}"` : ''}.
-                          </div>
-                        );
-                      }
-
-                      return cautelasVisiveis.map(c => {
+                    {cautelasVisiveisDevolucao.length === 0 ? (
+                      <div className="text-center p-8 border border-dashed border-slate-800 rounded-lg text-slate-500 font-mono text-xs">
+                        Nenhuma cautela tática ativa localizada{returnSearchQuery ? ` para "${returnSearchQuery}"` : ''}.
+                      </div>
+                    ) : (
+                      cautelasVisiveisDevolucao.map(c => {
                         const pm = usuarios.find(u => u.matricula === c.matricula_policial);
                         const cItens = cautelaItens.filter(ci => ci.id_cautela === c.id_cautela && !ci.estado_devolucao);
                         const isSelected = returnCautelaId === c.id_cautela;
@@ -1452,8 +1456,8 @@ export function ArmeiroView({
                             </div>
                           </button>
                         );
-                      });
-                    })()}
+                      })
+                    )}
                   </div>
 
                 </div>
