@@ -27,7 +27,7 @@ test.describe('Fluxo Completo de Cautela e Administração', () => {
     await quartelSelect.selectOption({ index: 0 });
 
     // Preenche matrícula
-    const matriculaInput = page.locator('input[placeholder="Matrícula Funcional"]');
+    const matriculaInput = page.locator('input[placeholder="USUÁRIO OU MATRÍCULA"]');
     await expect(matriculaInput).toBeVisible();
     await matriculaInput.fill('ADMINTEST');
 
@@ -85,7 +85,7 @@ test.describe('Fluxo Completo de Cautela e Administração', () => {
 
     await page.locator('input[placeholder="EX: JEAN-CLAUDE VAN DAMME"]').fill('POLICIAL TESTE AUTOMATIZADO');
     await page.locator('input[placeholder="EX: VAN DAMME"]').fill('TESTE E2E');
-    await page.locator('input[placeholder="EX: PM-333333"]').fill(matriculaMilitar);
+    await page.locator('input[placeholder="EX: PM-333333 ou CPF/RG (Civil)"]').fill(matriculaMilitar);
     await page.locator('#form-cadastro-usuario select').first().selectOption('Soldado');
 
     // Submete o cadastro
