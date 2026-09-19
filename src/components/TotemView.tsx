@@ -156,6 +156,61 @@ interface TotemViewProps {
   onResetEmergencyMode?: () => void;
 }
 
+// ---- SUBCOMPONENTE DE PIN ISOLADO COM REF (ETAPA 3A) ----
+export interface PinInputHandle {
+  getValue: () => string;
+  clear: () => void;
+  focus: () => void;
+}
+
+interface PinInputProps {
+  id?: string;
+  name?: string;
+  className?: string;
+  placeholder?: string;
+  onEnter?: () => void;
+  ref?: React.Ref<PinInputHandle>;
+}
+
+function PinInput({
+  id,
+  name = 'confirmarCautelaPin',
+  className = '',
+  placeholder = '••••••',
+  onEnter,
+  ref
+}: PinInputProps) {
+  const [value, setValue] = React.useState('');
+  const inputRef = React.useRef<HTMLInputElement>(null);
+
+  React.useImperativeHandle(ref, () => ({
+    getValue: () => value,
+    clear: () => setValue(''),
+    focus: () => inputRef.current?.focus()
+  }));
+
+  return (
+    <input
+      ref={inputRef}
+      type="password"
+      id={id}
+      name={name}
+      autoComplete="new-password"
+      maxLength={6}
+      placeholder={placeholder}
+      value={value}
+      onChange={(e) => setValue(e.target.value.replace(/\D/g, ''))}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          onEnter?.();
+        }
+      }}
+      className={className}
+    />
+  );
+}
+
 export function TotemView({
   usuarios,
   materiais,
@@ -193,7 +248,8 @@ export function TotemView({
   onResetEmergencyMode
 }: TotemViewProps) {
   const offlineDb = useOfflineDatabase();
-  const [confirmarCautelaPin, setConfirmarCautelaPin] = React.useState('');
+  const modalPinRef = React.useRef<PinInputHandle>(null);
+  const assinaturaPinRef = React.useRef<PinInputHandle>(null);
   const [pinError, setPinError] = React.useState('');
   const [motivoEmergencialInput, setMotivoEmergencialInput] = React.useState('');
   const [isSubmittingCautela, setIsSubmittingCautela] = React.useState(false);
@@ -384,7 +440,8 @@ export function TotemView({
     if (policialStep === 'carrinho') {
       setIsSearchModalOpen(true);
       setSearchQuery('');
-      setConfirmarCautelaPin('');
+      modalPinRef.current?.clear();
+      assinaturaPinRef.current?.clear();
       setPinError('');
     } else {
       setIsSearchModalOpen(false);
@@ -628,7 +685,8 @@ export function TotemView({
         );
         if (newCautela) {
           setGeneratedCautela(newCautela);
-          setConfirmarCautelaPin('');
+          modalPinRef.current?.clear();
+          assinaturaPinRef.current?.clear();
           setIsSearchModalOpen(false);
           setSearchQuery('');
           setPolicialStep('sucesso');
@@ -641,16 +699,20 @@ export function TotemView({
       return;
     }
 
-    if (!confirmarCautelaPin) {
+    const pinValue = modalPinRef.current?.getValue() || assinaturaPinRef.current?.getValue() || '';
+
+    if (!pinValue) {
       setPinError('Digite sua senha para assinar e confirmar os itens.');
       return;
     }
 
     try {
       setIsSubmittingCautela(true);
-      const { matches } = await comparePassword(confirmarCautelaPin, loggedUser.senha_hash);
+      const { matches } = await comparePassword(pinValue, loggedUser.senha_hash);
       if (!matches) {
         setPinError('Inconsistência cadastral. Senha de assinatura digital incorreta.');
+        modalPinRef.current?.clear();
+        assinaturaPinRef.current?.clear();
         setIsSubmittingCautela(false);
         return;
       }
@@ -683,7 +745,8 @@ export function TotemView({
       );
       if (newCautela) {
         setGeneratedCautela(newCautela);
-        setConfirmarCautelaPin('');
+        modalPinRef.current?.clear();
+        assinaturaPinRef.current?.clear();
         setIsSearchModalOpen(false);
         setSearchQuery('');
         setPolicialStep('sucesso');
@@ -703,7 +766,8 @@ export function TotemView({
     setCartItens([]);
     setCartWeaponMagazines({});
     setCartRadioBatteries({});
-    setConfirmarCautelaPin('');
+    modalPinRef.current?.clear();
+    assinaturaPinRef.current?.clear();
     setPinError('');
     setIsSearchModalOpen(false);
     setSearchQuery('');
@@ -1262,7 +1326,8 @@ export function TotemView({
                         setIsSearchModalOpen(true);
                         setSearchQuery('');
                         setPinError('');
-                        setConfirmarCautelaPin('');
+                        modalPinRef.current?.clear();
+                        assinaturaPinRef.current?.clear();
                       }}
                       className="bg-slate-950 hover:bg-slate-900 text-cyan-400 hover:text-cyan-300 font-bold font-mono py-2.5 px-4 rounded-lg text-xs flex items-center gap-1.5 border border-slate-800 hover:border-cyan-900/50 transition-all uppercase tracking-wider cursor-pointer shadow-md"
                     >
@@ -1401,21 +1466,12 @@ export function TotemView({
                         <label className="text-[10px] font-mono font-bold text-slate-450 uppercase tracking-wider block">Assinatura Eletrônica (Sua Senha):</label>
                         <span className="text-[9px] text-slate-500 font-mono">Confirme para homologar</span>
                       </div>
-                      <input
-                        type="password"
+                      <PinInput
+                        ref={assinaturaPinRef}
                         id="input-confirmar-cautela-pin"
                         name="confirmarCautelaPin"
-                        autoComplete="new-password"
-                        maxLength={6}
                         placeholder="••••••"
-                        value={confirmarCautelaPin}
-                        onChange={(e) => setConfirmarCautelaPin(e.target.value.replace(/\D/g, ''))}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            handleEfetivarCautela();
-                          }
-                        }}
+                        onEnter={handleEfetivarCautela}
                         className="w-full bg-slate-955 border border-slate-800 focus:border-blue-500 p-3 text-xs font-mono text-slate-200 focus:outline-none tracking-widest text-center rounded-lg transition-all focus:ring-1 focus:ring-blue-500/20 text-lg"
                       />
                     </div>
@@ -1432,7 +1488,11 @@ export function TotemView({
                 <div className="flex items-center justify-between border-t border-slate-850 pt-4 mt-6 font-mono">
                   <button
                     id="btn-return-cart"
-                    onClick={() => setPolicialStep('carrinho')}
+                    onClick={() => {
+                      modalPinRef.current?.clear();
+                      assinaturaPinRef.current?.clear();
+                      setPolicialStep('carrinho');
+                    }}
                     className="text-xs text-slate-400 hover:text-slate-200 px-4 py-2 border border-slate-800 hover:border-slate-700 bg-slate-950/40 rounded-lg transition-all cursor-pointer font-bold"
                   >
                     Alterar Carga
@@ -1819,20 +1879,11 @@ export function TotemView({
                     <div className="shrink-0 space-y-3 bg-slate-950/60 p-3.5 border border-slate-850 rounded-xl mt-3">
                       <div className="space-y-1.5">
                         <label className="text-[10px] font-mono font-bold text-slate-450 uppercase tracking-wider block">Assinatura Eletrônica (Sua Senha):</label>
-                        <input
-                          type="password"
+                        <PinInput
+                          ref={modalPinRef}
                           name="confirmarCautelaPin"
-                          autoComplete="new-password"
-                          maxLength={6}
                           placeholder="••••••"
-                          value={confirmarCautelaPin}
-                          onChange={(e) => setConfirmarCautelaPin(e.target.value.replace(/\D/g, ''))}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              handleEfetivarCautela();
-                            }
-                          }}
+                          onEnter={handleEfetivarCautela}
                           className="w-full bg-slate-955 border border-slate-800 focus:border-cyan-550 p-2.5 text-xs font-mono text-slate-200 focus:outline-none tracking-widest text-center rounded-lg transition-all focus:ring-1 focus:ring-cyan-500/20 text-lg"
                         />
                       </div>
