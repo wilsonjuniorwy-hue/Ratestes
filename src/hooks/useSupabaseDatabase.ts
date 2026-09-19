@@ -2907,6 +2907,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
     isLoading,
     dbError,
     offlineDbError: offlineDb.dbError,
+    obterUsuariosLocal: offlineDb.obterUsuariosLocal,
     isOnline,
     isSyncing,
     filaSincronizacao,

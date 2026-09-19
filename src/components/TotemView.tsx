@@ -8,7 +8,6 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Usuario, Material, Cautela, CautelaItem, AuditoriaLog, SituacaoMilitar } from '../types';
 import { supabase } from '../supabaseClient';
 import { comparePassword, hashSHA256 } from '../utils/crypto';
-import { useOfflineDatabase } from '../hooks/useOfflineDatabase';
 import { formatPostoGraduacaoSigla, POSTOS_GRADUACOES_EXTENSO } from '../utils/rankUtils';
 
 interface QuantityInputProps {
@@ -150,6 +149,7 @@ interface TotemViewProps {
   onResetPermanentMode?: () => void;
   isEmergencyMode?: boolean;
   onResetEmergencyMode?: () => void;
+  obterUsuariosLocal: () => Promise<Usuario[]>;
 }
 
 // ---- SUBCOMPONENTE DE PIN ISOLADO COM REF (ETAPA 3A) ----
@@ -310,9 +310,9 @@ export function TotemView({
   isPermanentMode = false,
   onResetPermanentMode,
   isEmergencyMode = false,
-  onResetEmergencyMode
+  onResetEmergencyMode,
+  obterUsuariosLocal
 }: TotemViewProps) {
-  const offlineDb = useOfflineDatabase();
   const modalPinRef = React.useRef<PinInputHandle>(null);
   const assinaturaPinRef = React.useRef<PinInputHandle>(null);
   const [pinError, setPinError] = React.useState('');
@@ -526,7 +526,7 @@ export function TotemView({
 
       if (!isOnline) {
         console.log('SGBD Offline: Buscando militar localmente...');
-        const usersLocal = await offlineDb.obterUsuariosLocal();
+        const usersLocal = await obterUsuariosLocal();
         const found = usersLocal.find(u => u.matricula === matriculaNorm);
         if (!found) {
           setAuthError('Matrícula não encontrada localmente no SGBD.');

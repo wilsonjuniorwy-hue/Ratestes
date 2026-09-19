@@ -490,6 +490,7 @@ export default function FlowSimulator({
             cadastrarSenha={db.cadastrarSenha}
             processEfetivarCautela={db.processEfetivarCautela}
             cadastrarPolicial={db.cadastrarPolicial}
+            obterUsuariosLocal={db.obterUsuariosLocal}
             isPermanentMode={isPermanentMode}
             onResetPermanentMode={onResetPermanentMode}
             isEmergencyMode={isEmergencyMode}
