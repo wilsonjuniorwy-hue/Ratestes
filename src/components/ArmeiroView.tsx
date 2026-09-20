@@ -143,20 +143,6 @@ export function ArmeiroView({
     setConsumedQuantities({});
   }, [returnCautelaId]);
 
-  const getDisponivelQty = (mat: Material) => {
-    if (!mat.controle_quantidade) {
-      return mat.status_atual === 'disponivel' ? 1 : 0;
-    }
-    const total = mat.quantidade || 0;
-    const activeQty = cautelaItens
-      .filter(ci => {
-        const c = cautelas.find(caut => caut.id_cautela === ci.id_cautela);
-        return ci.id_material === mat.id_material && c && (c.status_cautela === 'ativa' || c.status_cautela === 'atrasada' || c.status_cautela === 'prorrogada') && !ci.estado_devolucao;
-      })
-      .reduce((sum, ci) => sum + ci.quantidade, 0);
-    return Math.max(0, total - activeQty);
-  };
-
   // ---- CADASTRO DE NOVO POLICIAL MILITAR ----
   const handleCadastrarPolicialSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
