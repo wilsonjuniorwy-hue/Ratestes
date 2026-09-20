@@ -244,14 +244,25 @@ export function BancoDadosView({
   const [editUserNomeUsuario, setEditUserNomeUsuario] = useState('');
   const [editUserError, setEditUserError] = useState('');
 
+  // Memoização do total cautelado por material para consulta O(1) no estoque
+  const somaCauteladaPorMaterial = useMemo(() => {
+    const cautelasAtivasIds = new Set(
+      cautelas.filter(c => c.status_cautela !== 'devolvida').map(c => c.id_cautela)
+    );
+    const mapa = new Map<string, number>();
+    for (const ci of cautelaItens) {
+      if (!ci.estado_devolucao && cautelasAtivasIds.has(ci.id_cautela)) {
+        const atual = mapa.get(ci.id_material) || 0;
+        mapa.set(ci.id_material, atual + ci.quantidade);
+      }
+    }
+    return mapa;
+  }, [cautelas, cautelaItens]);
+
   // Helper para obter quantidade disponível de itens de controle_quantidade
   const getQuantidadeDisponivel = (mat: Material) => {
     if (!mat.controle_quantidade) return null;
-    const cautelasAtivasIds = new Set(cautelas.filter(c => c.status_cautela !== 'devolvida').map(c => c.id_cautela));
-    const totalCautelado = cautelaItens
-      .filter(ci => ci.id_material === mat.id_material && !ci.estado_devolucao && cautelasAtivasIds.has(ci.id_cautela))
-      .reduce((sum, item) => sum + item.quantidade, 0);
-    return Math.max(0, (mat.quantidade || 0) - totalCautelado);
+    return Math.max(0, (mat.quantidade || 0) - (somaCauteladaPorMaterial.get(mat.id_material) || 0));
   };
 
   const getValidadeStatus = (dataValidade: string | undefined): { label: string; style: string } | null => {
