@@ -743,113 +743,117 @@ export default function FlowSimulator({
       `}} />
 
       {/* ÁREA DE IMPRESSÃO - CAUTELAS */}
-      <div id="print-area-cautelas">
-        <h2>Relatório Geral de Cautelas - PMDF</h2>
-        <div className="print-meta">
-          Gerado em: {new Date().toLocaleString()}
-        </div>
-        <table>
-          <thead>
-            <tr>
-              <th style={{ width: '12%' }}>Código Guia</th>
-              <th style={{ width: '25%' }}>Policial</th>
-              <th style={{ width: '28%' }}>Itens Cautelados</th>
-              <th style={{ width: '15%' }}>Retirada</th>
-              <th style={{ width: '15%' }}>Devolução</th>
-              <th style={{ width: '10%' }}>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {db.cautelas.map(c => {
-              const pol = db.usuarios.find(u => u.matricula === c.matricula_policial);
-              const cItens = db.cautelaItens.filter(ci => ci.id_cautela === c.id_cautela);
-              return (
-                <tr key={c.id_cautela}>
-                  <td>{c.id_cautela}</td>
-                  <td>
-                    {formatPostoGraduacaoSigla(pol?.posto_graduacao)} {pol?.nome_de_guerra || pol?.nome} ({limparMatricula(c.matricula_policial)})
-                  </td>
-                  <td>
-                    {cItens.map(ci => {
-                      const matItem = db.materiais.find(m => m.id_material === ci.id_material);
-                      return `${matItem?.modelo} (S/N: ${ci.id_material})`;
-                    }).join(', ')}
-                  </td>
-                  <td>
-                    <div>{new Date(c.data_retirada).toLocaleDateString('pt-BR')} {new Date(c.data_retirada).toLocaleTimeString('pt-BR')}</div>
-                    <div style={{ fontWeight: 'bold', fontSize: '7.5pt', marginTop: '2px' }}>
-                      {c.is_emergencial ? 'Autorizado emergencialmente' : 'Assinado eletronicamente'}
-                    </div>
-                  </td>
-                  <td>
-                    {c.data_devolucao_efetiva ? (
-                      <>
-                        <div>{new Date(c.data_devolucao_efetiva).toLocaleDateString('pt-BR')} {new Date(c.data_devolucao_efetiva).toLocaleTimeString('pt-BR')}</div>
-                        <div style={{ fontWeight: 'bold', fontSize: '7.5pt', marginTop: '2px' }}>
-                          Assinado eletronicamente
-                        </div>
-                        {c.matricula_armeiro_devolucao && (
-                          <div style={{ fontSize: '7.5pt', color: '#333' }}>
-                            Matrícula: {limparMatricula(c.matricula_armeiro_devolucao)}
+      {printMode === 'cautelas' && (
+        <div id="print-area-cautelas">
+          <h2>Relatório Geral de Cautelas - PMDF</h2>
+          <div className="print-meta">
+            Gerado em: {new Date().toLocaleString()}
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th style={{ width: '12%' }}>Código Guia</th>
+                <th style={{ width: '25%' }}>Policial</th>
+                <th style={{ width: '28%' }}>Itens Cautelados</th>
+                <th style={{ width: '15%' }}>Retirada</th>
+                <th style={{ width: '15%' }}>Devolução</th>
+                <th style={{ width: '10%' }}>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {db.cautelas.map(c => {
+                const pol = db.usuarios.find(u => u.matricula === c.matricula_policial);
+                const cItens = db.cautelaItens.filter(ci => ci.id_cautela === c.id_cautela);
+                return (
+                  <tr key={c.id_cautela}>
+                    <td>{c.id_cautela}</td>
+                    <td>
+                      {formatPostoGraduacaoSigla(pol?.posto_graduacao)} {pol?.nome_de_guerra || pol?.nome} ({limparMatricula(c.matricula_policial)})
+                    </td>
+                    <td>
+                      {cItens.map(ci => {
+                        const matItem = db.materiais.find(m => m.id_material === ci.id_material);
+                        return `${matItem?.modelo} (S/N: ${ci.id_material})`;
+                      }).join(', ')}
+                    </td>
+                    <td>
+                      <div>{new Date(c.data_retirada).toLocaleDateString('pt-BR')} {new Date(c.data_retirada).toLocaleTimeString('pt-BR')}</div>
+                      <div style={{ fontWeight: 'bold', fontSize: '7.5pt', marginTop: '2px' }}>
+                        {c.is_emergencial ? 'Autorizado emergencialmente' : 'Assinado eletronicamente'}
+                      </div>
+                    </td>
+                    <td>
+                      {c.data_devolucao_efetiva ? (
+                        <>
+                          <div>{new Date(c.data_devolucao_efetiva).toLocaleDateString('pt-BR')} {new Date(c.data_devolucao_efetiva).toLocaleTimeString('pt-BR')}</div>
+                          <div style={{ fontWeight: 'bold', fontSize: '7.5pt', marginTop: '2px' }}>
+                            Assinado eletronicamente
                           </div>
-                        )}
-                      </>
-                    ) : (
-                      <span style={{ fontStyle: 'italic' }}>Em aberto</span>
-                    )}
-                  </td>
-                  <td>{c.status_cautela.toUpperCase()}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        {renderSignatureFooter(activeArmeiroMatricula, 'Armeiro Responsável')}
-      </div>
+                          {c.matricula_armeiro_devolucao && (
+                            <div style={{ fontSize: '7.5pt', color: '#333' }}>
+                              Matrícula: {limparMatricula(c.matricula_armeiro_devolucao)}
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <span style={{ fontStyle: 'italic' }}>Em aberto</span>
+                      )}
+                    </td>
+                    <td>{c.status_cautela.toUpperCase()}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {renderSignatureFooter(activeArmeiroMatricula, 'Armeiro Responsável')}
+        </div>
+      )}
 
       {/* ÁREA DE IMPRESSÃO - LOGS */}
-      <div id="print-area-logs">
-        <h2>Trilha de Auditoria Forense - PMDF</h2>
-        <div className="print-meta">
-          Gerado em: {new Date().toLocaleString()} | Filtro de Data: {printLogDate ? new Date(printLogDate + 'T00:00:00').toLocaleDateString() : 'Todos os registros'}
+      {printMode === 'logs' && (
+        <div id="print-area-logs">
+          <h2>Trilha de Auditoria Forense - PMDF</h2>
+          <div className="print-meta">
+            Gerado em: {new Date().toLocaleString()} | Filtro de Data: {printLogDate ? new Date(printLogDate + 'T00:00:00').toLocaleDateString() : 'Todos os registros'}
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th style={{ width: '15%' }}>Data/Hora</th>
+                <th style={{ width: '15%' }}>Evento</th>
+                <th style={{ width: '15%' }}>Executor</th>
+                <th style={{ width: '45%' }}>Detalhes do Evento</th>
+                <th style={{ width: '10%' }}>ID Log</th>
+              </tr>
+            </thead>
+            <tbody>
+              {db.auditoriaLogs
+                .filter(log => {
+                  if (printLogDate) {
+                    const dateVal = new Date(log.data_hora).toISOString().split('T')[0];
+                    return dateVal === printLogDate;
+                  }
+                  return true;
+                })
+                .map(log => (
+                  <tr key={log.id_log}>
+                    <td>{new Date(log.data_hora).toLocaleDateString()} {new Date(log.data_hora).toLocaleTimeString()}</td>
+                    <td>{log.tipo_evento.toUpperCase().replace('_', ' ')}</td>
+                     <td>
+                      {(() => {
+                        const exec = db.usuarios.find(u => u.matricula === log.matricula_executor);
+                        return exec ? `${formatPostoGraduacaoSigla(exec.posto_graduacao)} ${exec.nome_de_guerra || exec.nome} (${limparMatricula(log.matricula_executor)})` : limparMatricula(log.matricula_executor);
+                      })()}
+                    </td>
+                    <td>{log.detalhes}</td>
+                    <td>{log.id_log}</td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+          {renderSignatureFooter(activeArmeiroMatricula, 'Armeiro Responsável')}
         </div>
-        <table>
-          <thead>
-            <tr>
-              <th style={{ width: '15%' }}>Data/Hora</th>
-              <th style={{ width: '15%' }}>Evento</th>
-              <th style={{ width: '15%' }}>Executor</th>
-              <th style={{ width: '45%' }}>Detalhes do Evento</th>
-              <th style={{ width: '10%' }}>ID Log</th>
-            </tr>
-          </thead>
-          <tbody>
-            {db.auditoriaLogs
-              .filter(log => {
-                if (printLogDate) {
-                  const dateVal = new Date(log.data_hora).toISOString().split('T')[0];
-                  return dateVal === printLogDate;
-                }
-                return true;
-              })
-              .map(log => (
-                <tr key={log.id_log}>
-                  <td>{new Date(log.data_hora).toLocaleDateString()} {new Date(log.data_hora).toLocaleTimeString()}</td>
-                  <td>{log.tipo_evento.toUpperCase().replace('_', ' ')}</td>
-                   <td>
-                    {(() => {
-                      const exec = db.usuarios.find(u => u.matricula === log.matricula_executor);
-                      return exec ? `${formatPostoGraduacaoSigla(exec.posto_graduacao)} ${exec.nome_de_guerra || exec.nome} (${limparMatricula(log.matricula_executor)})` : limparMatricula(log.matricula_executor);
-                    })()}
-                  </td>
-                  <td>{log.detalhes}</td>
-                  <td>{log.id_log}</td>
-                </tr>
-              ))}
-          </tbody>
-        </table>
-        {renderSignatureFooter(activeArmeiroMatricula, 'Armeiro Responsável')}
-      </div>
+      )}
 
       {/* ÁREA DE IMPRESSÃO - OCORRÊNCIA INDIVIDUAL */}
       {selectedOcorrenciaPrint && (
