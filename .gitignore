@@ -13,3 +13,4 @@ coverage/
 *.key
 *.key.pub
 
+test-results/
