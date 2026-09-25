@@ -151,6 +151,31 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
   const [isLoading, setIsLoading] = useState(enabled);
   const [dbError, setDbError] = useState<string | null>(null);
 
+  // Auditoria 2026 (passo C1): os dados só são carregados DEPOIS do login.
+  // "enabled" = dispositivo autorizado E usuário logado (definido no App.tsx).
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
+  const [dadosCarregados, setDadosCarregados] = useState(false);
+
+  // Ao sair (logout) ou antes do login: limpa da memória tudo o que foi carregado
+  useEffect(() => {
+    if (enabled) return;
+    setUsuarios([]);
+    setMateriais([]);
+    setCategorias([]);
+    setCautelas([]);
+    setCautelaItens([]);
+    setAuditoriaLogs([]);
+    setOcorrencias([]);
+    setModelosArmas([]);
+    setArmasParticulares([]);
+    setPendenciasServico([]);
+    setQuarteis([]);
+    setDbError(null);
+    setIsLoading(false);
+    setDadosCarregados(false);
+  }, [enabled]);
+
   // Monitorar status de internet
   useEffect(() => {
     const handleOnline = () => {
@@ -189,6 +214,9 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
           offlineDb.obterCautelasLocal(),
           offlineDb.obterCautelaItensLocal()
         ]);
+
+        // Saiu do sistema enquanto carregava: não mostra nada
+        if (!enabledRef.current) return;
         
         const mappedUsers = localUsers.map(u => ({ ...u, senha_hash: '' } as Usuario));
         setUsuarios(mappedUsers);
@@ -313,6 +341,9 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
       ]);
 
       console.log('SGBD: Todas as queries paralelas paginadas finalizadas com sucesso.');
+
+      // Saiu do sistema enquanto carregava: não mostra nem grava nada
+      if (!enabledRef.current) return;
 
       let mappedUsers = (users || []).map(u => ({ ...u, senha_hash: '' } as Usuario));
       if (activeArmeiroMatricula && activeArmeiroMatricula.trim().toUpperCase() === 'ADMIN') {
@@ -466,51 +497,6 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
       setPendenciasServico(dbPendencias || []);
       setQuarteis(quarteisData || []);
 
-      // Auto-seeding do usuário armeiro se não existir na base de dados (com migração de caixa)
-      const userList = users || [];
-      const exactArmeiro = userList.find(u => u.matricula === 'ARMEIRO');
-      const lowerArmeiro = userList.find(u => u.matricula === 'armeiro');
-
-      if (lowerArmeiro) {
-        console.log('SGBD: Corrigindo matrícula do armeiro para maiúsculas (ARMEIRO)...');
-        supabase.from('usuarios').delete().eq('matricula', 'armeiro').then(() => {
-          const armeiroData = {
-            matricula: 'ARMEIRO',
-            nome: 'Totem de Atendimento',
-            nome_de_guerra: 'Totem',
-            senha_hash: '5fac61b0fd803321c5831cd12a21649522595554c8a508bd42d4a1b4f09eab36',
-            perfil: 'armeiro_gestor',
-            posto_graduacao: 'Totem',
-            situacao_cautela: 'apto',
-            data_ultimo_teste_psicologico: '2026-05-31'
-          };
-          supabase.from('usuarios').insert(armeiroData).then(({ error }) => {
-            if (error) console.error('SGBD Erro ao migrar armeiro:', error);
-            fetchData(true);
-          });
-        });
-      } else if (!exactArmeiro) {
-        console.log('SGBD: Usuário "ARMEIRO" não encontrado. Criando em segundo plano...');
-        const armeiroData = {
-          matricula: 'ARMEIRO',
-          nome: 'Totem de Atendimento',
-          nome_de_guerra: 'Totem',
-          senha_hash: '5fac61b0fd803321c5831cd12a21649522595554c8a508bd42d4a1b4f09eab36',
-          perfil: 'armeiro_gestor',
-          posto_graduacao: 'Totem',
-          situacao_cautela: 'apto',
-          data_ultimo_teste_psicologico: '2026-05-31'
-        };
-        supabase.from('usuarios').insert(armeiroData).then(({ error }) => {
-          if (error) {
-            console.error('SGBD Erro: Falha ao inserir armeiro automático:', error);
-          } else {
-            console.log('SGBD: Usuário "ARMEIRO" criado com sucesso!');
-            fetchData(true);
-          }
-        });
-      }
-      
       // Salvar no cache offline local
       if (offlineDb.isDbReady) {
         console.log('SGBD Offline: Atualizando cache local SQLite com novos dados online...');
@@ -525,6 +511,7 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
     } finally {
       if (!isSilent) setIsLoading(false);
       isFetchingRef.current = false;
+      if (enabledRef.current) setDadosCarregados(true);
     }
   };
 
@@ -2792,10 +2779,11 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
   };
 
   useEffect(() => {
-    if (isOnline && offlineDb.isDbReady) {
+    // Só envia a fila de pendências offline depois do login (C1)
+    if (enabled && isOnline && offlineDb.isDbReady) {
       processarFilaSincronizacao();
     }
-  }, [isOnline, offlineDb.isDbReady]);
+  }, [enabled, isOnline, offlineDb.isDbReady]);
 
   // ---- ISOLAMENTO DE DADOS MULTI-QUARTEL NO FRONTEND (DUPLA CAMADA) ----
   // Se o quartelId estiver ativo, limitamos os dados apenas ao quartel do armeiro/painel selecionado.
@@ -2904,7 +2892,8 @@ export function useSupabaseDatabase(activeArmeiroMatricula?: string, quartelId?:
     fetchQuarteis,
     criarQuartel,
     toggleQuartelAtivo,
-    isLoading,
+    // Enquanto a primeira carga depois do login não termina, conta como "carregando"
+    isLoading: isLoading || (enabled && !dadosCarregados),
     dbError,
     offlineDbError: offlineDb.dbError,
     obterUsuariosLocal: offlineDb.obterUsuariosLocal,

@@ -24,7 +24,7 @@ export default function App() {
   });
   const [authenticatedArmeiro, setAuthenticatedArmeiro] = useState<Usuario | null>(() => {
     const saved = sessionStorage.getItem('authenticatedArmeiro');
-    return saved ? JSON.parse(saved) : null;
+    return saved ? { ...JSON.parse(saved), senha_hash: '' } : null;
   });
   const [quartelAtivo, setQuartelAtivo] = useState<Quartel | null>(() => {
     const saved = sessionStorage.getItem('quartelAtivo');
@@ -42,10 +42,12 @@ export default function App() {
   const [bypassCode, setBypassCode] = useState<string>('');
   const [bypassError, setBypassError] = useState<string>('');
 
-  const db = useSupabaseDatabase(activeArmeiroMatricula, quartelAtivo?.id ?? null, tauriStatus === 'authorized');
-
   const [activeSession, setActiveSession] = useState<any>(null);
   const [authChecked, setAuthChecked] = useState(false);
+
+  // Auditoria 2026 (passo C1): os dados do sistema só são carregados depois do login
+  const dadosLiberados = tauriStatus === 'authorized' && authChecked && !!activeSession && !!authenticatedArmeiro;
+  const db = useSupabaseDatabase(activeArmeiroMatricula, quartelAtivo?.id ?? null, dadosLiberados);
 
   useEffect(() => {
     // Check initial session
@@ -80,7 +82,7 @@ export default function App() {
         try {
           const { data: dbUser, error } = await supabase
             .from('usuarios')
-            .select('*')
+            .select('matricula, nome, nome_de_guerra, perfil, posto_graduacao, situacao_cautela, data_ultimo_teste_psicologico, motivo_suspensao, auth_user_id, id_quartel, tentativas_login, bloqueado_ate, assinatura_foto, nome_usuario')
             .eq('auth_user_id', userUuid)
             .is('deletado_em', null)
             .single();
@@ -88,10 +90,11 @@ export default function App() {
           if (!active) return;
 
           if (!error && dbUser && dbUser.perfil !== 'policial') {
-            setAuthenticatedArmeiro(dbUser);
+            const usuarioSemSenha = { ...dbUser, senha_hash: '' } as Usuario;
+            setAuthenticatedArmeiro(usuarioSemSenha);
             setActiveArmeiroMatricula(dbUser.matricula);
             sessionStorage.setItem('activeArmeiroMatricula', dbUser.matricula);
-            sessionStorage.setItem('authenticatedArmeiro', JSON.stringify(dbUser));
+            sessionStorage.setItem('authenticatedArmeiro', JSON.stringify(usuarioSemSenha));
 
             // Restaurar o quartelAtivo se não estiver no sessionStorage mas estiver no dbUser
             if (dbUser.perfil === 'armeiro_gestor' && dbUser.id_quartel) {
@@ -447,10 +450,11 @@ export default function App() {
         <LoginPortal 
           updater={updater}
           onLoginSuccess={(user, quartel) => {
-            setAuthenticatedArmeiro(user);
+            const usuarioSemSenha = { ...user, senha_hash: '' };
+            setAuthenticatedArmeiro(usuarioSemSenha);
             setActiveArmeiroMatricula(user.matricula);
             sessionStorage.setItem('activeArmeiroMatricula', user.matricula);
-            sessionStorage.setItem('authenticatedArmeiro', JSON.stringify(user));
+            sessionStorage.setItem('authenticatedArmeiro', JSON.stringify(usuarioSemSenha));
             sessionStorage.removeItem('logging_in');
             db.registrarLogAuditoria(
               user.matricula,
@@ -468,7 +472,6 @@ export default function App() {
               sessionStorage.setItem('rota', 'sistema');
             }
           }}
-          cadastrarSenha={db.cadastrarSenha}
           quarteis={db.quarteis.length > 0 ? db.quarteis : []}
         />
       )}

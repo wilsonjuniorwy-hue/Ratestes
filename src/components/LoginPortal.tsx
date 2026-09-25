@@ -8,21 +8,17 @@ import { Shield, KeyRound, ShieldAlert, CheckCircle, RefreshCw, Eye, EyeOff, Bui
 import { motion } from 'motion/react';
 import { Usuario, Quartel } from '../types';
 import { supabase, obterAmbienteAtual, alterarAmbiente } from '../supabaseClient';
-import { comparePassword, hashSHA256 } from '../utils/crypto';
-import { formatPostoGraduacaoSigla, formatMatriculaExibicao } from '../utils/rankUtils';
 import { useAppUpdater } from '../hooks/useAppUpdater';
 import packageJson from '../../package.json';
 
 interface LoginPortalProps {
   onLoginSuccess: (usuario: Usuario, quartel: Quartel | null) => void;
-  cadastrarSenha: (matricula: string, novaSenha: string) => void;
   quarteis: Quartel[];
   updater?: ReturnType<typeof useAppUpdater>;
 }
 
 export default function LoginPortal({
   onLoginSuccess,
-  cadastrarSenha,
   quarteis,
   updater: externalUpdater
 }: LoginPortalProps) {
@@ -69,7 +65,7 @@ export default function LoginPortal({
   };
 
   // ---- FLUXO DA TELA ----
-  const [step, setStep] = useState<'login' | 'primeiro_acesso' | 'sucesso'>('login');
+  const [step, setStep] = useState<'login' | 'sucesso'>('login');
   const [selectedQuartel, setSelectedQuartel] = useState<Quartel | null>(null);
   const [isAdminLogin, setIsAdminLogin] = useState(false);
   
@@ -79,18 +75,38 @@ export default function LoginPortal({
   const [showSenha, setShowSenha] = useState(false);
   const [authError, setAuthError] = useState('');
   
-  // ---- ESTADOS DO PRIMEIRO ACESSO ----
-  const [newSenha, setNewSenha] = useState('');
-  const [confirmNewSenha, setConfirmNewSenha] = useState('');
-  const [primeiroAcessoUser, setPrimeiroAcessoUser] = useState<Usuario | null>(null);
-  
   // ---- ESTADOS DE CARREGAMENTO ----
   const [isAuthenticating, setIsAuthenticating] = useState(false);
 
+  // ---- LISTA DE QUARTÉIS DO LOGIN (consulta própria; não depende dos dados do sistema) ----
+  const [quarteisLogin, setQuarteisLogin] = useState<Quartel[]>([]);
+
+  useEffect(() => {
+    let ativo = true;
+    supabase
+      .from('quarteis')
+      .select('id, slug, nome, ativo, criado_em')
+      .is('deletado_em', null)
+      .eq('ativo', true)
+      .order('nome', { ascending: true })
+      .then(({ data, error }) => {
+        if (!ativo) return;
+        if (error) {
+          console.error('Erro ao carregar a lista de quartéis do login:', error);
+          return;
+        }
+        setQuarteisLogin((data as Quartel[]) || []);
+      });
+    return () => { ativo = false; };
+  }, []);
+
+  // Usa a lista própria; enquanto ela não chega, usa a lista recebida do App
+  const listaQuarteis = quarteisLogin.length > 0 ? quarteisLogin : quarteis;
+
   // Seleciona o RPMON (ou a Cavalaria) por padrão ao iniciar
   useEffect(() => {
-    if (quarteis && quarteis.length > 0 && !selectedQuartel && !isAdminLogin) {
-      const cavalaria = quarteis.find(
+    if (listaQuarteis && listaQuarteis.length > 0 && !selectedQuartel && !isAdminLogin) {
+      const cavalaria = listaQuarteis.find(
         q => q.slug.includes('cavalaria') || 
              q.nome.toLowerCase().includes('cavalaria') || 
              q.nome.toLowerCase().includes('rpmon')
@@ -98,12 +114,16 @@ export default function LoginPortal({
       if (cavalaria) {
         setSelectedQuartel(cavalaria);
       } else {
-        setSelectedQuartel(quarteis[0]);
+        setSelectedQuartel(listaQuarteis[0]);
       }
     }
-  }, [quarteis, selectedQuartel, isAdminLogin]);
+  }, [listaQuarteis, selectedQuartel, isAdminLogin]);
 
   // ---- SUBMIT DO LOGIN ----
+  // Auditoria 2026 (passo B2): a tela NÃO lê mais a tabela usuarios antes do login.
+  // Ela pergunta ao "balcão de informações" fn_login_buscar_usuario, que devolve só
+  // o necessário e NUNCA a senha. O cadastro completo só é lido DEPOIS do login,
+  // já com a conta autenticada. Não existe mais conferência de senha no computador.
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
@@ -111,445 +131,237 @@ export default function LoginPortal({
 
     const inputClean = matricula.trim().toUpperCase();
     const senhaNorm = senha.trim();
+    let entrouNoAuth = false;
+
+    // Encerra a tentativa mostrando uma mensagem (e sai da conta, se já tiver entrado)
+    const falhar = async (mensagem: string) => {
+      if (entrouNoAuth) {
+        try {
+          await supabase.auth.signOut();
+        } catch (signOutErr) {
+          console.error('Erro ao encerrar a sessão após falha no login:', signOutErr);
+        }
+      }
+      sessionStorage.removeItem('logging_in');
+      setAuthError(mensagem);
+      setIsAuthenticating(false);
+    };
+
+    const ehLimiteDeTentativas = (err: any) => {
+      if (!err) return false;
+      const msg = String(err.message || '').toLowerCase();
+      return err.status === 429 || msg.includes('rate limit') || msg.includes('exceeded');
+    };
 
     try {
-      // 1. Consultar a tabela usuarios para obter informações básicas (por matrícula limpa, por matrícula ARM- ou por nome_usuario)
-      let user: Usuario | null = null;
-      const cleanMat = formatMatriculaExibicao(inputClean);
+      // 1. Perguntar ao "balcão de informações" (não devolve senha; só armeiros e admins)
+      const { data: infoRows, error: infoError } = await supabase.rpc('fn_login_buscar_usuario', {
+        p_login: inputClean
+      });
 
-      // Tenta por matrícula exata (inputClean)
-      let { data: userFound } = await supabase
-        .from('usuarios')
-        .select('*')
-        .eq('matricula', inputClean)
-        .is('deletado_em', null)
-        .maybeSingle();
-
-      // Tenta com o prefixo de armeiro (ARM-...)
-      if (!userFound && cleanMat) {
-        const { data: userByArm } = await supabase
-          .from('usuarios')
-          .select('*')
-          .eq('matricula', `ARM-${cleanMat}`)
-          .is('deletado_em', null)
-          .maybeSingle();
-        if (userByArm) userFound = userByArm;
-      }
-
-      // Tenta com o prefixo antigo de armeiro (A...)
-      if (!userFound && cleanMat) {
-        const { data: userByA } = await supabase
-          .from('usuarios')
-          .select('*')
-          .eq('matricula', `A${cleanMat}`)
-          .is('deletado_em', null)
-          .maybeSingle();
-        if (userByA) userFound = userByA;
-      }
-
-      // Se não encontrou por matrícula, tenta por nome_usuario
-      if (!userFound) {
-        const { data: userByNome } = await supabase
-          .from('usuarios')
-          .select('*')
-          .ilike('nome_usuario', inputClean)
-          .is('deletado_em', null)
-          .maybeSingle();
-        if (userByNome) userFound = userByNome;
-      }
-
-      user = userFound;
-
-      if (!user) {
-        setAuthError('Usuário ou Matrícula funcional não encontrada no SGBD.');
-        setIsAuthenticating(false);
+      if (infoError) {
+        console.error('Erro ao consultar fn_login_buscar_usuario:', infoError);
+        await falhar('Falha de conexão com o SGBD.');
         return;
       }
 
-      const matriculaNorm = user.matricula;
+      const info: any = Array.isArray(infoRows) ? infoRows[0] : infoRows;
 
-      // Validar se é primeiro acesso (senha em branco)
-      // Se não tiver auth_user_id ou senha_hash, é primeiro acesso
-      if ((user.senha_hash === '' || !user.senha_hash) && !user.auth_user_id) {
-        setPrimeiroAcessoUser(user);
-        setStep('primeiro_acesso');
-        setIsAuthenticating(false);
+      if (!info || !info.matricula) {
+        await falhar('Usuário não encontrado ou sem acesso a este terminal (exclusivo para Armeiros Gestores e Administradores).');
         return;
       }
 
-      // Validar se o usuário é admin
-      if (user.perfil === 'admin') {
-        const { data: authData, error: authErr } = await supabase.auth.signInWithPassword({
-          email: `${matriculaNorm.toLowerCase()}@admin.pm`,
-          password: senhaNorm,
-        });
-        if (authErr) {
-          // Fallback para admin caso dê rate limit
-          if (authErr.message.includes('rate limit') || authErr.message.includes('exceeded') || authErr.status === 429) {
-            const hashedInput = await hashSHA256(senhaNorm);
-            const { data: dbAdmin } = await supabase
-              .from('usuarios')
-              .select('senha_hash')
-              .eq('matricula', matriculaNorm)
-              .is('deletado_em', null)
-              .single();
-              
-            if (dbAdmin && dbAdmin.senha_hash === hashedInput) {
-              console.warn('Autenticação local realizada para Admin devido a rate limit no Auth.');
-              setStep('sucesso');
-              setTimeout(() => { onLoginSuccess(user, null); }, 1000);
-              return;
-            }
+      const matriculaNorm: string = info.matricula;
+      const ehAdmin = info.perfil === 'admin';
+
+      if (!ehAdmin && info.perfil !== 'armeiro_gestor') {
+        await falhar('Acesso restrito. Este terminal é exclusivo para Armeiros Gestores e Administradores.');
+        return;
+      }
+
+      // 2. Conferências do armeiro antes de tentar a senha (bloqueio e quartel)
+      const quartelEscolhido: Quartel | null = ehAdmin ? null : selectedQuartel;
+
+      if (!ehAdmin) {
+        if (info.bloqueado_ate) {
+          const bloqueadoAteDate = new Date(info.bloqueado_ate);
+          if (bloqueadoAteDate > new Date()) {
+            const mins = Math.ceil((bloqueadoAteDate.getTime() - Date.now()) / (60 * 1000));
+            await falhar(`Usuário temporariamente bloqueado por 5 tentativas incorretas. Tente em ${mins} min ou contate o Admin.`);
+            return;
           }
-          sessionStorage.removeItem('logging_in');
-          setAuthError('Matrícula funcional não encontrada no SGBD.');
-          setIsAuthenticating(false);
+        }
+
+        if (!quartelEscolhido) {
+          await falhar('Selecione o quartel antes de fazer login.');
           return;
         }
 
-        // Se o admin foi autenticado com sucesso no Auth, mas seu auth_user_id no banco ainda não está vinculado, vinculamos agora usando a RPC (SECURITY DEFINER)
-        if (authData.user && user.auth_user_id !== authData.user.id) {
-          const { error: linkErr } = await supabase.rpc('vincular_usuario_auth', {
-            p_matricula: matriculaNorm,
-            p_auth_id: authData.user.id
-          });
-          
-          if (linkErr) {
-            console.error('Erro ao vincular auth_user_id do admin:', linkErr);
-          } else {
-            console.log('Vinculo de auth_user_id do admin realizado com sucesso!');
-            user.auth_user_id = authData.user.id;
-          }
-        }
-
-        setStep('sucesso');
-        setTimeout(() => { onLoginSuccess(user, null); }, 1000);
-        return;
-      }
-
-      // Validar se é armeiro
-      if (user.perfil !== 'armeiro_gestor') {
-        setAuthError('Acesso restrito. Este terminal é exclusivo para Armeiros Gestores e Administradores.');
-        setIsAuthenticating(false);
-        return;
-      }
-
-      // Verificar se o usuário está temporariamente bloqueado por brute-force
-      if (user.bloqueado_ate) {
-        const bloqueadoAteDate = new Date(user.bloqueado_ate);
-        if (bloqueadoAteDate > new Date()) {
-          const mins = Math.ceil((bloqueadoAteDate.getTime() - Date.now()) / (60 * 1000));
-          setAuthError(`Usuário temporariamente bloqueado por 5 tentativas incorretas. Tente em ${mins} min ou contate o Admin.`);
-          setIsAuthenticating(false);
+        if (info.id_quartel && info.id_quartel !== quartelEscolhido.id) {
+          await falhar('Acesso negado. Sua matrícula está vinculada a outro quartel.');
           return;
         }
       }
 
-      // Verificar se um quartel foi selecionado
-      if (!selectedQuartel) {
-        setAuthError('Selecione o quartel antes de fazer login.');
-        setIsAuthenticating(false);
-        return;
-      }
-
-      // Validar se o armeiro pertence ao quartel selecionado (apenas se tiver quartel explícito)
-      if (user.id_quartel && user.id_quartel !== selectedQuartel.id) {
-        setAuthError('Acesso negado. Sua matrícula está vinculada a outro quartel.');
-        setIsAuthenticating(false);
-        return;
-      }
-
-      // Auto-vínculo para armeiro sem id_quartel (registros legados)
-      if (!user.id_quartel && selectedQuartel?.id) {
-        console.log('SGBD: Auto-vinculando armeiro ao quartel selecionado:', selectedQuartel.nome);
-        supabase.from('usuarios').update({ id_quartel: selectedQuartel.id }).eq('matricula', matriculaNorm).then(({ error }) => {
-          if (error) console.error('Erro ao autovincular armeiro ao quartel:', error);
-        });
-        user.id_quartel = selectedQuartel.id;
-      }
-
-      // Sinalizar que estamos realizando o fluxo de login manual (para evitar que o listener de auth corte a animação)
+      // Avisa o App que o login está em andamento (evita que ele volte para a tela de login no meio)
       sessionStorage.setItem('logging_in', 'true');
 
-      // 2. Tentar autenticação via Supabase Auth
-      let authData = null;
-      let authError = null;
+      // 3. Tentar a senha no Supabase Auth
+      const emailPrincipal = ehAdmin
+        ? `${matriculaNorm.toLowerCase()}@admin.pm`
+        : `${matriculaNorm.toLowerCase()}@${quartelEscolhido!.slug.toLowerCase()}.pm`;
+
+      let authUserId: string | null = null;
+      let authErr: any = null;
 
       try {
         const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-          email: `${matriculaNorm.toLowerCase()}@${selectedQuartel.slug.toLowerCase()}.pm`,
+          email: emailPrincipal,
           password: senhaNorm,
         });
-        authData = signInData;
-        authError = signInError;
+        authUserId = signInData?.user?.id ?? null;
+        authErr = signInError;
       } catch (err: any) {
-        authError = err;
+        authErr = err;
       }
 
-      // Fallback: se falhar por credenciais incorretas (ou conta não cadastrada no quartel correspondente)
-      // e o quartel selecionado não for a cavalaria, tentar logar usando o domínio cavalaria.pm como contingência
-      // (caso a Edge Function antiga do Supabase na nuvem tenha forçado a criação da conta sob este domínio).
-      if (authError && selectedQuartel.slug.toLowerCase() !== 'cavalaria' && !authError.message?.includes('rate limit')) {
-        console.warn('Login com o domínio do quartel selecionado falhou. Executando fallback com o domínio cavalaria...');
+      // Reserva: contas antigas de armeiro criadas com o domínio cavalaria.pm
+      if (
+        (authErr || !authUserId) &&
+        !ehAdmin &&
+        quartelEscolhido &&
+        quartelEscolhido.slug.toLowerCase() !== 'cavalaria' &&
+        !ehLimiteDeTentativas(authErr)
+      ) {
         try {
           const { data: fbData, error: fbError } = await supabase.auth.signInWithPassword({
             email: `${matriculaNorm.toLowerCase()}@cavalaria.pm`,
             password: senhaNorm,
           });
-          if (!fbError) {
-            authData = fbData;
-            authError = null;
-            console.log('Login com domínio cavalaria (fallback) autenticado com sucesso!');
+          if (!fbError && fbData?.user?.id) {
+            authUserId = fbData.user.id;
+            authErr = null;
           }
         } catch (fbErr) {
-          console.error('Erro no login de fallback cavalaria:', fbErr);
+          console.error('Erro no login de reserva (domínio cavalaria):', fbErr);
         }
       }
 
-      if (authError) {
-        // Caso o usuário não tenha conta criada no Auth (por falha no cadastro/Edge Function),
-        // vamos validar a senha localmente e fazer auto-cadastro automático se a senha bater.
-        if (!user.auth_user_id) {
-          const hashedInput = await hashSHA256(senhaNorm);
-          if (user.senha_hash === hashedInput) {
-            console.log('Detectado armeiro cadastrado sem conta de login ativa no Auth. Efetuando auto-cadastro...');
-            const emailAuth = `${matriculaNorm.toLowerCase()}@${selectedQuartel.slug.toLowerCase()}.pm`;
-            
-            try {
-              const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-                email: emailAuth,
-                password: senhaNorm,
-              });
-
-              if (!signUpError && signUpData.user) {
-                console.log('Auto-cadastro realizado com sucesso para o Armeiro:', matriculaNorm);
-                                // Vincular o auth_user_id no banco de dados usando RPC (SECURITY DEFINER)
-                 const { error: linkErr } = await supabase.rpc('vincular_usuario_auth', {
-                   p_matricula: matriculaNorm,
-                   p_auth_id: signUpData.user.id
-                 });
-                 
-                 if (linkErr) {
-                   console.error('Erro ao vincular auth_user_id do armeiro:', linkErr);
-                 } else {
-                   console.log('Vinculo de auth_user_id do armeiro realizado com sucesso!');
-                   user.auth_user_id = signUpData.user.id;
-                 }
-
-                sessionStorage.removeItem('logging_in');
-                setStep('sucesso');
-                setTimeout(() => {
-                  onLoginSuccess(user, selectedQuartel);
-                }, 1000);
-                return;
-              } else {
-                console.error('Falha ao tentar auto-cadastrar usuário no Auth:', signUpError);
-              }
-            } catch (signUpErr) {
-              console.error('Erro inesperado no auto-cadastro do Auth:', signUpErr);
-            }
-          }
+      if (authErr || !authUserId) {
+        if (ehLimiteDeTentativas(authErr)) {
+          await falhar('Muitas tentativas de login neste momento. Aguarde alguns minutos e tente novamente.');
+          return;
         }
 
-        // Fallback para armeiro caso dê rate limit
-        if (authError.message.includes('rate limit') || authError.message.includes('exceeded') || authError.status === 429) {
-          const hashedInput = await hashSHA256(senhaNorm);
-          const { data: dbUserWithHash } = await supabase
-            .from('usuarios')
-            .select('senha_hash')
-            .eq('matricula', matriculaNorm)
-            .is('deletado_em', null)
-            .single();
-            
-          if (dbUserWithHash && dbUserWithHash.senha_hash === hashedInput) {
-            console.warn('Autenticação local realizada com sucesso devido a rate limit no Auth.');
-            sessionStorage.removeItem('logging_in');
-            setStep('sucesso');
-            setTimeout(() => {
-              onLoginSuccess(user, selectedQuartel);
-            }, 1000);
-            return;
-          }
+        if (!info.tem_conta) {
+          await falhar('Senha incorreta ou acesso ao sistema ainda não ativado. Se for o seu primeiro acesso, procure o administrador.');
+          return;
         }
+
+        if (ehAdmin) {
+          await falhar('Senha de acesso incorreta.');
+          return;
+        }
+
+        // Armeiro: registra a tentativa errada no banco (quem bloqueia é a função do banco)
+        let msgErro = 'Senha de acesso incorreta.';
         try {
           const { data: failResult, error: failErr } = await supabase.rpc('fn_registrar_falha_login', {
             p_matricula: matriculaNorm
           });
           if (failErr) {
-            console.warn('Falha ao chamar RPC fn_registrar_falha_login (tentando fallback direto):', failErr);
-            const novasTentativas = (user.tentativas_login || 0) + 1;
-            let novoBloqueio: string | null = null;
-            if (novasTentativas >= 5) {
-              const d = new Date();
-              d.setMinutes(d.getMinutes() + 15);
-              novoBloqueio = d.toISOString();
-            }
-            supabase.from('usuarios').update({
-              tentativas_login: novasTentativas,
-              bloqueado_ate: novoBloqueio
-            }).eq('matricula', matriculaNorm).then(() => {});
+            console.warn('Falha ao registrar a tentativa de login incorreta:', failErr);
           }
-
-          let msgErro = 'Senha de acesso incorreta ou usuário não cadastrado no Supabase Auth.';
-          if (failResult?.bloqueado || (user.tentativas_login || 0) + 1 >= 5) {
+          const tentativasAgora = (info.tentativas_login || 0) + 1;
+          if ((failResult as any)?.bloqueado || tentativasAgora >= 5) {
             msgErro = 'Usuário bloqueado temporariamente por 15 min devido a 5 tentativas de senha incorretas.';
           }
-          sessionStorage.removeItem('logging_in');
-          setAuthError(msgErro);
-        } catch (rpcCatch) {
-          sessionStorage.removeItem('logging_in');
-          setAuthError('Senha de acesso incorreta ou usuário não cadastrado no Supabase Auth.');
+        } catch (rpcErr) {
+          console.warn('Erro ao chamar fn_registrar_falha_login:', rpcErr);
         }
-        setIsAuthenticating(false);
+        await falhar(msgErro);
         return;
       }
 
-      // Se o usuário foi autenticado com sucesso no Auth, mas seu auth_user_id no banco ainda não está vinculado, vinculamos agora!
-      if (authData.user && user.auth_user_id !== authData.user.id) {
-        await supabase
-          .from('usuarios')
-          .update({ auth_user_id: authData.user.id, tentativas_login: 0, bloqueado_ate: null })
-          .eq('matricula', matriculaNorm);
-        
-        user.auth_user_id = authData.user.id;
-      } else {
-        supabase.from('usuarios').update({
-          tentativas_login: 0,
-          bloqueado_ate: null
-        }).eq('matricula', matriculaNorm).then(({ error }) => {
-          if (error) console.error('Erro ao resetar tentativas de login:', error);
+      // 4. Senha aceita. Daqui em diante tudo é feito já com a conta autenticada.
+      entrouNoAuth = true;
+
+      // 4a. Conta de login ainda não vinculada ao cadastro (ex.: conta criada pelo painel do Supabase)
+      if (!info.tem_conta) {
+        const { error: linkErr } = await supabase.rpc('vincular_usuario_auth', {
+          p_matricula: matriculaNorm,
+          p_auth_id: authUserId
         });
+        if (linkErr) {
+          console.error('Erro ao vincular a conta de login ao cadastro:', linkErr);
+        }
       }
 
-      // Sucesso no login
+      // 4b. Ler o PRÓPRIO cadastro (sem a senha), pela conta que acabou de entrar
+      const { data: cadastro, error: cadastroErr } = await supabase
+        .from('usuarios')
+        .select('matricula, nome, nome_de_guerra, perfil, posto_graduacao, situacao_cautela, data_ultimo_teste_psicologico, motivo_suspensao, auth_user_id, id_quartel, tentativas_login, bloqueado_ate, assinatura_foto, nome_usuario')
+        .eq('auth_user_id', authUserId)
+        .is('deletado_em', null)
+        .maybeSingle();
+
+      if (cadastroErr || !cadastro) {
+        console.error('Cadastro não encontrado para a conta autenticada:', cadastroErr);
+        await falhar('Sua conta de login não está vinculada a este cadastro. Procure o administrador.');
+        return;
+      }
+
+      // 4c. Conferir de novo, agora com o cadastro verdadeiro
+      if (cadastro.matricula !== matriculaNorm || cadastro.perfil !== info.perfil) {
+        await falhar('Os dados da conta de login não conferem com o cadastro. Procure o administrador.');
+        return;
+      }
+
+      if (!ehAdmin && cadastro.id_quartel && cadastro.id_quartel !== quartelEscolhido!.id) {
+        await falhar('Acesso negado. Sua matrícula está vinculada a outro quartel.');
+        return;
+      }
+
+      // 4d. Armeiro antigo sem quartel: vincula ao quartel escolhido (já autenticado)
+      if (!ehAdmin && !cadastro.id_quartel) {
+        const { error: vincQuartelErr } = await supabase
+          .from('usuarios')
+          .update({ id_quartel: quartelEscolhido!.id })
+          .eq('matricula', matriculaNorm);
+        if (vincQuartelErr) {
+          console.error('Erro ao vincular o armeiro ao quartel selecionado:', vincQuartelErr);
+        } else {
+          cadastro.id_quartel = quartelEscolhido!.id;
+        }
+      }
+
+      // 4e. Zerar as tentativas erradas do armeiro
+      if (!ehAdmin && ((info.tentativas_login || 0) > 0 || info.bloqueado_ate)) {
+        const { error: zerarErr } = await supabase
+          .from('usuarios')
+          .update({ tentativas_login: 0, bloqueado_ate: null })
+          .eq('matricula', matriculaNorm);
+        if (zerarErr) {
+          console.error('Erro ao zerar as tentativas de login:', zerarErr);
+        } else {
+          cadastro.tentativas_login = 0;
+          cadastro.bloqueado_ate = null;
+        }
+      }
+
+      // 5. Sucesso (o cadastro segue SEM a senha)
+      const usuarioLogado = { ...cadastro, senha_hash: '' } as Usuario;
       setStep('sucesso');
       setTimeout(() => {
-        onLoginSuccess(user, selectedQuartel);
+        onLoginSuccess(usuarioLogado, ehAdmin ? null : quartelEscolhido);
       }, 1000);
     } catch (err) {
       console.error('Erro de autenticação:', err);
-      sessionStorage.removeItem('logging_in');
-      setAuthError('Falha de conexão com o SGBD.');
-      setIsAuthenticating(false);
+      await falhar('Falha de conexão com o SGBD.');
     }
   };
 
-  // ---- SUBMIT DO PRIMEIRO ACESSO ----
-  const handlePrimeiroAcessoSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAuthError('');
-    setIsAuthenticating(true);
-
-    const newPwdTrim = newSenha.trim();
-    const confirmPwdTrim = confirmNewSenha.trim();
-
-    if (!primeiroAcessoUser) return;
-
-    if (newPwdTrim.length < 4) {
-      setAuthError('A senha deve conter no mínimo 4 dígitos.');
-      setIsAuthenticating(false);
-      return;
-    }
-
-    if (newPwdTrim !== confirmPwdTrim) {
-      setAuthError('A confirmação da nova senha não confere.');
-      setIsAuthenticating(false);
-      return;
-    }
-
-    try {
-      sessionStorage.setItem('logging_in', 'true');
-      const matriculaNorm = primeiroAcessoUser.matricula.toUpperCase();
-      const emailAuth = (primeiroAcessoUser.perfil === 'admin'
-        ? `${matriculaNorm}@admin.pm`
-        : `${matriculaNorm}@${selectedQuartel?.slug || 'cavalaria'}.pm`).toLowerCase();
-
-      let authUserId = null;
-
-      // Criar a conta no Supabase Auth
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: emailAuth,
-        password: newPwdTrim,
-      });
-
-      if (authError) {
-        // Fallback se der rate limit no signUp do Auth
-        if (authError.message.includes('rate limit') || authError.message.includes('exceeded') || authError.status === 429) {
-          console.warn('Supabase Auth rate limit detectado no cadastro. Prosseguindo com ID provisório.');
-          authUserId = `local-${crypto.randomUUID()}`;
-        } else if (
-          authError.message.toLowerCase().includes('already registered') || 
-          authError.message.toLowerCase().includes('already exists') ||
-          authError.status === 422
-        ) {
-          // Usuário já cadastrado no Auth. Vamos tentar logar com essa senha para verificar se ela está correta.
-          console.log('Usuário já registrado no Supabase Auth. Verificando a senha fornecida...');
-          const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-            email: emailAuth,
-            password: newPwdTrim,
-          });
-
-          if (!signInError && signInData.user) {
-            console.log('Senha confere com a conta Auth existente! Vinculando auth_user_id.');
-            authUserId = signInData.user.id;
-          } else {
-            console.warn('Senha incorreta para a conta Auth existente:', signInError?.message);
-            sessionStorage.removeItem('logging_in');
-            setAuthError('Este usuário já possui cadastro no Auth, mas a senha/PIN informada não confere com a registrada anteriormente. Digite a senha correta para vincular.');
-            setIsAuthenticating(false);
-            return;
-          }
-        } else {
-          sessionStorage.removeItem('logging_in');
-          setAuthError(`Erro ao registrar no Auth: ${authError.message}`);
-          setIsAuthenticating(false);
-          return;
-        }
-      } else {
-        authUserId = authData.user?.id;
-      }
-
-      if (!authUserId) {
-        sessionStorage.removeItem('logging_in');
-        setAuthError('Erro ao obter identificador do usuário autenticado.');
-        setIsAuthenticating(false);
-        return;
-      }
-
-      const hashed = await hashSHA256(newPwdTrim);
-
-      // Atualizar no banco
-      const { error: updateError } = await supabase
-        .from('usuarios')
-        .update({ 
-          auth_user_id: authUserId,
-          senha_hash: hashed 
-        })
-        .eq('matricula', matriculaNorm);
-
-      if (updateError) {
-        console.error('Erro ao atualizar usuarios com auth_user_id:', updateError);
-      }
-
-      // Sincronizar senha localmente se o app precisar
-      cadastrarSenha(primeiroAcessoUser.matricula, newPwdTrim);
-
-      // Transitar para sucesso
-      setStep('sucesso');
-      setTimeout(() => {
-        onLoginSuccess({ 
-          ...primeiroAcessoUser, 
-          auth_user_id: authUserId,
-          senha_hash: hashed 
-        }, selectedQuartel);
-      }, 1000);
-    } catch (err) {
-      console.error('Erro no primeiro acesso:', err);
-      sessionStorage.removeItem('logging_in');
-      setAuthError('Falha ao registrar credenciais de primeiro acesso.');
-      setIsAuthenticating(false);
-    }
-  };
 
   return (
     <div 
@@ -599,7 +411,7 @@ export default function LoginPortal({
                   value={selectedQuartel?.id || ''}
                   onChange={(e) => {
                     const val = e.target.value;
-                    const q = quarteis.find(item => item.id === val);
+                    const q = listaQuarteis.find(item => item.id === val);
                     if (q) {
                       setSelectedQuartel(q);
                     }
@@ -607,7 +419,7 @@ export default function LoginPortal({
                   }}
                   className="w-full bg-slate-950/80 border border-slate-800/80 p-3 text-xs font-mono text-slate-205 focus:outline-none focus:ring-1 focus:ring-blue-500/30 rounded-xl cursor-pointer appearance-none pr-10 focus:border-blue-500/40"
                 >
-                  {quarteis.map((q) => (
+                  {listaQuarteis.map((q) => (
                     <option key={q.id} value={q.id} className="bg-slate-900 text-slate-200">
                       {q.nome.toUpperCase()} ({q.slug.toUpperCase() === 'CAVALARIA' ? 'RPMON' : q.slug.toUpperCase()})
                     </option>
@@ -686,80 +498,6 @@ export default function LoginPortal({
               <span className="text-[9px] font-mono text-slate-600 uppercase tracking-widest block">
                 PAIOL PRINCIPAL • CONEXÃO CRIPTOGRAFADA AES-256
               </span>
-            </div>
-          </form>
-        )}
-
-        {/* STEP 2: CADASTRO DE PRIMEIRO ACESSO */}
-        {step === 'primeiro_acesso' && (
-          <form onSubmit={handlePrimeiroAcessoSubmit} className="space-y-5 relative font-sans text-xs">
-            <div className="bg-blue-955/30 border border-blue-900/40 p-3 rounded-xl space-y-1">
-              <h4 className="text-[10px] font-mono font-bold text-blue-450 uppercase tracking-wider flex items-center gap-1.5">
-                <CheckCircle className="h-4 w-4 text-blue-400" />
-                <span>Primeiro Acesso Detectado</span>
-              </h4>
-              <p className="text-[10px] text-slate-400 font-sans leading-relaxed">
-                Bem-vindo, <strong>{formatPostoGraduacaoSigla(primeiroAcessoUser?.posto_graduacao)} {primeiroAcessoUser?.nome_de_guerra || primeiroAcessoUser?.nome}</strong>. Cadastre a sua senha de acesso de 4 a 6 dígitos abaixo.
-              </p>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block font-sans">Nova Senha (PIN):</label>
-              <input
-                type="password"
-                required
-                maxLength={6}
-                placeholder="Senha de 4 a 6 dígitos..."
-                value={newSenha}
-                onChange={(e) => setNewSenha(e.target.value.replace(/\D/g, ''))}
-                className="w-full bg-slate-950/70 border border-slate-800/80 p-3 text-xs font-mono text-slate-205 focus:outline-none focus:ring-1 focus:ring-blue-500/30 rounded-xl placeholder:text-slate-600"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block font-sans">Confirmar Nova Senha:</label>
-              <input
-                type="password"
-                required
-                maxLength={6}
-                placeholder="Confirme a nova senha..."
-                value={confirmNewSenha}
-                onChange={(e) => setConfirmNewSenha(e.target.value.replace(/\D/g, ''))}
-                className="w-full bg-slate-950/70 border border-slate-800/80 p-3 text-xs font-mono text-slate-205 focus:outline-none focus:ring-1 focus:ring-blue-500/30 rounded-xl placeholder:text-slate-600"
-              />
-            </div>
-
-            {authError && (
-              <motion.div 
-                initial={{ opacity: 0, y: -5 }} 
-                animate={{ opacity: 1, y: 0 }}
-                className="bg-red-955/30 border border-red-900/40 p-3 rounded-xl text-[10px] text-red-400 font-mono flex items-start gap-2.5"
-              >
-                <ShieldAlert className="h-4 w-4 shrink-0 text-red-500" />
-                <span>{authError}</span>
-              </motion.div>
-            )}
-
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setStep('login');
-                  setPrimeiroAcessoUser(null);
-                  setNewSenha('');
-                  setConfirmNewSenha('');
-                  setAuthError('');
-                }}
-                className="w-1/3 bg-slate-950 hover:bg-slate-900 border border-slate-800/80 text-slate-400 font-bold font-mono py-3 rounded-xl text-xs transition-all uppercase tracking-wider cursor-pointer"
-              >
-                Voltar
-              </button>
-              <button
-                type="submit"
-                className="w-2/3 bg-blue-600 hover:bg-blue-500 text-white font-bold font-mono py-3 rounded-xl text-xs transition-all shadow-md uppercase tracking-wider cursor-pointer glow-blue"
-              >
-                Cadastrar Senha
-              </button>
             </div>
           </form>
         )}
